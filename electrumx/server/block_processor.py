@@ -8,7 +8,6 @@
 
 '''Block prefetcher and chain processor.'''
 
-
 import asyncio
 import time
 from typing import Sequence, Tuple, List, Callable, Optional, TYPE_CHECKING, Type
@@ -17,20 +16,31 @@ from aiorpcx import run_in_thread, CancelledError
 
 import electrumx
 from electrumx.server.daemon import DaemonError, Daemon
-from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN
-from electrumx.lib.script import is_unspendable_legacy, is_unspendable_genesis
+from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
+from electrumx.lib.script import SCRIPTHASH_LEN, is_unspendable_legacy, is_unspendable_genesis
 from electrumx.lib.util import (
-    chunks, class_logger, pack_le_uint32, pack_le_uint64, unpack_le_uint64, OldTaskGroup
+    chunks, class_logger, pack_le_uint32, pack_le_uint64, unpack_le_uint64, pack_be_uint64, unpack_be_uint64, OldTaskGroup, pack_byte
 )
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
+from electrumx.lib.util_atomicals import extract_subrealm_payment_opreturn, pad_bytes64, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
     from electrumx.server.env import Env
     from electrumx.server.controller import Notifications
 
+from cbor2 import dumps, loads, CBORDecodeError
+import pickle
+import pylru
+import regex 
+import sys 
+
+TX_HASH_LEN = 32
+ATOMICAL_ID_LEN = 36
+LOCATION_ID_LEN = 36
+TX_OUTPUT_IDX_LEN = 4
 
 class Prefetcher:
     '''Prefetches blocks (in the forward direction only).'''
@@ -150,7 +160,6 @@ class Prefetcher:
         self.refill_event.clear()
         return True
 
-
 class ChainError(Exception):
     '''Raised on error processing blocks.'''
 
@@ -181,16 +190,25 @@ class BlockProcessor:
         self.height = -1
         self.tip = None  # type: Optional[bytes]
         self.tip_advanced_event = asyncio.Event()
-        self.tx_count = 0
+        self.tx_count = 0 
+        self.atomical_count = 0     # Total number of Atomicals minted (Includes all NFT/FT types)
         self._caught_up_event = None
 
         # Caches of unflushed items.
         self.headers = []
         self.tx_hashes = []
         self.undo_infos = []  # type: List[Tuple[Sequence[bytes], int]]
+        self.atomicals_undo_infos = []  # type: List[Tuple[Sequence[bytes], int]]
 
         # UTXO cache
         self.utxo_cache = {}
+        self.atomicals_utxo_cache = {}  # The cache of atomicals UTXOs
+        self.general_data_cache = {}    # General data cache for atomicals related actions
+        self.ticker_data_cache = {}     # Caches the tickers created
+        self.realm_data_cache = {}      # Caches the realms created
+        self.subrealm_data_cache = {}   # Caches the subrealms created
+        self.container_data_cache = {}  # Caches the containers created
+        self.distmint_data_cache = {}   # Caches the distributed mints created
         self.db_deletes = []
 
         # If the lock is successfully acquired, in-memory chain state
@@ -200,6 +218,8 @@ class BlockProcessor:
         # Signalled after backing up during a reorg
         self.backed_up_event = asyncio.Event()
 
+        self.atomicals_id_cache = pylru.lrucache(100000)
+  
     async def run_in_thread_with_lock(self, func, *args):
         # Run in a thread to prevent blocking.  Shielded so that
         # cancellations from shutdown don't lose work - when the task
@@ -349,7 +369,10 @@ class BlockProcessor:
         assert self.state_lock.locked()
         return FlushData(self.height, self.tx_count, self.headers,
                          self.tx_hashes, self.undo_infos, self.utxo_cache,
-                         self.db_deletes, self.tip)
+                         self.db_deletes, self.tip,
+                         self.atomical_count,
+                         self.atomicals_undo_infos, self.atomicals_utxo_cache, self.general_data_cache, self.ticker_data_cache, 
+                         self.realm_data_cache, self.subrealm_data_cache, self.container_data_cache, self.distmint_data_cache)
 
     async def flush(self, flush_utxos):
         def flush():
@@ -406,9 +429,10 @@ class BlockProcessor:
             height += 1
             is_unspendable = (is_unspendable_genesis if height >= genesis_activation
                               else is_unspendable_legacy)
-            undo_info = self.advance_txs(block.transactions, is_unspendable)
+            undo_info, atomicals_undo_info = self.advance_txs(block.transactions, is_unspendable, block.header, height)
             if height >= min_height:
                 self.undo_infos.append((undo_info, height))
+                self.atomicals_undo_infos.append((atomicals_undo_info, height))
                 self.db.write_raw_block(block.raw, height)
 
         headers = [block.header for block in blocks]
@@ -418,62 +442,720 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
+
+    # Get the mint information and LRU cache it for fast retrieval
+    # Used for quickly getting the mint information for an atomical
+    def get_atomicals_id_mint_info(self, atomical_id):
+        result = None
+        try:
+            result = self.atomicals_id_cache[atomical_id]
+        except KeyError:
+            # Now check the mint cache (before flush to db)
+            try:
+                result = unpack_mint_info(self.general_data_cache[b'mi' + atomical_id])
+            except KeyError:
+                result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
+            self.atomicals_id_cache[atomical_id] = result
+        return result 
+    
+    # Get basic atomical information in a format that can be attached to utxos in an RPC call
+    def get_atomicals_id_mint_info_basic_struct(self, atomical_id):
+        result = None
+        self.logger.info('atomical_id')
+        self.logger.info(atomical_id)
+        try:
+            result = self.atomicals_id_cache[atomical_id]
+        except KeyError:
+            # Now check the mint cache (before flush to db)
+            try:
+                result = unpack_mint_info(self.general_data_cache[b'mi' + atomical_id])
+            except KeyError:
+                result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
+            
+            self.atomicals_id_cache[atomical_id] = result
+        
+        if result: 
+            basic_struct = {
+                'atomical_id': location_id_bytes_to_compact(result['id']),
+                'atomical_number': result['number'],
+                'type': result['type']
+            }
+            # Todo fetch any containers, realms, subrealms or tickers for the utxo here...
+            return basic_struct
+        return result 
+
+    def get_expected_subrealm_payment_info(self, found_atomical_id):
+        return None, None, None 
+    # Save the subrealm payment
+    def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+        i = 'todo'
+    
+    # Delete the subrealm payment
+    def delete_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+        i = 'todo'
+
+    # Save distributed mint infromation for the atomical
+    # Mints are only stored if they are less than the max_mints amount
+    def put_distmint_data(self, atomical_id, location_id, value): 
+        self.logger.info(f'put_distmint_data: atomical_id={atomical_id.hex()}, location_id={location_id.hex()}, value={value}')
+        if self.distmint_data_cache.get(atomical_id) == None: 
+            self.distmint_data_cache[atomical_id] = {}
+        self.distmint_data_cache[atomical_id][location_id] = value
+
+    # Save atomicals UTXO to cache that will be flushed to db
+    def put_atomicals_utxo(self, location_id, atomical_id, value): 
+        self.logger.info(f'put_atomicals_utxo: atomical_id={atomical_id.hex()}, location_id={location_id.hex()}, value={value}')
+        if self.atomicals_utxo_cache.get(location_id) == None: 
+            self.atomicals_utxo_cache[location_id] = {}
+        # Use a tombstone to mark deleted because even if it's removd we must
+        # store the b'i' value
+        self.atomicals_utxo_cache[location_id][atomical_id] = {
+            'deleted': False,
+            'value': value
+        }
+
+    # Get the total number of distributed mints for an atomical id and check the cache and db
+    # This can be a heavy operation with many 10's of thousands in the db
+    def get_distmints_count_by_atomical_id(self, atomical_id):
+        # Count the number of mints in the cache and add it to the number of mints in the db below
+        cache_count = 0
+        location_map_for_atomical = self.distmint_data_cache.get(atomical_id, None)
+        if location_map_for_atomical != None:
+            cache_count = len(location_map_for_atomical.keys())
+        # Query all the gi key in the db for the atomical
+        prefix = b'gi' + atomical_id
+        db_count = 0
+        for atomical_gi_db_key, atomical_gi_db_value in self.db.utxo_db.iterator(prefix=prefix):
+            db_count += 1
+        # The number minted is equal to the cache and db
+        total_mints = cache_count + db_count
+        # Some sanity checks to make sure no developer error 
+        assert(cache_count >= 0)
+        assert(db_count >= 0)
+        assert(total_mints >= 0)
+        assert(isinstance(total_mints, int))
+        return total_mints
+
+    # Spend all of the atomicals at a location
+    def spend_atomicals_utxo(self, tx_hash: bytes, tx_idx: int) -> bytes:
+        '''Spend the atomicals entry for UTXO and return atomicals[].'''
+        idx_packed = pack_le_uint32(tx_idx)
+        location_id = tx_hash + idx_packed
+        cache_map = self.atomicals_utxo_cache.get(location_id)
+        if cache_map:
+            self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} has Atomicals...')
+            spent_cache_values = []
+            for key in cache_map.keys(): 
+                value_with_tombstone = cache_map[key]
+                value = value_with_tombstone['value']
+                is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8:]
+                if is_sealed == b'00':
+                    # Only allow it to be spent if not sealed  
+                    spent_cache_values.append(location_id + key + value)
+                    value_with_tombstone['deleted'] = True  # Flag it as deleted so the b'a' active location will not be written on flushed
+                self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} atomical_id={key.hex()}, is_sealed={is_sealed}, value={value}')
+            if len(spent_cache_values) > 0:
+                return spent_cache_values
+        # Search the locations of existing atomicals
+        # Key:  b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
+        # Value: hashX + scripthash + value
+        prefix = b'i' + location_id
+        found_at_least_one = False
+        atomicals_data_list = []
+        for atomical_i_db_key, atomical_i_db_value in self.db.utxo_db.iterator(prefix=prefix):
+            # Get all of the atomicals for an address to be deleted
+            atomical_id = atomical_i_db_key[1 + ATOMICAL_ID_LEN:]
+            is_sealed = atomical_i_db_value[HASHX_LEN + SCRIPTHASH_LEN + 8:]
+            prefix = b'a' + atomical_id + location_id
+            found_at_least_one = False
+            for atomical_a_db_key, atomical_a_db_value in self.db.utxo_db.iterator(prefix=prefix):
+                found_at_least_one = True
+            if found_at_least_one == False: 
+                raise IndexError(f'Did not find expected at least one entry for atomicals table for atomical: {atomical_id.hex()} at location {location.hex()}')
+            # Only allow the deletion/spending if it wasn't sealed
+            if is_sealed == b'00':
+                self.db_deletes.append(b'a' + atomical_id + location_id)
+                atomicals_data_list.append(atomical_i_db_key[1:] + atomical_i_db_value)
+            self.logger.info(f'spend_atomicals_utxo.utxo_db: location_id={location_id.hex()} atomical_id={atomical_id.hex()}, is_sealed={is_sealed}, value={atomical_i_db_value}')
+            # Return all of the atomicals spent at the address
+        return atomicals_data_list
+
+    # Put a name element template to the cache
+    def put_name_element_template(self, atomical_id, subject, commit_tx_num, name_data_cache, is_valid_name_string_func, prefix_key=b'', suffix_value=b''): 
+        self.logger.info(f'put_name_element_template: atomical_id={atomical_id.hex()}, subject={subject}, commit_tx_num={commit_tx_num}')
+        if not is_valid_name_string_func(subject):
+            raise IndexError(f'put_name_element_template subject invalid {subject}')
+        subject_enc = subject.encode()
+        if not name_data_cache.get(subject_enc):
+            name_data_cache[subject_enc] = {}
+        name_data_cache[prefix_key + subject_enc][commit_tx_num] = atomical_id
+
+    # todo check for subrealm caching
+    # Save subrealm name to the cache that will be flushed to the db 
+    # def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id, commit_tx_num): 
+    #    self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}, commit_tx_num={commit_tx_num}')
+    #    if not is_valid_subrealm_string_name(subrealm):
+    #        raise IndexError(f'Subrealm is_valid_subrealm_string_name invalid {subrealm}')
+    #    # Add on 32 null bytes to be the placeholder for the payment eventually
+    #    subrealm_key_enc = subrealm.encode() + pack_le_uint64(commit_tx_num)
+    #    self.subrealm_data_cache[parent_atomical_id + subrealm_key_enc] = atomical_id + b'0000000000000000000000000000000000000000000000000000000000000000'
+
+    def delete_name_element_template(self, expected_entry_value, subject, commit_tx_num, name_data_cache, db_get_name_func, db_delete_prefix, prefix_key=b''): 
+        subject_enc = subject.encode() 
+        # Check if it's located in the cache first
+        name_map = name_data_cache.get(prefix_key + subject_enc)
+        cached_atomical_id = None
+        if name_map:
+            atomical_id = name_map.get(commit_tx_num)
+            if atomical_id:
+                if atomical_id != expected_entry_value:
+                    raise IndexerError(f'IndexerError: delete_name_element_template {db_delete_prefix} cache name data does not match expected atomical id {commit_tx_num} {expected_atomical_id} {subject} {atomical_id}')
+                # remove from the cache
+                name_map.pop(commit_tx_num)
+            # Intentionally fall through to catch it in the db as well just in case
+        # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
+        db_delete_key = db_delete_prefix + prefix_key + subject_enc + pack_le_uint64(commit_tx_num)
+        atomical_data_from_db = self.db.utxo_db.get(db_delete_key)
+        if atomical_data_from_db:
+            if atomical_data_from_db != expected_entry_value: 
+                raise IndexerError(f'IndexerError: delete_name_element_template {db_delete_prefix} db data does not match expected atomical id {commit_tx_num} {expected_atomical_id} {subject} {name_data_from_db}')
+            self.db_deletes.append(db_delete_key)
+            self.logger.info(f'IndexerError: delete_name_element_template {db_delete_prefix} deletes subject={subject}, expected_entry_value={expected_entry_value.hex()}')
+        if cached_atomical_id or atomical_data_from_db:
+            return True
+  
+    # Delete the distributed mint data that is used to track how many mints were made
+    def delete_distmint_data(self, atomical_id, location_id) -> bytes:
+        cache_map = self.distmint_data_cache.get(atomical_id, None)
+        if cache_map != None:
+            cache_map.pop(location_id, None)
+            self.logger.info(f'delete_distmint_data.distmint_data_cache: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
+        gi_key = b'gi' + atomical_id + location_id
+        gi_value = self.db.utxo_db.get(gi_key)
+        if gi_value:
+            # not do the i entry beuse it's deleted elsewhere 
+            self.db_deletes.append(b'gi' + atomical_id + location_id)
+            self.logger.info(f'delete_distmint_data.db_deletes: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
+
+    def log_subrealm_request(self, method, msg, status, subrealm, parent_realm_atomical_id, height):
+        self.logger.info(f'{method} - {msg}, status={status} subrealm={subrealm}, parent_realm_atomical_id={parent_realm_atomical_id.hex()}, height={height}')
+    
+    # Whether a subrealm by a given name is a valid subrealm string and if it's not already claimed
+    def is_subrealm_acceptable_to_be_created(self, operations_found_at_inputs, atomicals_spent_at_inputs, txout, parent_realm_atomical_id, subrealm, height):
+        method = 'is_subrealm_acceptable_to_be_created'
+        if not subrealm:
+            self.log_subrealm_request(method, 'empty', False, subrealm, parent_realm_atomical_id, height)
+            return None 
+        if is_valid_subrealm_string_name(subrealm):
+            # first step is to validate that the subrealm name meets the requirements of the owner of the parent
+            # as far as minting rules go. Recall that a subrealm can be minted by the parent manually OR
+            # The parent can set the `realm/reg` key using the `crt` operation to specific what regex/price points
+            # are available for the minting of subrealms
+            # First we check if it was minted manually by the parent realm and if that fails, then check if there are regex/price points
+            # that could be satisfied.
+            #
+            # After the subrealm minting rules are satisfied the final step is to check that the subrealm is not already taken
+            initiated_by_parent = False
+            if operations_found_at_inputs['input_index'] == 0 and operations_found_at_inputs['op'] == 'sub':
+                atomical_list = atomicals_spent_at_inputs.get(0)
+                for atomical_id in atomical_list:
+                    # Only mint under the atomical if there is exactly one atomical that requested it
+                    if atomical_id == parent_realm_atomical_id:
+                        initiated_by_parent = True
+                        break
+            # If it was initiated by the parent, then we can skip trying to match it against a crt price point
+            if not initiated_by_parent:
+                price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_realm_atomical_id, subrealm, txout, height)
+                if not price_point:
+                    self.log_subrealm_request(method, 'no_price_point', False, subrealm, parent_realm_atomical_id, height)
+                    return False 
+            # If we got this far it was either initiated by the parent or it matched one of the regex price points
+            # All that is left to do is ensure that the name is not taken already
+            subrealm_enc = subrealm.encode()
+            # It already exists in cache, therefore cannot assign
+            if self.subrealm_data_cache.get(parent_realm_atomical_id + subrealm_enc, None) != None: 
+                self.log_subrealm_request(method, 'cache_exists', False, subrealm, parent_realm_atomical_id, height)
+                return None 
+            # Or it already exists in db and also cannot use
+            if self.db.get_subrealm(parent_realm_atomical_id, subrealm_enc) != None:
+                self.log_subrealm_request(method, 'db_exists', False, subrealm, parent_realm_atomical_id, height)
+                return None
+            # Congratulations, we can create a subrealm now for the parent realm
+            self.log_subrealm_request(method, 'success', True, subrealm, parent_realm_atomical_id, height)
+            return subrealm
+        self.log_subrealm_request(method, 'is_valid_realm_string_name', False, subrealm, parent_realm_atomical_id, height)
+        return None
+    
+    def log_can_be_created(self, method, msg, subject, validity, val):
+        self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
+   
+    # Validate the parameters for an NFT and validate realm/subrealm/container data
+    def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
+        if not mint_info or not isinstance(mint_info, dict):
+            return False
+        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        value_sats = pack_le_uint64(mint_info['value'])
+        # Save the initial location to have the atomical located there
+        is_sealed = b'00'
+        self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+        atomical_id = mint_info['id']
+        self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
+        return True
+    
+    # Validate the parameters for a FT
+    def validate_and_create_ft(self, mint_info, tx_hash):
+        self.logger.info(f'validate_and_create_ft: tx_hash={hash_to_hex_str(tx_hash)}')
+        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        value_sats = pack_le_uint64(mint_info['value'])
+        # Save the initial location to have the atomical located there
+        if mint_info['subtype'] != 'distributed':
+            is_sealed = b'00'
+            self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+        subtype = mint_info['subtype']
+        self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
+        return True
+
+    def get_tx_num_from_tx_hash(self, tx_hash):
+        tx_hash_num_val = self.general_data_cache.get(b'tx' + tx_hash)
+        if tx_hash_num_val:
+            unpacked_value, = unpack_le_uint64(tx_hash_num_val)
+            return unpacked_value
+        return self.db.get_tx_num_from_tx_hash(tx_hash)
+
+    def create_realm_entry_if_requested(self, mint_info):
+        if is_valid_realm_string_name(mint_info.get('$request_realm')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
+
+    def create_subrealm_entry_if_requested(self, mint_info): 
+        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
+            parent_realm_id = mint_info['$pid']
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
+            
+    def create_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name)
+    
+    def create_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string(mint_info.get('$request_ticker')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, is_valid_ticker_string_name)
+
+    def delete_realm_entry_if_requested(self, mint_info):
+        if is_valid_realm_string_name(mint_info.get('$request_realm')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, b'rlm')
+    
+    def delete_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string_name(mint_info.get('$request_ticker')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, b'tick')
+
+    def delete_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
+    
+    def delete_subrealm_entry_if_requested(self, mint_info):
+        if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
+            parent_realm_id = mint_info['$pid']
+            self.delete_name_element_template(mint_info['id'] + b'0000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
+  
+    def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
+        return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
+
+    # Check whether to create an atomical NFT/FT 
+    # Validates the format of the detected input operation and then checks the correct extra data is valid
+    # such as realm, container, ticker, etc. Only succeeds if the appropriate names can be assigned
+    def create_atomical(self, operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash):
+        if not operations_found_at_inputs:
+            return None
+        # Catch the strange case where there are no outputs
+        if len(tx.outputs) == 0:
+            return None
+
+        # All mint types always look at only input 0 to determine if the operation was found
+        # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, tx_hash, operations_found_at_inputs)
+        if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
+            return None
+
+        # The atomical would always be created at the first output
+        txout = tx.outputs[0]
+
+        # The prev tx number is the prev input being spent that creates the atomical
+        commit_tx_num = self.get_tx_num_from_tx_hash(mint['commit_txid'])
+        if not commit_tx_num:
+            raise IndexError(f'Indexer error retrieved null commit_tx_num')
+
+        from_fs_tx_hash, commit_height = self.db.fs_tx_hash(commit_tx_num)
+        if mint['commit_txid'] != from_fs_tx_hash:
+            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid') 
+        atomical_id = mint_info['id']
+        mint_info['number'] = atomical_num 
+        # The mint tx num is used to determine precedence for names like tickers, realms, containers
+        mint_info['commit_tx_num'] = commit_tx_num 
+        mint_info['commit_height'] = commit_height 
+        mint_info['first_location_header'] = header 
+        mint_info['first_location_height'] = height 
+        mint_info['first_location_tx_num'] = tx_num 
+        
+        if valid_create_op_type == 'NFT':
+            if not self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
+                self.logger.info(f'Atomicals Create NFT validate_and_create_nft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
+                return None
+            if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
+                self.create_realm_entry_if_requested(mint_info)
+                self.create_subrealm_entry_if_requested(mint_info)
+                self.create_container_entry_if_requested(mint_info)
+        elif valid_create_op_type == 'FT':
+            if not self.validate_and_create_ft(mint_info, tx_hash):
+                self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
+                return None
+            # Add $max_supply informative property
+            if mint_info['subtype'] == 'distributed':
+                mint_info['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints'] 
+            else: 
+                mint_info['$max_supply'] = txout.value
+            if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
+                self.create_ticker_entry_if_requested(mint_info)
+        else: 
+            raise IndexError(f'Fatal index error Create Invalid')
+        
+        # Save mint data fields
+        put_general_data = self.general_data_cache.__setitem__
+        put_general_data(b'md' + atomical_id, operations_found_at_inputs['payload_bytes'])
+        # Save mint info fields and metadata
+        put_general_data(b'mi' + atomical_id, pickle.dumps(mint_info))
+        # Track the atomical number for the newly minted atomical
+        atomical_count_numb = pack_be_uint64(atomical_num)
+        put_general_data(b'n' + atomical_count_numb, atomical_id)
+        # Save the output script of the atomical to lookup at a future point
+        put_general_data(b'po' + atomical_id, txout.pk_script)
+        return atomical_id
+
+    # Build a map of atomical id to the type, value, and input indexes
+    # This information is used below to assess which inputs are of which type and therefore which outputs to color
+    def build_atomical_id_info_map(self, map_atomical_ids_to_info, atomicals_list, txin_index):
+        for atomicals_entry in atomicals_list:
+            atomical_id = atomicals_entry[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+            value, = unpack_le_uint64(atomicals_entry[-8:])
+            atomical_mint_info = self.get_atomicals_id_mint_info(atomical_id)
+            if not atomical_mint_info: 
+                raise IndexError(f'color_atomicals_outputs {atomical_id.hex()} not found in mint info. IndexError.')
+            if map_atomical_ids_to_info.get(atomical_id, None) == None:
+                map_atomical_ids_to_info[atomical_id] = {
+                    'atomical_id': atomical_id,
+                    'type': atomical_mint_info['type'],
+                    'value': 0,
+                    'input_indexes': []
+                }
+            map_atomical_ids_to_info[atomical_id]['value'] += value
+            map_atomical_ids_to_info[atomical_id]['input_indexes'].append(txin_index)
+        return map_atomical_ids_to_info
+    
+    # Get the expected output indexes to color for the atomicals based on the atomical types and input conditions
+    def get_expected_output_indexes_to_color(operations_found_at_inputs, mint_info, tx, atomical_id):
+        if mint_info['type'] == 'NFT':
+            assert(len(mint_info['input_indexes']) == 1)
+            expected_output_indexes = [get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, operations_found_at_inputs)]
+        elif mint_info['type'] == 'FT':
+            assert(len(mint_info['input_indexes']) >= 1)
+            expected_output_indexes = get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, operations_found_at_inputs) 
+        else:
+            raise IndexError('color_atomicals_outputs: Unknown type. Index Error.')
+
+    # Detect and apply updates-related like operations for an atomical such as mod/evt/crt/sl
+    def apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
+        put_general_data = self.general_data_cache.__setitem__
+        if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'mod' and operations_found_at_inputs.get('input_index') == 0:
+            self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
+            put_general_data(b'mod' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
+            # If the mod(ify) operation path was set to '/subrealm-mint' with prices field
+            # Then validate they are in the correct format
+            mod_path = operations_found_at_inputs['payload'].get('path')
+            if mod_path and len(mod_path.encode()) <= 64:
+                mod_path_padded = pad_bytes64(mod_path.encode())
+                height_packed = pack_le_uint32(height)
+                put_general_data(b'modpath' + atomical_id + mod_path_padded + tx_numb + output_idx_le + height_packed, pickle.dumps(operations_found_at_inputs['payload']))
+        elif operations_found_at_inputs and operations_found_at_inputs.get('op') == 'evt' and operations_found_at_inputs.get('input_index') == 0:
+            self.logger.info(f'apply_state_like_updates op=evt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
+            put_general_data(b'evt' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
+
+    # Apply the rules to color the outputs of the atomicals
+    def color_atomicals_outputs(self, operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb, height):
+        '''color_atomicals_outputs Tags or colors the outputs in a given transaction according to the NFT/FT atomicals rules
+        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the atom envelope)
+        :param atomicals_spent_at_inputs The atomicals that were found to be transferred at the given inputs
+        :param tx Transaction context
+        :param tx_hash Transaction hash of the context
+        :param tx_numb Global transaction number
+        '''
+        put_general_data = self.general_data_cache.__setitem__
+        map_atomical_ids_to_info = {}
+        atomical_ids_touched = []
+        for txin_index, atomicals_list in atomicals_spent_at_inputs.items():
+            # Accumulate the total input value by atomical_id
+            # The value will be used below to determine the amount of input we can allocate for FT's
+            self.build_atomical_id_info_map(map_atomical_ids_to_info, atomicals_list, txin_index)
+        
+        # For each atomical, get the expected output indexes to color
+        for atomical_id, mint_info in map_atomical_ids_to_info.items():
+            expected_output_indexes = self.get_expected_output_indexes_to_color(operations_found_at_inputs, mint_info, tx, atomical_id)
+
+            # For each expected output to be colored, check for state-like updates
+            for expected_output_index in expected_output_indexes:
+                output_idx_le = pack_le_uint32(expected_output_index)
+                location = tx_hash + output_idx_le
+                txout = tx.outputs[expected_output_index]
+                scripthash = double_sha256(txout.pk_script)
+                hashX = self.coin.hashX_from_script(txout.pk_script)
+                value_sats = pack_le_uint64(txout.value)
+                put_general_data(b'po' + location, txout.pk_script)
+                self.apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height)
+                is_sealed = b'00'
+                # Only allow the NFT collection subtype to be sealed
+                if operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and mint_info.get('subtype') == 'container' and operations_found_at_inputs.get('input_index') == 0:
+                    is_sealed = b'01'
+                self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + is_sealed)
+            
+            atomical_ids_touched.append(atomical_id)
+        return atomical_ids_touched
+    
+    def get_effective_ticker(self, ticker, current_height):
+        # Get the effective entries
+        all_entries = []
+        found_atomical_id, entries = self.db.get_effective_ticker(ticker)
+        for key, v in self.ticker_data_cache.items():
+            for tx_num, atomical_id in v.items():
+                all_entries.append({
+                    'atomical_id': atomical_id,
+                    'tx_num': tx_num
+                })
+        all_entries.extend(entries)
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            # Get the tx_num and use that to get the height 
+            candidate_entry = entries[0]
+            commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['tx_num'])
+            if commit_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
+                return candidate_entry['atomical_id']
+        return None 
+
+    def get_effective_realm(self, realm, current_height):
+        # Get the effective entries
+        all_entries = []
+        found_atomical_id, entries = self.db.get_effective_realm(realm)
+        for key, v in self.realm_data_cache.items():
+            for tx_num, atomical_id in v.items():
+                all_entries.append({
+                    'atomical_id': atomical_id,
+                    'tx_num': tx_num
+                })
+        all_entries.extend(entries)
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            # Get the tx_num and use that to get the height 
+            candidate_entry = entries[0]
+            commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['tx_num'])
+            if commit_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
+                return candidate_entry['atomical_id']
+        return None 
+
+    # Create a distributed mint output as long as the rules are satisfied
+    def create_distmint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
+        dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, atomicals_operations_found_at_inputs)
+        if not dmt_valid:
+            return None
+
+        # get the potential dmt (distributed mint) atomical_id from the ticker given
+        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'], height)
+        if not potential_dmt_atomical_id:
+            self.logger.info(f'potential_dmt_atomical_id not found for dmt operation in {tx_hash}. Attempt was made for a non-existant ticker mint info. Ignoring...')
+            return None 
+
+        mint_info_for_ticker = self.get_atomicals_id_mint_info(potential_dmt_atomical_id)
+        if not mint_info_for_ticker:
+            raise IndexError(f'create_distmint_outputs mint_info_for_ticker not found for expected atomical {atomical_id}')
+        
+        if mint_info_for_ticker['subtype'] != 'distributed':
+            self.logger.info(f'create_distmint_outputs Detected invalid mint attempt in {tx_hash} for ticker {ticker} which is not a distributed mint type. Ignoring...')
+            return None 
+
+        max_mints = mint_info_for_ticker['$max_mints']
+        mint_amount = mint_info_for_ticker['$mint_amount']
+        mint_height = mint_info_for_ticker['$mint_height']
+        mint_ticker = mint_info_for_ticker['$ticker']
+
+        if mint_ticker != dmt_return_struct['$mint_ticker']:
+            dmt_ticker = dmt_return_struct['$mint_ticker']
+            raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
+        
+        if height < mint_height:
+            self.logger.info(f'create_distmint_outputs found premature mint operation in {tx_hash} for {ticker} in {height} before {mint_height}. Ignoring...')
+            return None
+
+        expected_output_index = 0
+        output_idx_le = pack_le_uint32(expected_output_index) 
+        location = tx_hash + output_idx_le
+        txout = tx.outputs[expected_output_index]
+        scripthash = double_sha256(txout.pk_script)
+        hashX = self.coin.hashX_from_script(txout.pk_script)
+        value_sats = pack_le_uint64(txout.value)
+        # Mint is valid and active if the value is what is expected
+        if mint_amount == txout.value:
+            # Count the number of existing b'gi' entries and ensure it is strictly less than max_mints
+            distributed_mints = self.get_distmints_count_by_atomical_id(potential_dmt_atomical_id)
+            if distributed_mints > max_mints:
+                raise IndexError(f'create_distmint_outputs Fatal IndexError distributed_max_mints > max_mints for {atomical}. Too many mints detected in db')
+                
+            if distributed_max_mints < max_mints:
+                self.logger.info(f'create_distmint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
+                put_general_data(b'po' + location, txout.pk_script)
+                is_sealed = b'00' # FT outputs can never be sealed
+                self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats + is_sealed)
+                self.put_distmint_data(potential_dmt_atomical_id, location, scripthash + value_sats)
+            else: 
+                self.logger.info(f'create_distmint_outputs found invalid mint operation because it is minted out completely. Ignoring...')
+        else: 
+            self.logger.info(f'create_distmint_outputs found invalid mint operation in {tx_hash} for {ticker} because incorrect txout.value {txout.value} when expected {mint_amount}')
+        return potential_dmt_atomical_id
+
     def advance_txs(
             self,
             txs: Sequence[Tuple[Tx, bytes]],
             is_unspendable: Callable[[bytes], bool],
+            header,
+            height
     ) -> Sequence[bytes]:
         self.tx_hashes.append(b''.join(tx_hash for tx, tx_hash in txs))
 
         # Use local vars for speed in the loops
         undo_info = []
+        atomicals_undo_info = []
         tx_num = self.tx_count
+        atomical_num = self.atomical_count
         script_hashX = self.coin.hashX_from_script
         put_utxo = self.utxo_cache.__setitem__
+        put_general_data = self.general_data_cache.__setitem__
         spend_utxo = self.spend_utxo
+        spend_atomicals_utxo = self.spend_atomicals_utxo
         undo_info_append = undo_info.append
+        atomicals_undo_info_extend = atomicals_undo_info.extend
         update_touched = self.touched.update
         hashXs_by_tx = []
         append_hashXs = hashXs_by_tx.append
         to_le_uint32 = pack_le_uint32
         to_le_uint64 = pack_le_uint64
-
+        to_be_uint64 = pack_be_uint64
         for tx, tx_hash in txs:
             hashXs = []
             append_hashX = hashXs.append
             tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
-
+            atomicals_spent_at_inputs = {}
             # Spend the inputs
+            txin_index = 0
             for txin in tx.inputs:
                 if txin.is_generation():
                     continue
                 cache_value = spend_utxo(txin.prev_hash, txin.prev_idx)
                 undo_info_append(cache_value)
                 append_hashX(cache_value[:HASHX_LEN])
+                
+                # Find all the existing transferred atomicals and spend the Atomicals utxos
+                atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
+                if len(atomicals_transferred_list):
+                    atomicals_spent_at_inputs[txin_index] = atomicals_transferred_list
+                    for atomical_id_spent in atomicals_transferred_list:
+                        self.logger.info(f'atomicals_transferred_list - tx_hash={hash_to_hex_str(tx_hash)}, txin_index={txin_index}, txin_hash={hash_to_hex_str(txin.prev_hash)}, txin_previdx={txin.prev_idx}, atomical_id_spent={atomical_id_spent.hex()}')
+
+                atomicals_undo_info_extend(atomicals_transferred_list)
+                txin_index = txin_index + 1
+            
+            # Save the tx number for the current tx
+            put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num))
+
+            # Detect all protocol operations in the transaction witness inputs
+            atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
+            if atomicals_operations_found_at_inputs:
+                size_payload = sys.getsizeof(atomicals_operations_found_at_inputs['payload_bytes'])
+                operation_found = atomicals_operations_found_at_inputs['op']
+                operation_input_index = atomicals_operations_found_at_inputs['input_index']
+                commit_txid = atomicals_operations_found_at_inputs['commit_txid']
+                commit_index = atomicals_operations_found_at_inputs['commit_index']
+                first_location_txid = atomicals_operations_found_at_inputs['first_location_txid']
+                first_location_index = atomicals_operations_found_at_inputs['first_location_index']
+                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, commit_txid={hash_to_hex_str(commit_txid)}, commit_index={commit_index}, first_location_txid={hash_to_hex_str(first_location_txid)}, first_location_index={first_location_index}')
 
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
                 # Ignore unspendable outputs
                 if is_unspendable(txout.pk_script):
                     continue
-
                 # Get the hashX
-                hashX = script_hashX(txout.pk_script)
+                hashX = self.coin.hashX_from_script(txout.pk_script)
                 append_hashX(hashX)
-                put_utxo(tx_hash + to_le_uint32(idx),
-                         hashX + tx_numb + to_le_uint64(txout.value))
+                put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
+            
+            # Create NFT/FT atomicals if it is defined in the tx
+            created_atomical_id = self.create_atomical(atomicals_operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash)
+            if created_atomical_id:
+                atomical_num += 1
+                # Double hash the created_atomical_id to add it to the history to leverage the existing history db for all operations involving the atomical
+                append_hashX(double_sha256(created_atomical_id))
+                self.logger.info(f'create_atomical:created_atomical_id - atomical_id={created_atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
 
+            # Color the outputs of any transferred NFT/FT atomicals according to the rules
+            atomical_ids_transferred = self.color_atomicals_outputs(atomicals_operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb, height)
+            for atomical_id in atomical_ids_transferred:
+                self.logger.info(f'color_atomicals_outputs:atomical_ids_transferred - atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+                # Double hash the atomical_id to add it to the history to leverage the existing history db for all operations involving the atomical
+                append_hashX(double_sha256(atomical_id))
+            
+            # Check if there were any payments for subrealms in thtx
+            self.check_subrealm_payment_output(tx, height)
+
+            # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
+            # Check to create a distributed mint output from a valid tx
+            atomical_id_of_distmint = self.create_distmint_output(atomicals_operations_found_at_inputs, tx_hash, tx, height)
+            if atomical_id_of_distmint:
+                distmint_num += 1
+                # Double hash the atomical_id_of_distmint to add it to the history to leverage the existing history db for all operations involving the atomical
+                append_hashX(double_sha256(atomical_id_of_distmint))
+                self.logger.info(f'create_distmint_output:atomical_id_of_distmint - atomical_id={atomical_id_of_distmint.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+          
             append_hashXs(hashXs)
             update_touched(hashXs)
+
             tx_num += 1
 
         self.db.history.add_unflushed(hashXs_by_tx, self.tx_count)
 
         self.tx_count = tx_num
         self.db.tx_counts.append(tx_num)
+        self.atomical_count = atomical_num
+        self.db.atomical_counts.append(atomical_num)
+        
+        return undo_info, atomicals_undo_info
 
-        return undo_info
-
+    
+    # Check for for output markers for a payment for a subrealm
+    # Same function is used for creating and rollback. Set Delete=True for rollback operation
+    def check_subrealm_payment_output(self, tx, height, Delete=False):
+        # Add the new UTXOs
+        found_atomical_id = None
+        for idx, txout in enumerate(tx.outputs):
+            found_atomical_id = extract_subrealm_payment_opreturn(txout.pk_script)
+            if found_atomical_id:
+                break
+        # Payment atomical id marker was found
+        if found_atomical_id:
+            # Get the details such as expected payment amount/output and which parent realm it was meant for
+            expected_payment_amount, expected_payment_output, parent_realm_id = self.get_expected_subrealm_payment_info(found_atomical_id)
+            if not expected_payment_amount:
+                return
+            for idx, txout in enumerate(tx.outputs):
+                if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
+                    if Delete:
+                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
+                    else: 
+                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
+                        
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
 
@@ -500,14 +1182,246 @@ class BlockProcessor:
             self.backup_txs(block.transactions, is_unspendable)
             self.height -= 1
             self.db.tx_counts.pop()
-
+            self.db.atomical_counts.pop()
         self.logger.info(f'backed up to height {self.height:,d}')
+
+    # Rollback the spending of an atomical
+    def rollback_spend_atomicals(self, tx_hash, tx, idx, tx_numb, height, operations_found_at_inputs):
+        output_index_packed = pack_le_uint32(idx)
+        current_location = tx_hash + output_index_packed
+        # Spend the atomicals if there were any
+        spent_atomicals = self.spend_atomicals_utxo(tx_hash, tx, idx, tx_numb)
+        if len(spent_atomicals) > 0:
+            # Remove the stored output
+            self.db_deletes.append(b'po' + current_location)
+        hashXs = []
+        for spent_atomical in spent_atomicals:
+            self.logger.info(f'rollback_spend_atomicals, atomical_id={spent_atomical.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            hashX = spent_atomical[ ATOMICAL_ID_LEN + ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN]
+            hashXs.append(hashX)
+            atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+            location = spent_atomical[ : ATOMICAL_ID_LEN]
+            # Any mod operations are deleted
+            if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'mod' and operations_found_at_inputs.get('input_index') == 0:
+                self.db_deletes.append(b'mod' + atomical_id + tx_numb + output_index_packed)
+                # If the mod(ify) operation path was set to '/subrealm-mint' with prices field
+                # Then validate they are in the correct format
+                mod_path = operations_found_at_inputs['payload'].get('path')
+                if mod_path and len(mod_path.encode()) <= 64:
+                    mod_path_padded = pad_bytes64(mod_path.encode())
+                    height_packed = pack_le_uint32(height)
+                    self.db_deletes.append(b'modpath' + atomical_id + mod_path_padded + tx_numb + output_index_packed + height_packed)
+            # Any evt operations are deleted
+            elif operations_found_at_inputs and operations_found_at_inputs.get('op') == 'evt' and operations_found_at_inputs.get('input_index') == 0:
+                self.db_deletes.append(b'evt' + atomical_id + tx_numb + output_index_packed)
+        return hashXs 
+
+    # Rollback any distributed mints
+    def rollback_distmint_data(self, tx_hash, operations_found_at_inputs):
+        if not operations_found_at_inputs:
+            return
+        dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, operations_found_at_inputs)
+        if dmt_valid: 
+            ticker = dmt_return_struct['$mint_ticker']
+            self.logger.info(f'rollback_distmint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
+            # get the potential dmt (distributed mint) atomical_id from the ticker given
+            potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
+            if potential_dmt_atomical_id:
+                self.logger.info(f'rollback_distmint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
+                output_index_packed = pack_le_uint32(idx)
+                location = tx_hash + output_index_packed
+                self.delete_distmint_data(potential_dmt_atomical_id, location)
+                # remove the b'a' atomicals entry at the mint location
+                self.db_deletes.append(b'a' + potential_dmt_atomical_id + location)
+                # remove the b'i' atomicals entry at the mint location
+                self.db_deletes.append(b'i' + location + potential_dmt_atomical_id)
+    
+    # Rollback atomical mint data
+    def delete_atomical_mint_data(self, atomical_id, atomical_num):
+        self.logger.info(f'delete_atomical_mint_data: atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
+        self.db_deletes.append(b'md' + atomical_id)
+        self.db_deletes.append(b'mi' + atomical_id)
+        # Make sure to remove the atomical number
+        atomical_numb = pack_be_uint64(atomical_num) 
+        self.db_deletes.append(b'n' + atomical_numb)
+        # remove the b'a' atomicals entry at the mint location
+        self.db_deletes.append(b'a' + atomical_id + atomical_id)
+        # remove the b'i' atomicals entry at the mint location
+        self.db_deletes.append(b'i' + atomical_id + atomical_id)
+
+    # Delete atomical mint data and any associated realms, subrealms, containers and tickers
+    def delete_atomical_mint(self, tx_hash, tx, atomical_num, operations_found_at_inputs):
+        was_mint_found = False
+        # All mint types always look at only input 0 to determine if the operation was found
+        # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, tx_hash, operations_found_at_inputs)
+        if not valid_create_op_type:
+            self.logger.info(f'delete_atomical_mint not valid_create_op_type')
+            return False
+        if not valid_create_op_type == 'NFT' or not valid_create_op_type == 'FT':
+            raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
+        
+        atomical_id = mint_info['id']
+        
+        # If it was an NFT
+        if valid_create_op_type == 'NFT':
+            self.logger.info(f'delete_atomical_mint - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            was_mint_found = True
+
+            if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
+                self.delete_realm_entry_if_requested(mint_info)
+                self.delete_subrealm_entry_if_requested(mint_info)
+                self.delete_container_entry_if_requested(mint_info)
+
+        # If it was an FT
+        elif valid_create_op_type == 'FT': 
+            self.logger.info(f'delete_atomical_mint FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
+                self.delete_ticker_entry_if_requested(mint_info)
+        else: 
+            assert('Invalid mint developer error fatal')
+        
+        if was_mint_found:
+            self.delete_atomical_mint_data(atomical_id, atomical_num)
+
+        self.logger.info(f'delete_atomical_mint return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}')
+        return was_mint_found  
+
+    # Get the price regex list for a subrealm atomical
+    # Returns the most recent value sorted by height descending
+    def get_subrealm_regex_price_list_from_height(self, atomical_id, height):
+        subrealm_mint_path = '/subrealm-mint'
+        subrealm_mint_modpath_history = self.db.get_modpath_history(atomical_id, subrealm_mint_path)
+        # The crt history is when the value was set at height
+        # The conention is that the data in b'modpath' only becomes valid exactly 6 blocks after the height
+        # The reason for this is that a price list cannot be changed with active transactions.
+        # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
+        # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
+        # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
+        # This is sufficient notice (about 1 hour) for apps to notice that the price list changed, and act accordingly.
+        for crt_item in subrealm_mint_modpath_history:
+            crt_valid_from = crt_item['height'] + MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
+            if height < crt_valid_from:
+                continue
+            # Found a valid subrealm_mint_path entry
+            # Get the subrealm_mint_path for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
+            if not crt_item['payload'] or not isinstance(crt_item['payload'], dict):
+                self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
+                continue
+
+            mod_path = crt_item['payload'].get('path')
+            if mod_path != subrealm_mint_path:
+                self.logger.info(f'get_subrealm_regex_price_list_from_height subrealm-mint path not found atomical_id={atomical_id.hex()}')
+                continue
+
+            # It is at least a dictionary
+            regexes = crt_item['payload'].get('prices', None)
+            if not regexes:
+                self.logger.info(f'get_subrealm_regex_price_list_from_height prices value not found atomical_id={atomical_id.hex()}')
+                continue
+            # There is a path realm/r that exists
+            if not isinstance(regexes, list):
+                self.logger.info(f'get_subrealm_regex_price_list_from_height prices value not a list atomical_id={atomical_id.hex()}')
+                continue
+
+            # The subrealms field is an array/list type
+            # Now populate the regex price list
+            regex_price_list = []
+            for regex_price in regexes:
+                # regex is the first pattern that will be checked to match for minting a subrealm
+                regex_pattern = regex_price.get('r', None)
+                # satoshi value is the price that must be paid to mint a subrealm
+                satoshis = regex_price.get('v', None)
+                # Output is the output script that must be paid to mint the subrealm
+                output = regex_price.get('o', None)
+                # If all three are set, th
+                if regex_pattern != None and satoshis != None and output != None:
+                    # Check that value is greater than 0
+                    if satoshis <= 0:
+                        self.logger.info(f'get_subrealm_regex_price_list_from_height invalid satoshis atomical_id={atomical_id.hex()}')
+                        continue
+                    # Check that regex is a valid regex pattern
+                    try:
+                        valid_pattern = re.compile(rf"{regex_pattern}")
+                        if not isinstance(output, (bytes, bytearray)):
+                            self.logger.info(f'get_subrealm_regex_price_list_from_height output o value is not a byte sequence atomical_id={atomical_id.hex()}')
+                            continue
+                        # After all we have finally validated this is a valid price point for minting subrealm...
+                        price_point = {
+                            'regex': regex_pattern,
+                            'value': satoshis,
+                            'output': output
+                        }
+                        regex_price_list.append(price_point)
+                    except Exception as e: 
+                        self.logger.info(f'Regex or byte output error for {atomical_id}')
+                        self.logger.info(f'Exception {e}')
+                        continue
+                else: 
+                    self.logger.info(f'get_subrealm_regex_price_list_from_height realm.r list element does not contain r, v, or o fields atomical_id={atomical_id.hex()}')
+            self.logger.info(f'get_subrealm_regex_price_list_from_height found valid entry for regex price list atomical_id={atomical_id.hex()}')
+            return regex_price_list
+        return []
+
+    # Get a matched price point (if any) for a subrealm name for the parent atomical taking into account the height
+    # Recall that the 'modpath' (contract) values will take effect only after 6 blocks have passed after the height in
+    # which the update 'modpath' operation was mined.
+    def get_matched_price_point_for_subrealm_name_by_height(self, parent_atomical_id, proposed_subrealm_name, txout, height):
+        regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height)
+        # Ensure there is a list of regex price list that is available for the atomical
+        if not regex_price_point_list or len(regex_price_point_list) <= 0:
+            self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+            return None 
+        for regex_price_point in regex_price_point_list:
+            self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height regex_price_point={regex_price_point} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+            # Perform some sanity checks just in case
+            regex_pattern = regex_price_point.get('regex', None)
+            # satoshi value is the price that must be paid to mint a subrealm
+            satoshis = regex_price_point.get('value', None)
+            # Output is the output script that must be paid to mint the subrealm
+            output = regex_price_point.get('output', None)
+            # Make sure the variables are defined
+            if not regex_pattern:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height null regex_pattern parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+            if not satoshis:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+            if not output or not isinstance(output, (bytes, bytearray)):
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid output parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+            if not isinstance(satoshis, int) or satoshis <= 0:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+            try:
+                # Compile the regular expression
+                valid_pattern = re.compile(rf"{regex_pattern}")
+                # Match the pattern to the proposed subrealm_name, the payment of the expect value and the output script
+                if not valid_pattern.match(proposed_subrealm_name):
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height not match pattern valid_pattern={valid_pattern} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+                if txout.value < satoshis:
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.value < satoshis txout.value={txout.value}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+                if txout.pk_script != output: 
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.pk_script != output txout.pk_script={txout.pk_script}, txout.output={txout.output}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height successfully matched regex price point, parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                return regex_price_point
+            except Exception as e: 
+                # If it failed, then try the next matches if any
+                pass
+        return None
 
     def backup_txs(
             self,
             txs: Sequence[Tuple[Tx, bytes]],
             is_unspendable: Callable[[bytes], bool],
     ):
+        # Clear the cache just in case there are old values cached for a mint that are stale
+        # In particular for $realm and $ticker values if something changed on reorg
+        self.atomicals_id_cache.cache_clear()
         # Prevout values, in order down the block (coinbase first if present)
         # undo_info is in reverse block order
         undo_info = self.db.read_undo_info(self.height)
@@ -516,11 +1430,64 @@ class BlockProcessor:
                              f'{self.height:,d}')
         n = len(undo_info)
 
+        ############################################
+        #
+        # Begin Atomicals Undo Procedure Setup
+        #
+        ############################################
+        atomicals_undo_info = self.db.read_atomicals_undo_info(self.height)
+        if atomicals_undo_info is None:
+            raise ChainError(f'no atomicals undo information found for height '
+                             f'{self.height:,d}')
+        m = len(atomicals_undo_info)
+        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8 + 1 # final byte is the is_sealed flag
+        atomicals_count = m / atomicals_undo_entry_len
+        has_undo_info_for_atomicals = False
+        if m > 0:
+            has_undo_info_for_atomicals = True
+        c = m
+        atomicals_undo_info_map = {} # Build a map of atomicals location to atomicals located there
+        counted_atomicals_count = 0
+        while c > 0:
+            c -= atomicals_undo_entry_len
+            assert(c >= 0)
+            atomicals_undo_item = atomicals_undo_info[c : c + atomicals_undo_entry_len]
+            atomicals_location = atomicals_undo_item[: ATOMICAL_ID_LEN]
+            atomicals_atomical_id = atomicals_undo_item[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+            atomicals_value = atomicals_undo_item[ATOMICAL_ID_LEN + ATOMICAL_ID_LEN :]
+            # There can be many atomicals at the same location
+            # Group them by the location
+            if atomicals_undo_info_map.get(atomicals_location, None) == None:
+                atomicals_undo_info_map[atomicals_location] = []
+            atomicals_undo_info_map[atomicals_location].append({ 
+                location: atomicals_location,
+                atomical_id: atomicals_atomical_id,
+                value: atomicals_value
+            })
+            counted_atomicals_count += 1
+        assert(counted_atomicals_count == atomicals_count)
+        ############################################
+        #
+        # Finished Atomicals Undo Procedure Setup
+        #
+        # The atomicals_undo_info_map contains the mapping of the atomicals at each location and their value
+        # It is a way to get the total input value grouped by atomical id
+        #
+        ############################################
+
         # Use local vars for speed in the loops
         put_utxo = self.utxo_cache.__setitem__
         spend_utxo = self.spend_utxo
+        
+        put_general_data = self.general_data_cache.__setitem__
+  
         touched = self.touched
         undo_entry_len = HASHX_LEN + TXNUM_LEN + 8
+
+        tx_num = self.tx_count
+        tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
+        atomical_num = self.atomical_count
+        atomicals_minted = 0
 
         for tx, tx_hash in reversed(txs):
             for idx, txout in enumerate(tx.outputs):
@@ -528,11 +1495,31 @@ class BlockProcessor:
                 # outputs - we didn't save those in the first place.
                 if is_unspendable(txout.pk_script):
                     continue
-
                 # Get the hashX
                 cache_value = spend_utxo(tx_hash, idx)
                 hashX = cache_value[:HASHX_LEN]
+                txout_value = cache_value[:-8] 
                 touched.add(hashX)
+                # Rollback the atomicals that were created at the output
+                hashXs_spent = self.rollback_spend_atomicals(tx_hash, idx, tx, tx_numb)
+                for hashX_spent in hashXs_spent:
+                    touched.add(hashX_spent)
+
+             # Delete the tx hash number
+            self.db_deletes.append(b'tx' + tx_hash)
+
+            # Backup any Atomicals NFT, FT, or DFT mints
+            operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
+            was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, operations_found_at_inputs)
+            if was_mint_found:
+                atomical_num -= 1
+                atomicals_minted += 1
+            
+            # Rollback any subrealm payments
+            self.check_subrealm_payment_output(tx, height, True)
+
+            # If there were any distributed mint creation, then delete
+            self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
 
             # Restore the inputs
             for txin in reversed(tx.inputs):
@@ -544,8 +1531,22 @@ class BlockProcessor:
                 hashX = undo_item[:HASHX_LEN]
                 touched.add(hashX)
 
+                # Restore the atomicals utxos in the undo information
+                potential_atomicals_list_to_restore = atomicals_undo_info_map.get(txin.prev_hash + pack_le_uint32(txin.prev_idx), None)
+                if potential_atomicals_list_to_restore != None:
+                    for atomical_to_restore in potential_atomicals_list_to_restore:
+                        self.put_atomicals_utxo(atomical_to_restore['location'], atomical_to_restore['atomical_id'], atomical_to_restore['value'])
+                        touched.add(double_sha256(atomical_to_restore['atomical_id']))
+            
+            tx_num -= 1
+
         assert n == 0
+        assert m == 0
+
         self.tx_count -= len(txs)
+        self.atomical_count -= atomicals_minted
+        # Sanity checks...
+        assert(atomical_num == atomical_count)
 
     '''An in-memory UTXO cache, representing all changes to UTXO state
     since the last DB flush.
@@ -679,6 +1680,7 @@ class BlockProcessor:
         self.height = self.db.db_height
         self.tip = self.db.db_tip
         self.tx_count = self.db.db_tx_count
+        self.atomical_count = self.db.db_atomical_count
 
     # --- External API
 
