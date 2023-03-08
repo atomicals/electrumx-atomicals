@@ -3,3 +3,5 @@ attrs
 plyvel
 pylru
 aiohttp>=3.3,<4
+cbor2
+websockets
