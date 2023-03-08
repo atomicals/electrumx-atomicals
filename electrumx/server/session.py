@@ -30,13 +30,16 @@ from aiorpcx import (Event, JSONRPCAutoDetect, JSONRPCConnection,
 
 import electrumx
 import electrumx.lib.util as util
-from electrumx.lib.util import OldTaskGroup
+from electrumx.lib.util import OldTaskGroup, unpack_le_uint64
+from electrumx.lib.util_atomicals import compact_to_atomical_id_bytes, atomical_id_bytes_to_compact
 from electrumx.lib.hash import (HASHX_LEN, Base58Error, hash_to_hex_str,
-                                hex_str_to_hash, sha256)
+                                hex_str_to_hash, sha256, double_sha256)
 from electrumx.lib.merkle import MerkleCache
 from electrumx.lib.text import sessions_lines
 from electrumx.server.daemon import DaemonError
 from electrumx.server.peers import PeerManager
+
+from aiohttp import web
 
 if TYPE_CHECKING:
     from electrumx.server.db import DB
@@ -72,13 +75,11 @@ def non_negative_integer(value):
     raise RPCError(BAD_REQUEST,
                    f'{value} should be a non-negative integer')
 
-
 def assert_boolean(value):
     '''Return param value it is boolean otherwise raise an RPCError.'''
     if value in (False, True):
         return value
     raise RPCError(BAD_REQUEST, f'{value} should be a boolean value')
-
 
 def assert_tx_hash(value):
     '''Raise an RPCError if the value is not a valid hexadecimal transaction hash.
@@ -93,6 +94,38 @@ def assert_tx_hash(value):
         pass
     raise RPCError(BAD_REQUEST, f'{value} should be a transaction hash')
 
+def assert_atomical_id(value):
+    '''Raise an RPCError if the value is not a valid atomical id
+    If it is valid, return it as 32-byte binary hash.
+    '''
+    try:
+        if value == None or value == "":
+            raise RPCError(BAD_REQUEST, f'atomical_id required')
+        index_of_i = value.find("i")
+        if index_of_i != 64: 
+            raise RPCError(BAD_REQUEST, f'{value} should be an atomical_id')
+        raw_hash = hex_str_to_hash(value[ : 64])
+        if len(raw_hash) == 32:
+            return raw_hash
+    except (ValueError, TypeError):
+        pass
+
+    raise RPCError(BAD_REQUEST, f'{value} should be an atomical_id')
+
+def is_compact_atomical_id(value):
+    '''Whether this is a compact atomical id or not
+    '''
+    if isinstance(value, int):
+        return False
+    if value == None or value == "":
+        return False
+    index_of_i = value.find("i")
+    if index_of_i != 64: 
+        return False
+    raw_hash = hex_str_to_hash(value[ : 64])
+    if len(raw_hash) == 32:
+        return True
+    return False
 
 @attr.s(slots=True)
 class SessionGroup:
@@ -178,6 +211,13 @@ class SessionManager:
             self._sslc.load_cert_chain(self.env.ssl_certfile, keyfile=self.env.ssl_keyfile)
         return self._sslc
 
+    async def handle_fileserve(self, request):
+        atomical_id = request.match_info.get('atomical_id', "Anonymous")
+        name = request.match_info.get('name', "Anonymous")
+        text = "Hello, " + name + atomical_id 
+        file_data = self.db.get_file_by_atomical_id_and_name(atomical_id, name)
+        return web.Response(body=file_data['body'], content_type=file_data['content_type'])
+
     async def _start_servers(self, services):
         for service in services:
             kind = service.protocol.upper()
@@ -204,6 +244,11 @@ class SessionManager:
                 self.logger.error(f'{kind} server failed to listen on {service.address}: {e}')
             else:
                 self.logger.info(f'{kind} server listening on {service.address}')
+
+        loop = asyncio.get_event_loop()
+        app = web.Application()
+        app.add_routes([web.get('/atomicals/{atomical_id}/mint/{name}', self.handle_fileserve)])
+        # await web.run_app(app)
 
     async def _start_external_servers(self):
         '''Start listening on TCP and SSL ports, but only if the respective
@@ -1170,6 +1215,151 @@ class ElectrumX(SessionBase):
                 for utxo in utxos
                 if (utxo.tx_hash, utxo.tx_pos) not in spends]
 
+    async def hashX_listscripthash_atomicals(self, hashX):
+        '''Return the list of Atomicals UTXOs of a script hash, including mempool
+        effects.'''
+        atomicals_utxos = await self.db.all_atomicals_utxos(hashX)
+        atomicals_utxos = sorted(atomicals_utxos)
+        atomicals_utxos.extend(await self.mempool.unordered_atomicals_UTXOs(hashX))
+        self.bump_cost(1.0 + len(atomicals_utxos) / 50)
+        spends = await self.mempool.potential_atomicals_spends(hashX)
+        return [{'txid': hash_to_hex_str(atomicals_utxo.tx_hash),
+                 'outputIndex': atomicals_utxo.tx_pos,
+                 'vout': atomicals_utxo.tx_pos,
+                 'height': atomicals_utxo.height, 
+                 'value': atomicals_utxo.value,
+                 'atomical_id': atomical_id_bytes_to_compact(atomicals_utxo.atomical_id)}
+                for atomicals_utxo in atomicals_utxos
+                if (atomicals_utxo.tx_hash, atomicals_utxo.tx_pos) not in spends]
+
+    async def get_atomical_id_by_atomical_number(self, atomical_number):
+        return await self.db.get_atomical_id_by_atomical_number(atomical_number)
+
+    async def atomical_id_get(self, compact_atomical_id):
+        '''Return the list of UTXOs of a script hash, including mempool
+        effects.'''
+        atomical_id = compact_to_atomical_id_bytes(compact_atomical_id)
+        atomical = await self.db.get_by_atomical_id(atomical_id)
+        confirmed = 0
+        # todo: Return atomical number here if confirmed
+        if atomical == None:
+            # Check mempool
+            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
+            if atomical_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+            
+            atomical = atomical_in_mempool
+            # atomical['location_info']['atomicals_at_location'] = await self.atomicals_at_location(compact_atomical_id) # Must query to get other ones at the output, just in case
+        else:
+            confirmed = 1    
+
+        blockheader = ''
+        spv = {}
+        if atomical['mint_info'].get('blockheader') != None:
+            blockheader = atomical['mint_info']['blockheader']
+            spv = await self.transaction_merkle(atomical['mint_info']['txid'], atomical['mint_info']['height'])
+
+        blockhash = ''
+        if atomical['mint_info'].get('blockhash') != None:
+            blockhash = atomical['mint_info']['blockhash']
+        
+        height = 0
+        if atomical['mint_info'].get('height') != None:
+            height = atomical['mint_info']['height']
+
+        status_info = {'atomical_id': compact_atomical_id,
+            'atomical_number': atomical['atomical_number'],
+            'location_info': {
+                'location': atomical['location_info']['location'],
+                'txid': atomical['location_info']['txid'],
+                'index': atomical['location_info']['index'],
+                'scripthash': atomical['location_info']['scripthash'],
+                'value': atomical['location_info']['value'],
+                'script': atomical['location_info']['script'],
+                'atomicals_at_location': atomical['location_info']['atomicals_at_location'],
+            },
+            'mint_info': {
+                'txid': atomical['mint_info']['txid'],
+                'input_index': atomical['mint_info']['input_index'], 
+                'index': atomical['mint_info']['index'],
+                'blockheader': blockheader,
+                'blockhash': blockhash,
+                'height': height,
+                'merkle': spv,
+                'scripthash': atomical['mint_info']['scripthash'],
+                'script': atomical['mint_info']['script'],
+                'value': atomical['mint_info']['value'],
+                'data': atomical['mint_info']['data'],
+            }}
+
+        return status_info
+
+    async def atomical_id_get_state(self, compact_atomical_id):
+        '''Return the list of UTXOs of a script hash, including mempool
+        effects.'''
+        atomical_id = compact_to_atomical_id_bytes(compact_atomical_id)
+        atomical = await self.db.get_by_atomical_id(atomical_id)
+        confirmed = 0
+        # todo: Return atomical number here if confirmed
+        if atomical == None:
+            # Check mempool
+            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
+            if atomical_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+            
+            atomical = atomical_in_mempool
+        else:
+            confirmed = 1    
+
+        status_info = {'atomical_id': compact_atomical_id,
+            'atomical_number': atomical['atomical_number'],
+            'location_info': {
+                'location': atomical['location_info']['location'],
+                'txid': atomical['location_info']['txid'],
+                'index': atomical['location_info']['index'],
+                'scripthash': atomical['location_info']['scripthash'],
+                'value': atomical['location_info']['value'],
+                'script': atomical['location_info']['script'],
+                'atomicals_at_location': atomical['location_info']['atomicals_at_location'],
+            },
+            'state_info': atomical['state_info']}
+
+        return status_info
+
+    async def atomical_id_get_mint_data(self, compact_atomical_id):
+        '''Return the list of UTXOs of a script hash, including mempool
+        effects.'''
+        atomical_id = compact_to_atomical_id_bytes(compact_atomical_id)
+        data_payload = await self.db.get_data_by_atomical_id(atomical_id)
+        if data_payload == None:
+            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
+            if atomical_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+            return atomical_in_mempool['mint_info']['data']
+        return data_payload
+
+    async def atomical_get_txs(self, txids):
+        if len(txids) > 20:
+            raise RPCError(BAD_REQUEST, f'"too many txids > {len(txids)} max per request is 20')
+        return await self.db.get_atomical_txs(txids)
+
+    async def get_atomicals_summary_info(self):
+        return {
+            'coin': self.env.coin.__name__,
+            'network': self.coin.NET,
+            'height': self.db.db_height,
+            'tip': hash_to_hex_str(self.db.db_tip),
+            'atomical_count': self.db.db_atomical_count,
+        }
+
+    async def atomicals_list_get(self, limit, offset, asc, verbose=False):
+        atomicals = await self.db.get_atomicals_list(limit, offset, asc)
+        atomicals_populated = []
+        for atomical_id in atomicals: 
+            atomical = await self.atomical_id_get(atomical_id_bytes_to_compact(atomical_id), verbose)
+            atomicals_populated.append(atomical)
+        return {'global': await self.get_atomicals_summary_info(), 'result': atomicals_populated }
+
     async def hashX_subscribe(self, hashX, alias):
         # Store the subscription only after address_status succeeds
         result = await self.address_status(hashX)
@@ -1205,6 +1395,49 @@ class ElectrumX(SessionBase):
         conf = [{'tx_hash': hash_to_hex_str(tx_hash), 'height': height}
                 for tx_hash, height in history]
         return conf + await self.unconfirmed_history(hashX)
+
+    async def atomicals_listscripthash(self, scripthash):
+        '''Return the list of Atomical UTXOs for an address'''
+        hashX = scripthash_to_hashX(scripthash)
+        return await self.hashX_listscripthash_atomicals(hashX)
+
+    async def atomicals_list(self, offset, limit, asc, verbose=False):
+        '''Return the list of atomicals order by reverse atomical number'''
+        return await self.atomicals_list_get(offset, limit, asc, verbose)
+
+    async def atomicals_get(self, compact_atomical_id_or_atomical_number, verbose=False):
+        '''Return the status of an Atomical```
+        atomical_id: the mint transaction hash + 'i'<index> of the atomical id
+        verbose: to determine whether to print extended information
+        '''
+        compact_atomical_id = compact_atomical_id_or_atomical_number
+        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
+            assert_atomical_id(compact_atomical_id)
+        else:
+            compact_atomical_id = atomical_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
+        if verbose not in (True, False):
+            raise RPCError(BAD_REQUEST, '"verbose" must be a boolean')
+        return {'global': await self.get_atomicals_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id, verbose)} 
+
+    async def atomicals_get_mint_data(self, compact_atomical_id_or_atomical_number):
+        '''Return the data of an Atomical```
+        atomical_id: the mint transaction hash + 'i'<index> of the atomical id
+        '''
+        compact_atomical_id = compact_atomical_id_or_atomical_number
+        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
+            assert_atomical_id(compact_atomical_id)
+        else:
+            compact_atomical_id = atomical_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
+
+        return await self.atomical_id_get_mint_data(compact_atomical_id) 
+
+    async def atomicals_at_location(self, compact_location_id):
+        '''Return the Atomicals at a specific location id```
+        '''
+        return self.db.get_atomicals_by_location(compact_to_atomical_id_bytes(compact_location_id))
+
+    async def atomicals_get_tx(self, txids):
+        return await self.atomical_get_tx(txids)
 
     async def scripthash_get_history(self, scripthash):
         '''Return the confirmed and unconfirmed history of a scripthash.'''
@@ -1539,6 +1772,13 @@ class ElectrumX(SessionBase):
             'blockchain.scripthash.get_mempool': self.scripthash_get_mempool,
             'blockchain.scripthash.listunspent': self.scripthash_listunspent,
             'blockchain.scripthash.subscribe': self.scripthash_subscribe,
+            'blockchain.atomicals.listscripthash': self.atomicals_listscripthash,
+            'blockchain.atomicals.list': self.atomicals_list,
+            'blockchain.atomicals.at_location': self.atomicals_at_location,
+            'blockchain.atomicals.get': self.atomicals_get,
+            'blockchain.atomicals.get_state': self.atomicals_get_state,
+            'blockchain.atomicals.get_mint_data': self.atomicals_get_mint_data,
+            'blockchain.transaction.get_txs': self.atomical_get_txs,
             'blockchain.transaction.broadcast': self.transaction_broadcast,
             'blockchain.transaction.get': self.transaction_get,
             'blockchain.transaction.get_merkle': self.transaction_merkle,

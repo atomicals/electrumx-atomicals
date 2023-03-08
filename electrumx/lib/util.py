@@ -317,6 +317,7 @@ struct_le_q = Struct('<q')
 struct_le_H = Struct('<H')
 struct_le_I = Struct('<I')
 struct_le_Q = Struct('<Q')
+struct_be_Q = Struct('>Q')
 struct_be_H = Struct('>H')
 struct_be_I = Struct('>I')
 structB = Struct('B')
@@ -331,6 +332,7 @@ unpack_be_uint32_from = struct_be_I.unpack_from
 
 unpack_le_uint32 = struct_le_I.unpack
 unpack_le_uint64 = struct_le_Q.unpack
+unpack_be_uint64 = struct_be_Q.unpack
 unpack_be_uint32 = struct_be_I.unpack
 
 pack_le_int32 = struct_le_i.pack
@@ -338,6 +340,7 @@ pack_le_int64 = struct_le_q.pack
 pack_le_uint16 = struct_le_H.pack
 pack_le_uint32 = struct_le_I.pack
 pack_le_uint64 = struct_le_Q.pack
+pack_be_uint64 = struct_be_Q.pack
 pack_be_uint16 = struct_be_H.pack
 pack_be_uint32 = struct_be_I.pack
 pack_byte = structB.pack

@@ -22,18 +22,23 @@ import attr
 from aiorpcx import run_in_thread, sleep
 
 import electrumx.lib.util as util
-from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN
+from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 from electrumx.lib.merkle import Merkle, MerkleCache
 from electrumx.lib.util import (
-    formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_le_uint32,
-    unpack_le_uint32, unpack_be_uint32, unpack_le_uint64
+    formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
+    unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
+from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, atomical_id_bytes_to_compact, decode_op_byte
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
+
+import pickle
 
 if TYPE_CHECKING:
     from electrumx.server.env import Env
 
+ATOMICAL_ID_LEN = 36
+SCRIPTHASH_LEN = 32
 
 @dataclass(order=True)
 class UTXO:
@@ -44,22 +49,34 @@ class UTXO:
     height: int      # block height
     value: int       # in satoshis
 
-
+@dataclass(order=True)
+class ATOMICALUTXO:
+    __slots__ =  'tx_num', 'tx_pos', 'tx_hash', 'height', 'value', 'atomical_id'
+    tx_num: int      # index of tx in chain order
+    tx_pos: int      # tx output idx
+    tx_hash: bytes   # txid
+    height: int      # block height
+    value: int       # in satoshis
+    atomical_id: bytes  # atomical_id
+ 
 @attr.s(slots=True)
 class FlushData:
+    
     height = attr.ib()
-    tx_count = attr.ib()
+    tx_count = attr.ib() 
+    atomical_count = attr.ib() 
     headers = attr.ib()
     block_tx_hashes = attr.ib()
     # The following are flushed to the UTXO DB if undo_infos is not None
     undo_infos = attr.ib()  # type: List[Tuple[Sequence[bytes], int]]
+    atomicals_undo_infos = attr.ib()  # type: List[Tuple[Sequence[bytes], int]]
     adds = attr.ib()  # type: Dict[bytes, bytes]  # txid+out_idx -> hashX+tx_num+value_sats
-    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys
+    atomicals_adds = attr.ib()  # type: Dict[bytes, bytes]  # txid+out_idx + txid+out_idx -> hashX + scripthash + value_sats
+    atomicals_idempotent_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
+    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and b'i' and b'k' db keys
     tip = attr.ib()
 
-
 COMP_TXID_LEN = 4
-
 
 class DB:
     '''Simple wrapper of the backend database for querying.
@@ -93,7 +110,6 @@ class DB:
 
         self.db_class = db_class(self.env.db_engine)
         self.history = History()
-
         # Key: b'u' + address_hashX + txout_idx + tx_num
         # Value: the UTXO value as a 64-bit unsigned integer (in satoshis)
         # "at address, at outpoint, there is a UTXO of value v"
@@ -105,17 +121,67 @@ class DB:
         # Key: b'U' + block_height
         # Value: byte-concat list of (hashX + tx_num + value_sats)
         # "undo data: list of UTXOs spent at block height"
-        self.utxo_db = None
+        # ---
+        # Key: b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
+        # Value: hashX + scripthash + value_sats
+        # "maps an outpoint location to a list of atomical_ids (mint_tx_hash + mint_txout_idx) and their hashX, scripthash and value"
+        # ---
+        # Key: b'k' + address_hashX + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx + tx_num
+        # Value: the UTXO value as a 64-bit unsigned integer (in satoshis)
+        # "at address, at outpoint, there is an atomical UTXO of value v"
+        # ---
+        # Key: b'L' + block_height
+        # Value: byte-concat list of (tx_hash + txout_idx + mint_tx_hash + mint_txout_idx + hashX + scripthash + value_sats)
+        # "undo data: list of atomicals UTXOs spent at block height"
+        # ---
+        # Key: b't' + tx_hash
+        # Value: rawtx
+        # "maps a tx_hash to a rawtx, used by Atomicals for mint and transfer storage"
+        # ---
+        # Key: b'md' + atomical_id
+        # Value: mint data serialized.
+        # "maps atomical_id to mint data { content_type, content_length, body } "
+        # ---
+        # Key: b'mb' + atomical_id
+        # Value: mint block data serialized.
+        # "maps atomical_id to mint block data: atomical_number + header + to_le_uint32(height)"
+        # ---
+        # Key: b'mi' + atomical_id
+        # Value: mint info serialized.
+        # "maps atomical_id to mint info data: input_index + scripthash + value_sats + txout.pk_script)"
+        # ---
+        # Key: b'n' + atomical_number (8 bytes integer)
+        # Value: Atomical_id
+        # "maps atomical number to an atomical id"
+        # ---
+        # Key: b'a' + atomical_id
+        # Value: tx_hash + txout_idx + scripthash + value_sats + txout.pk_script
+        # "maps an atomical_id to a location and details"
+        # ---
+        # Key: b's' + atomical_id + tx_num + op [ + field_name ]
+        # Value: maps the atomical, transaction number and operation to state transition info such as { content_type, content_length, body, location } | { deleted } | { input_index, output_index}
+        # In the event that the op is a plain transfer b't', then there is no field name
+        # Every tranfer will have a b't' or b'x' record along with any optional b'd', b'u' updates
+        # "maps maps the atomical, transaction number and operation to state transition info to delete, update, extract, mint, transfer data"
+        # ---
+        # Key: b'z' + tx_hash + tx_out_idx
+        # Value: pk_script output
+        # "maps location to a script. Useful for deducing what address stores the Atomical"
 
+        self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
         self.fs_tx_count = 0
+        self.fs_atomical_count = 0
         self.db_height = -1
         self.db_tx_count = 0
+        self.db_atomical_count = 0
         self.db_tip = None  # type: Optional[bytes]
         self.tx_counts = None
+        self.atomical_counts = None
         self.last_flush = time.time()
         self.last_flush_tx_count = 0
+        self.last_flush_atomical_count = 0
         self.wall_time = 0
         self.first_sync = True
         self.db_version = -1
@@ -130,6 +196,8 @@ class DB:
         self.headers_file = util.LogicalFile('meta/headers', 2, 16000000)
         # on-disk: cumulative number of txs at the end of height N
         self.tx_counts_file = util.LogicalFile('meta/txcounts', 2, 2000000)
+        # on-disk: cumulative number of atomicals counts at the end of height N
+        self.atomical_counts_file = util.LogicalFile('meta/atomicalscounts', 2, 2000000)
         # on-disk: 32 byte txids in chain order, allows (tx_num -> txid) map
         self.hashes_file = util.LogicalFile('meta/hashes', 4, 16000000)
         if not self.coin.STATIC_BLOCK_HEADERS:
@@ -149,6 +217,20 @@ class DB:
             assert self.db_tx_count == self.tx_counts[-1]
         else:
             assert self.db_tx_count == 0
+    
+    async def _read_atomical_counts(self):
+        if self.atomical_counts is not None:
+            return
+        # tx_counts[N] has the cumulative number of txs at the end of
+        # height N.  So tx_counts[0] is 1 - the genesis coinbase
+        size = (self.db_height + 1) * 8
+        atomical_counts = self.atomical_counts_file.read(0, size)
+        assert len(atomical_counts) == size
+        self.atomical_counts = array('Q', atomical_counts)
+        if self.atomical_counts:
+            assert self.db_atomical_count == self.atomical_counts[-1]
+        else:
+            assert self.db_atomical_count == 0
 
     async def _open_dbs(self, for_sync: bool, compacting: bool):
         assert self.utxo_db is None
@@ -174,8 +256,13 @@ class DB:
                                                      compacting)
         self.clear_excess_undo_info()
 
+        self.clear_excess_atomicals_undo_info()
+
         # Read TX counts (requires meta directory)
         await self._read_tx_counts()
+
+        # Read Atomicals number counts (requires meta directory)
+        await self._read_atomical_counts()
 
     async def open_for_compacting(self):
         await self._open_dbs(True, True)
@@ -217,13 +304,17 @@ class DB:
     def assert_flushed(self, flush_data):
         '''Asserts state is fully flushed.'''
         assert flush_data.tx_count == self.fs_tx_count == self.db_tx_count
+        assert flush_data.atomical_count == self.fs_atomical_count == self.db_atomical_count
         assert flush_data.height == self.fs_height == self.db_height
         assert flush_data.tip == self.db_tip
         assert not flush_data.headers
         assert not flush_data.block_tx_hashes
         assert not flush_data.adds
+        assert not flush_data.atomicals_adds
         assert not flush_data.deletes
         assert not flush_data.undo_infos
+        assert not flush_data.atomicals_undo_infos
+        assert not flush_data.atomicals_idempotent_adds
         self.history.assert_flushed()
 
     def flush_dbs(self, flush_data, flush_utxos, estimate_txs_remaining):
@@ -236,6 +327,7 @@ class DB:
         start_time = time.time()
         prior_flush = self.last_flush
         tx_delta = flush_data.tx_count - self.last_flush_tx_count
+        atomical_delta = flush_data.atomical_count - self.last_flush_atomical_count
 
         # Flush to file system
         self.flush_fs(flush_data)
@@ -256,7 +348,8 @@ class DB:
         elapsed = self.last_flush - start_time
         self.logger.info(f'flush #{self.history.flush_count:,d} took '
                          f'{elapsed:.1f}s.  Height {flush_data.height:,d} '
-                         f'txs: {flush_data.tx_count:,d} ({tx_delta:+,d})')
+                         f'txs: {flush_data.tx_count:,d} ({tx_delta:+,d}) '
+                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d})')
 
         # Catch-up stats
         if self.utxo_db.for_sync:
@@ -299,11 +392,17 @@ class DB:
         offset = height_start * self.tx_counts.itemsize
         self.tx_counts_file.write(offset,
                                   self.tx_counts[height_start:].tobytes())
+
+        atomical_offset = height_start * self.atomical_counts.itemsize
+        self.atomical_counts_file.write(atomical_offset,
+                                  self.atomical_counts[height_start:].tobytes())
+
         offset = prior_tx_count * 32
         self.hashes_file.write(offset, hashes)
 
         self.fs_height = flush_data.height
         self.fs_tx_count = flush_data.tx_count
+        self.fs_atomical_count = flush_data.atomical_count
 
         if self.utxo_db.for_sync:
             elapsed = time.monotonic() - start_time
@@ -319,13 +418,30 @@ class DB:
         # may be in the DB already.
         start_time = time.monotonic()
         add_count = len(flush_data.adds)
+
+        atomical_add_count = 0
+        for location_key, atomical_map in flush_data.atomicals_adds.items():
+            for atomical_id, value in atomical_map.items():
+                atomical_add_count = atomical_add_count + 1
+
         spend_count = len(flush_data.deletes) // 2
 
         # Spends
         batch_delete = batch.delete
+        # for key in sorted(flush_data.deletes):
+        #     batch_delete(key)
+
         for key in sorted(flush_data.deletes):
             batch_delete(key)
+
         flush_data.deletes.clear()
+
+        # New transactions and atomicals mint data
+        batch_put = batch.put
+        for key, v in flush_data.atomicals_idempotent_adds.items():
+            batch_put(key, v)
+
+        flush_data.atomicals_idempotent_adds.clear()
 
         # New UTXOs
         batch_put = batch.put
@@ -340,22 +456,45 @@ class DB:
             batch_put(b'u' + hashX + suffix, value_sats)
         flush_data.adds.clear()
 
+        # New atomicals UTXOs
+        batch_put = batch.put
+
+        for location_key, atomical_map in flush_data.atomicals_adds.items():
+            for atomical_id, value in atomical_map.items():
+                print("new atomicals created")
+                print(atomical_id)
+                # Key: 'i' + tx_hash + txout_idx + atomical_id, hashX + scripthash + value_sats
+                hashX = value[:HASHX_LEN]
+                scripthash = value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]
+                value_sats = value[HASHX_LEN + SCRIPTHASH_LEN: HASHX_LEN + SCRIPTHASH_LEN + 8]
+                tx_num = value[HASHX_LEN + SCRIPTHASH_LEN + 8: HASHX_LEN + SCRIPTHASH_LEN + 8 + TXNUM_LEN]
+                batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats)
+                batch_put(b'k' + hashX + location_key + atomical_id + tx_num, value_sats)
+
+        flush_data.atomicals_adds.clear()
+
         # New undo information
         self.flush_undo_infos(batch_put, flush_data.undo_infos)
         flush_data.undo_infos.clear()
 
+        self.flush_atomicals_undo_infos(batch_put, flush_data.atomicals_undo_infos)
+        flush_data.atomicals_undo_infos.clear()
+
         if self.utxo_db.for_sync:
             block_count = flush_data.height - self.db_height
             tx_count = flush_data.tx_count - self.db_tx_count
+            atomical_count = flush_data.atomical_count - self.db_atomical_count
             elapsed = time.monotonic() - start_time
             self.logger.info(f'flushed {block_count:,d} blocks with '
                              f'{tx_count:,d} txs, {add_count:,d} UTXO adds, '
+                             f'{atomical_count:,d} Atomical txs, {atomical_add_count:,d} Atomical UTXO adds, '
                              f'{spend_count:,d} spends in '
                              f'{elapsed:.1f}s, committing...')
 
         self.utxo_flush_count = self.history.flush_count
         self.db_height = flush_data.height
         self.db_tx_count = flush_data.tx_count
+        self.db_atomical_count = flush_data.atomical_count
         self.db_tip = flush_data.tip
 
     def flush_state(self, batch):
@@ -364,6 +503,7 @@ class DB:
         self.wall_time += now - self.last_flush
         self.last_flush = now
         self.last_flush_tx_count = self.fs_tx_count
+        self.last_flush_atomical_count = self.fs_atomical_count
         self.write_utxo_state(batch)
 
     def flush_backup(self, flush_data, touched):
@@ -375,18 +515,21 @@ class DB:
 
         start_time = time.time()
         tx_delta = flush_data.tx_count - self.last_flush_tx_count
+        atomical_delta = flush_data.atomical_count - self.last_flush_atomical_count
 
-        self.backup_fs(flush_data.height, flush_data.tx_count)
+        self.backup_fs(flush_data.height, flush_data.tx_count, flush_data.atomical_count)
+        # Do not need to do anything with atomical_count for history.backup
         self.history.backup(touched, flush_data.tx_count)
         with self.utxo_db.write_batch() as batch:
             self.flush_utxo_db(batch, flush_data)
             # Flush state last as it reads the wall time.
             self.flush_state(batch)
-
+            
         elapsed = self.last_flush - start_time
         self.logger.info(f'backup flush #{self.history.flush_count:,d} took '
                          f'{elapsed:.1f}s.  Height {flush_data.height:,d} '
-                         f'txs: {flush_data.tx_count:,d} ({tx_delta:+,d})')
+                         f'txs: {flush_data.tx_count:,d}'  f'({tx_delta:+,d}) ' 
+                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d})')
 
     def fs_update_header_offsets(self, offset_start, height_start, headers):
         if self.coin.STATIC_BLOCK_HEADERS:
@@ -410,10 +553,11 @@ class DB:
         return self.dynamic_header_offset(height + 1)\
                - self.dynamic_header_offset(height)
 
-    def backup_fs(self, height, tx_count):
+    def backup_fs(self, height, tx_count, atomical_count):
         '''Back up during a reorg.  This just updates our pointers.'''
         self.fs_height = height
         self.fs_tx_count = tx_count
+        self.fs_atomical_count = atomical_count
         # Truncate header_mc: header count is 1 more than the height.
         self.header_mc.truncate(height + 1)
 
@@ -522,9 +666,17 @@ class DB:
         '''DB key for undo information at the given height.'''
         return b'U' + pack_be_uint32(height)
 
+    def atomicals_undo_key(self, height: int) -> bytes:
+        '''DB key for atomicals undo information at the given height.'''
+        return b'L' + pack_be_uint32(height)
+
     def read_undo_info(self, height):
         '''Read undo information from a file for the current height.'''
         return self.utxo_db.get(self.undo_key(height))
+
+    def read_atomicals_undo_info(self, height):
+        '''Read atomicals undo information from a file for the current height.'''
+        return self.utxo_db.get(self.atomicals_undo_key(height))
 
     def flush_undo_infos(
             self, batch_put, undo_infos: Sequence[Tuple[Sequence[bytes], int]]
@@ -532,6 +684,13 @@ class DB:
         '''undo_infos is a list of (undo_info, height) pairs.'''
         for undo_info, height in undo_infos:
             batch_put(self.undo_key(height), b''.join(undo_info))
+
+    def flush_atomicals_undo_infos(
+                self, batch_put, atomicals_undo_infos: Sequence[Tuple[Sequence[bytes], Sequence[bytes]]]
+        ):
+        '''undo_infos is a list of (atomicals_undo_info, height) pairs.'''
+        for atomicals_undo_info, height in atomicals_undo_infos:
+            batch_put(self.atomicals_undo_key(height), b''.join(atomicals_undo_info))
 
     def raw_block_prefix(self):
         return 'meta/block'
@@ -586,6 +745,36 @@ class DB:
                     pass
             self.logger.info(f'deleted {len(paths):,d} stale block files')
 
+    def clear_excess_atomicals_undo_info(self):
+        '''Clear excess atomicals undo info.  Only most recent N are kept.'''
+        prefix = b'L'
+        min_height = self.min_undo_height(self.db_height)
+        keys = []
+        for key, _hist in self.utxo_db.iterator(prefix=prefix):
+            height, = unpack_be_uint32(key[-4:])
+            if height >= min_height:
+                break
+            keys.append(key)
+
+        if keys:
+            with self.utxo_db.write_batch() as batch:
+                for key in keys:
+                    batch.delete(key)
+            self.logger.info(f'deleted {len(keys):,d} stale atomicals undo entries')
+
+        # delete old block files
+        prefix = self.raw_block_prefix()
+        paths = [path for path in glob(f'{prefix}[0-9]*')
+                 if len(path) > len(prefix)
+                 and int(path[len(prefix):]) < min_height]
+        if paths:
+            for path in paths:
+                try:
+                    os.remove(path)
+                except FileNotFoundError:
+                    pass
+            self.logger.info(f'deleted {len(paths):,d} stale atomicals block files')
+
     # -- UTXO database
 
     def read_utxo_state(self):
@@ -593,6 +782,7 @@ class DB:
         if not state:
             self.db_height = -1
             self.db_tx_count = 0
+            self.db_atomical_count = 0
             self.db_tip = b'\0' * 32
             self.db_version = max(self.DB_VERSIONS)
             self.utxo_flush_count = 0
@@ -616,6 +806,10 @@ class DB:
                                    f'match coin {self.coin.GENESIS_HASH}')
             self.db_height = state['height']
             self.db_tx_count = state['tx_count']
+            if state.get('atomical_count') == None:
+                self.db_atomical_count = 0
+            else:
+                self.db_atomical_count = state['atomical_count']
             self.db_tip = state['tip']
             self.utxo_flush_count = state['utxo_flush_count']
             self.wall_time = state['wall_time']
@@ -624,6 +818,7 @@ class DB:
         # These are our state as we move ahead of DB state
         self.fs_height = self.db_height
         self.fs_tx_count = self.db_tx_count
+        self.fs_atomical_count = self.db_atomical_count
         self.last_flush_tx_count = self.fs_tx_count
 
         # Upgrade DB
@@ -637,6 +832,7 @@ class DB:
         self.logger.info(f'height: {self.db_height:,d}')
         self.logger.info(f'tip: {hash_to_hex_str(self.db_tip)}')
         self.logger.info(f'tx count: {self.db_tx_count:,d}')
+        self.logger.info(f'atomical count: {self.db_atomical_count:,d}')
         if self.utxo_db.for_sync:
             self.logger.info(f'flushing DB cache at {self.env.cache_MB:,d} MB')
         if self.first_sync:
@@ -734,6 +930,7 @@ class DB:
             'genesis': self.coin.GENESIS_HASH,
             'height': self.db_height,
             'tx_count': self.db_tx_count,
+            'atomical_count': self.db_atomical_count,
             'tip': self.db_tip,
             'utxo_flush_count': self.utxo_flush_count,
             'wall_time': self.wall_time,
@@ -746,6 +943,256 @@ class DB:
         self.utxo_flush_count = count
         with self.utxo_db.write_batch() as batch:
             self.write_utxo_state(batch)
+
+    async def get_atomical_id_by_atomical_number(self, atomical_number):
+        def read_atomical_id():
+            # Get Mint Block data
+            atomical_num_key = b'n' + pack_be_uint64(int(atomical_number))
+            atomical_id_value = self.utxo_db.get(atomical_num_key)
+            if not atomical_id_value:
+                self.logger.error(f'n{atomical_id_value} atomical id not found by atomical number')
+                return None
+            return atomical_id_value
+
+        return await run_in_thread(read_atomical_id)
+
+    def get_atomicals_by_location(self, location): 
+        # Get any other atomicals at the same location
+        atomicals_at_location = []
+        atomicals_at_location_prefix = b'i' + location
+        for location_key, location_result_value in self.utxo_db.iterator(prefix=atomicals_at_location_prefix):
+            atomicals_at_location.append(atomical_id_bytes_to_compact(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]))
+        return atomicals_at_location
+
+    def build_state_data(self, history):
+        state_data_map = {}
+        for item in history:
+            if item['op'] == 'upd':
+                state_data_map[item['field_name']] = item['field_data']
+            elif item['op'] == 'del':
+                del state_data_map[item['field_name']]
+ 
+        return state_data_map
+
+    async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
+        '''Return all UTXOs for an address sorted in no particular order.'''
+
+        def read_atomical():
+            utxos = []
+            utxos_append = utxos.append
+            mint_tx_hash, mint_output_index = get_tx_hash_index_from_atomical_id(atomical_id)
+
+            # Get Mint data
+            atomical_mint_data_key = b'md' + atomical_id
+            db_mint_value = self.utxo_db.get(atomical_mint_data_key)
+            if not db_mint_value:
+                return None
+            
+            # mint_data_definition = pickle.loads(db_mint_value)
+
+            # Get Mint Block data
+            atomical_mint_blockdata_key = b'mb' + atomical_id
+            atomical_mint_blockdata_value = self.utxo_db.get(atomical_mint_blockdata_key)
+            if not atomical_mint_blockdata_value:
+                self.logger.error(f'mb{atomical_id} mint block data not found for get_by_atomical_id')
+                return None
+
+            atomical_number, = unpack_be_uint64(atomical_mint_blockdata_value[ : 8])
+            blockheader = atomical_mint_blockdata_value[ 8 : 88]
+            blockhash = self.coin.header_hash(blockheader)
+            blockheight, = unpack_le_uint32(atomical_mint_blockdata_value[ 88 : ])
+
+            # Get Mint Info
+            atomical_mint_info_key = b'mi' + atomical_id
+            atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
+            if not atomical_mint_info_value:
+                self.logger.error(f'mi{atomical_id} mint info not found for get_by_atomical_id')
+                return None
+
+            mint_input_index, = unpack_le_uint32(atomical_mint_info_value[  : 4])
+            scripthash = atomical_mint_info_value[ 4 : 36 ]
+            mint_value, = unpack_le_uint64(atomical_mint_info_value[ 36 : 44])
+            mint_pkscript = atomical_mint_info_value[  44 : ]
+
+            # Key: b'a' + atomical_id
+            # Value:  
+            atomical_active_location_key = b'a' + atomical_id
+            atomical_active_location_value = self.utxo_db.get(atomical_active_location_key)
+            if not atomical_active_location_value:
+                self.logger.error(f'a{atomical_id} active location not found for get_by_atomical_id')
+                # This can happen if the DB was updated between
+                # getting the hashXs and getting the UTXOs
+                return None
+        
+            # Get the output script to deduce the address
+            location = atomical_active_location_value[:ATOMICAL_ID_LEN]
+            location_tx_hash = atomical_active_location_value[ : 32]
+            atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
+            location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
+            location_value, = unpack_le_uint64(atomical_active_location_value[ATOMICAL_ID_LEN + SCRIPTHASH_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN + 8])
+            
+            # Get the script at the location, stored in another index
+            atomical_output_script_key = b'z' + location
+            atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
+            if not atomical_output_script_value:
+                self.logger.error(f'a{atomical_id} location script not found for get_by_atomical_id')
+                return None
+
+            location_script = atomical_output_script_value
+            atomicals_at_location = self.get_atomicals_by_location(location)
+            #for key, val in data_definition.items():
+            #    if data_definition[key]['content_length'] > 256:
+            #        del data_definition[key]['body']
+            prefix = b's' + atomical_id
+            state_fields = {}
+            state_history = []
+            for db_state_key, db_state_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
+                # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
+                tx_numb = db_state_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + TXNUM_LEN]
+                # Now lookup from the file system and add the padding
+                txnum_padding = bytes(8-TXNUM_LEN)
+                tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
+                state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
+                op = db_state_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1]
+                state_entry = {'tx_num': tx_num_padded, 'height': state_height, 'txid': hash_to_hex_str(state_tx_hash),'op': decode_op_byte(op)}
+                state_data = {}
+                FIELD_START_IDX = 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1
+                field_name = db_state_key[FIELD_START_IDX : ]
+                if state_entry['op'] == 'mint':
+                    state_data = {}
+                elif state_entry['op'] == 'tr':
+                    state_entry['data'] = db_state_value
+                elif state_entry['op'] == 'upd':
+                    state_entry['data'] = db_state_value
+                elif state_entry['op'] == 'del':
+                    state_entry['data'] = db_state_value
+                elif state_entry['op'] == 'ex':
+                    state_entry['data'] = db_state_value
+
+                state_history.append(state_entry)
+            #state_data = self.build_state_data(state_history)
+
+            #The addressing scheme for state file name is:
+            # /atomical_id/mint/filename
+            # /atomical_id/state/filename[/location_id] (if ommitted it defaults to the latest)
+            # => Readers X-LOCATION-ID, X-BLOCKHASH, X-BLOCKHEIGHT, X-ATOMICAL-ID, X-FIELDTYPE={mint/state}, X-INPUT-INDEX, X-TXID
+            atomical = {
+                'atomical_id': atomical_id,
+                'atomical_number': atomical_number,
+                'location_info': {
+                    'location': atomical_id_bytes_to_compact(location),
+                    'txid': hash_to_hex_str(location_tx_hash),
+                    'index': atomical_location_idx,
+                    'scripthash': hash_to_hex_str(location_scripthash),
+                    'scripthash_hex': location_scripthash.hex(),
+                    'value': location_value,
+                    'script': location_script.hex(),
+                    'atomicals_at_location': atomicals_at_location
+                },
+                'mint_info': {
+                    'txid':  hash_to_hex_str(mint_tx_hash),
+                    'input_index': mint_input_index, 
+                    'index': mint_output_index,
+                    'blockheader': blockheader.hex(),
+                    'blockhash': hash_to_hex_str(blockhash),
+                    'height': blockheight,
+                    'scripthash': hash_to_hex_str(scripthash),
+                    'scripthash_hex': scripthash.hex(),
+                    'script': mint_pkscript.hex(),
+                    'value': mint_value,
+                    'data': db_mint_value.hex()
+                },
+                'state_info': {
+                    'history': state_history
+                },
+            }
+            return atomical
+
+        atomical = await run_in_thread(read_atomical)
+        return atomical
+
+    async def get_data_by_atomical_id(self, atomical_id):
+        '''Return all UTXOs for an address sorted in no particular order.'''
+
+        def read_atomical():
+            utxos = []
+            utxos_append = utxos.append
+            mint_tx_hash, mint_output_index = get_tx_hash_index_from_atomical_id(atomical_id)
+            # Get Mint data
+            atomical_mint_data_key = b'md' + atomical_id
+            db_mint_value = self.utxo_db.get(atomical_mint_data_key)
+            if not db_mint_value:
+                return None  
+            return db_mint_value.hex()
+
+        atomical = await run_in_thread(read_atomical)
+        return atomical
+
+    async def get_file_by_atomical_id_and_name(self, atomical_id, name):
+        
+        def read_atomical_file():   
+            atomical_mint_data_key = b'md' + atomical_id
+            atomical_mint_data_value = self.utxo_db.get(atomical_mint_data_key)
+            if not atomical_mint_data_value:
+                return None
+            filemap = pickle.loads(atomical_mint_data_value)
+            return filemap.get(name, None)
+
+        return await run_in_thread(read_atomical_file)
+
+    async def get_atomicals_list(self, limit, offset, asc = False):
+        if limit > 50:
+            limit = 50
+
+        def read_atomical_list():   
+            atomical_ids = []
+            search_starting_at_atomical_number = 0
+            # If no offset provided, then assume we want to start from the highest
+            if offset == None or offset == 0: 
+                prefix = b'n'
+                for atomical_number_key, atomical_id_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
+                    search_starting_at_atomical_number, = unpack_be_uint64(atomical_number_key[ 1 : 1 + 8])
+                    break
+            else:
+                search_starting_at_atomical_number = offset
+            
+            # Generate up to limit number of keys to search
+            list_of_keys = []
+            for x in range(limit):
+                if asc:
+                    current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number + x)
+                    list_of_keys.append(current_key)
+                else:
+                    # Do not go to 0 or below
+                    if search_starting_at_atomical_number - x <= 0:
+                        break 
+                    current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number - x)
+                    list_of_keys.append(current_key)
+
+            # Get all of the atomicals in the order of the keys
+            for search_key in list_of_keys:
+                atomical_id_value = self.utxo_db.get(search_key)
+                if atomical_id_value:
+                    atomical_ids.append(atomical_id_value)
+                else: 
+                    # Once we do not find one, then we are done because there should be no more
+                    break
+            return atomical_ids
+
+        return await run_in_thread(read_atomical_list)
+
+    async def get_atomical_txs(self, txids):
+        def read_txs():
+            rawtxs = []
+            for txid in txids: 
+                tx_key = b't' + txid
+                rawtx_value = self.db.utxo_db.get(tx_key)
+                if rawtx_value:
+                    rawtxs.append(rawtx_value)
+            return rawtxs
+
+        rawtxs = await run_in_thread(read_txs)
+        return rawtxs
 
     async def all_utxos(self, hashX):
         '''Return all UTXOs for an address sorted in no particular order.'''
@@ -769,6 +1216,35 @@ class DB:
             if all(utxo.tx_hash is not None for utxo in utxos):
                 return utxos
             self.logger.warning(f'all_utxos: tx hash not '
+                                f'found (reorg?), retrying...')
+            await sleep(0.25)
+
+    async def all_atomicals_utxos(self, hashX):
+        '''Return all atomicals UTXOs for an address sorted in no particular order.'''
+        def read_atomicals_utxos():
+            atomicals_utxos = []
+            atomicals_append = atomicals_utxos.append
+            txnum_padding = bytes(8-TXNUM_LEN)
+            prefix = b'k' + hashX
+            # # b'k' + address_hashX + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx + tx_num
+            for db_key, db_value in self.utxo_db.iterator(prefix=prefix):
+                txout_idx, = unpack_le_uint32(db_key[ 1 + HASHX_LEN + SCRIPTHASH_LEN: 1 + HASHX_LEN + SCRIPTHASH_LEN + 4])
+                tx_num, = unpack_le_uint64(db_key[-TXNUM_LEN:] + txnum_padding)
+                value, = unpack_le_uint64(db_value)
+                tx_hash, height = self.fs_tx_hash(tx_num)
+                tx_hash_check = db_key[ 1 + HASHX_LEN: 1 + HASHX_LEN + SCRIPTHASH_LEN]
+                assert(tx_hash == tx_hash_check) # Sanity check that the tx_num resolved to the correct tx hash
+                atomical_id = db_key[ 1 + HASHX_LEN + ATOMICAL_ID_LEN: 1 + HASHX_LEN + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+                self.logger.info("atomical_id from all_atomicals_utxo")
+                self.logger.info(atomical_id.hex())
+                atomicals_append(ATOMICALUTXO(tx_num, txout_idx, tx_hash, height, value, atomical_id))
+            return atomicals_utxos
+
+        while True:
+            atomicals_utxos = await run_in_thread(read_atomicals_utxos)
+            if all(atomicals_utxo.tx_hash is not None for atomicals_utxo in atomicals_utxos):
+                return atomicals_utxos
+            self.logger.warning(f'all_atomicals_utxos: tx hash not '
                                 f'found (reorg?), retrying...')
             await sleep(0.25)
 
