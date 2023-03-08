@@ -20,8 +20,11 @@ from aiorpcx import run_in_thread, sleep
 
 from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 from electrumx.lib.tx import SkipTxDeserialize
-from electrumx.lib.util import class_logger, chunks, OldTaskGroup
+from electrumx.lib.util import class_logger, chunks, OldTaskGroup, pack_le_uint32, unpack_le_uint32
 from electrumx.server.db import UTXO
+from electrumx.lib.util_atomicals import get_mint_info_op_factory, check_unpack_field_data, parse_protocols_operations_from_witness_array, location_id_bytes_to_compact
+
+from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -113,6 +116,7 @@ class MemPool:
         self.api = api
         self.logger = class_logger(__name__, self.__class__.__name__)
         self.txs = {}
+        self.atomicals_mints = {}
         self.hashXs = defaultdict(set)  # None can be a key
         self.cached_compact_histogram = []
         self.refresh_secs = refresh_secs
@@ -242,6 +246,15 @@ class MemPool:
 
         return deferred, {prevout: utxo_map[prevout] for prevout in unspent}
 
+    def _accept_atomicals_updates(self, atomicals_map):
+        '''Process any atomicals updates in the mempool
+        '''
+        for atomical_id, datafields in atomicals_map.items():
+            tx_hash = atomical_id[ : 32 ]
+            if self.atomicals_mints.get(tx_hash) == None:
+                self.atomicals_mints[tx_hash] = {}   
+            self.atomicals_mints[tx_hash][atomical_id] = datafields 
+
     async def _refresh_hashes(self, synchronized_event):
         '''Refresh our view of the daemon's mempool.'''
         # Touched accumulates between calls to on_mempool and each
@@ -278,6 +291,8 @@ class MemPool:
         # First handle txs that have disappeared
         for tx_hash in (set(txs) - all_hashes):
             tx = txs.pop(tx_hash)
+            if self.atomicals_mints.get(tx_hash) != None:
+                self.atomicals_mints.pop(tx_hash)
             tx_hashXs = {hashX for hashX, value in tx.in_pairs}
             tx_hashXs.update(hashX for hashX, value in tx.out_pairs)
             for hashX in tx_hashXs:
@@ -318,12 +333,52 @@ class MemPool:
         '''Fetch a list of mempool transactions.'''
         hex_hashes_iter = (hash_to_hex_str(hash) for hash in hashes)
         raw_txs = await self.api.raw_transactions(hex_hashes_iter)
+        script_hashX = self.coin.hashX_from_script
 
         def deserialize_txs():    # This function is pure
             to_hashX = self.coin.hashX_from_script
             deserializer = self.coin.DESERIALIZER
-
             txs = {}
+            atomicals_updates_map = {}
+            def create_atomical_from_definition(operation_found_at_inputs, tx, tx_hash, atomicals_updates_map):
+                if not operation_found_at_inputs:
+                    return 
+                valid_create_op_type, mint_info = get_mint_info_op_factory(script_hashX, tx_hash, tx, operation_found_at_inputs)
+                self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool {hash_to_hex_str(tx_hash)}') 
+                # Lookup the txout will be imprinted with the atomical
+                expected_output_index = 0
+                txout = tx.outputs[expected_output_index]
+                scripthash = double_sha256(txout.pk_script)
+                hashX = script_hashX(txout.pk_script)
+                output_idx_le = pack_le_uint32(expected_output_index) 
+                input_idx_le = pack_le_uint32(0)
+                location = tx_hash + output_idx_le
+                # Establish the atomical_id from the initial location
+                atomical_id = location
+                compact_atomical_id = location_id_bytes_to_compact(atomical_id)
+                atomicals_updates_map[atomical_id] = {
+                    'atomical_id': location_id_bytes_to_compact(atomical_id),
+                    'atomical_number': -1,
+                    'type': mint_type,
+                    'subtype': mint_info['subtype'],
+                    'location_info': [{
+                        'location': location_id_bytes_to_compact(location),
+                        'txid': hash_to_hex_str(tx_hash),
+                        'index': expected_output_index,
+                        'scripthash': hash_to_hex_str(scripthash),
+                        'scripthash_hex': scripthash.hex(),
+                        'value': txout.value,
+                        'script': txout.pk_script.hex(),
+                        'atomicals_at_location': [compact_atomical_id]
+                    }],
+                    'mint_info': mint_info,
+                    'state': {},
+                    'contract': {},
+                    'event': {},
+                    'history': {}
+                }
+                atomicals_updates_map[atomical_id]['mint_info']['fields'] = check_unpack_field_data(operation_found_at_inputs['payload_bytes'])
+ 
             for hash, raw_tx in zip(hashes, raw_txs):
                 # The daemon may have evicted the tx from its
                 # mempool or it may have gotten in a block
@@ -331,6 +386,12 @@ class MemPool:
                     continue
                 try:
                     tx, tx_size = deserializer(raw_tx).read_tx_and_vsize()
+                    try:
+                        operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
+                        create_atomical_from_definition(operations_found_at_inputs, tx, hash, atomicals_updates_map)
+                    except Exception as ex:
+                        self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')
+      
                 except SkipTxDeserialize as ex:
                     self.logger.debug(f'skipping tx {hash_to_hex_str(hash)}: {ex}')
                     continue
@@ -343,10 +404,10 @@ class MemPool:
                                     for txout in tx.outputs)
                 txs[hash] = MemPoolTx(txin_pairs, None, txout_pairs,
                                       0, tx_size)
-            return txs
+            return txs, atomicals_updates_map
 
         # Thread this potentially slow operation so as not to block
-        tx_map = await run_in_thread(deserialize_txs)
+        tx_map, atomicals_updates_map = await run_in_thread(deserialize_txs)
 
         # Determine all prevouts not in the mempool, and fetch the
         # UTXO information from the database.  Failed prevout lookups
@@ -359,6 +420,7 @@ class MemPool:
         utxos = await self.api.lookup_utxos(prevouts)
         utxo_map = {prevout: utxo for prevout, utxo in zip(prevouts, utxos)}
 
+        self._accept_atomicals_updates(atomicals_updates_map)
         return self._accept_transactions(tx_map, utxo_map, touched)
 
     #
@@ -402,6 +464,19 @@ class MemPool:
             result.update(tx.prevouts)
         return result
 
+    async def potential_atomicals_spends(self, hashX):
+        '''stub out and return empty
+        '''
+        return []
+
+    async def get_atomical_mint(self, atomical_id):
+        '''Check if there was an atomical minted in the mempool
+        '''
+        tx_hash = atomical_id[ : 32 ]
+        if self.atomicals_mints.get(tx_hash) != None:
+            return self.atomicals_mints[tx_hash][atomical_id]
+        return None
+
     async def transaction_summaries(self, hashX):
         '''Return a list of MemPoolTxSummary objects for the hashX.'''
         result = []
@@ -425,3 +500,16 @@ class MemPool:
                 if hX == hashX:
                     utxos.append(UTXO(-1, pos, tx_hash, 0, value))
         return utxos
+
+    # Todo, stubbed out for now
+    async def unordered_atomicals_UTXOs(self, hashX):
+        '''Return an unordered list of Atomicals UTXO named tuples from mempool
+        transactions that pay to hashX.
+
+        This does not consider if any other mempool transactions spend
+        the outputs.
+        '''
+        atomicals_utxos = []
+        # todo
+        return atomicals_utxos
+
