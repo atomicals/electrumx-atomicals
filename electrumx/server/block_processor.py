@@ -17,20 +17,29 @@ from aiorpcx import run_in_thread, CancelledError
 
 import electrumx
 from electrumx.server.daemon import DaemonError, Daemon
-from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN
+from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 from electrumx.lib.script import is_unspendable_legacy, is_unspendable_genesis
 from electrumx.lib.util import (
-    chunks, class_logger, pack_le_uint32, pack_le_uint64, unpack_le_uint64, OldTaskGroup
+    chunks, class_logger, pack_le_uint32, pack_le_uint64, unpack_le_uint64, pack_be_uint64, unpack_be_uint64, OldTaskGroup, pack_byte
 )
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
+from electrumx.lib.util_atomicals import unpack_mint_info, get_decode_cbor_payload, parse_atomicals_operations_from_witness_array, get_expected_mint_output_index_of_atomical, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, get_update_payload_from_inputs
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
     from electrumx.server.env import Env
     from electrumx.server.controller import Notifications
 
+from cbor2 import dumps, loads, CBORDecodeError
+import pickle
+import pylru
+
+TX_HASH_LEN = 32
+SCRIPTHASH_LEN = 32
+ATOMICAL_ID_LEN = 36
+TX_OUPUT_IDX_LEN = 4
 
 class Prefetcher:
     '''Prefetches blocks (in the forward direction only).'''
@@ -150,7 +159,6 @@ class Prefetcher:
         self.refill_event.clear()
         return True
 
-
 class ChainError(Exception):
     '''Raised on error processing blocks.'''
 
@@ -182,15 +190,21 @@ class BlockProcessor:
         self.tip = None  # type: Optional[bytes]
         self.tip_advanced_event = asyncio.Event()
         self.tx_count = 0
+        self.atomical_count = 0
+        self.realm_count = 0
         self._caught_up_event = None
 
         # Caches of unflushed items.
         self.headers = []
         self.tx_hashes = []
         self.undo_infos = []  # type: List[Tuple[Sequence[bytes], int]]
+        self.atomicals_undo_infos = []  # type: List[Tuple[Sequence[bytes], int]]
 
         # UTXO cache
         self.utxo_cache = {}
+        self.atomicals_utxo_cache = {}
+        self.general_data_cache = {}
+        self.realm_utxo_cache = {}
         self.db_deletes = []
 
         # If the lock is successfully acquired, in-memory chain state
@@ -199,6 +213,37 @@ class BlockProcessor:
 
         # Signalled after backing up during a reorg
         self.backed_up_event = asyncio.Event()
+
+        self.atomicals_id_cache = pylru.lrucache(100000)
+        self.realm_id_cache = pylru.lrucache(10000)
+    
+    # Retrieve the information about an atomicals mint using a cache
+    # Used for processing atomicals utxos efficiently
+    def get_atomicals_id_mint_info(self, atomical_id):
+        try:
+            result = self.atomicals_id_cache[atomical_id]
+        except KeyError:
+            # Now check the mint cache (before flush to db)
+            try:
+                result = unpack_mint_info(self.general_data_cache[b'mi' + atomical_id])
+            except KeyError:
+                self.logger.info(f'about to fallback to db to get mint info for {atomical_id.hex()}')
+                result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
+            self.atomicals_id_cache[atomical_id] = result
+        return result 
+
+    def get_realm_id_mint_info(self, realm_id):
+        try:
+            result = self.realm_id_cache[realm_id]
+        except KeyError:
+            # Now check the mint cache (before flush to db)
+            try:
+                result = unpack_mint_info(self.general_data_cache[b'ri' + realm_id])
+            except KeyError:
+                self.logger.info(f'about to fallback to db to get mint info for {realm_id.hex()}')
+                result = unpack_mint_info(self.db.get_realm_mint_info_dump(realm_id))
+            self.realm_id_cache[realm_id] = result
+        return result 
 
     async def run_in_thread_with_lock(self, func, *args):
         # Run in a thread to prevent blocking.  Shielded so that
@@ -347,8 +392,9 @@ class BlockProcessor:
     def flush_data(self):
         '''The data for a flush.  The lock must be taken.'''
         assert self.state_lock.locked()
-        return FlushData(self.height, self.tx_count, self.headers,
-                         self.tx_hashes, self.undo_infos, self.utxo_cache,
+        return FlushData(self.height, self.tx_count, self.atomical_count, self.realm_count, self.headers,
+                         self.tx_hashes, self.undo_infos, self.atomicals_undo_infos, self.utxo_cache, 
+                         self.atomicals_utxo_cache, self.general_data_cache, self.realm_utxo_cache,
                          self.db_deletes, self.tip)
 
     async def flush(self, flush_utxos):
@@ -393,6 +439,26 @@ class BlockProcessor:
             return utxo_MB >= cache_MB * 4 // 5
         return None
 
+    def put_realm_utxo(self, location_id, realm_id, prefix_value): 
+        location_tx_hash_id = location_id[:32]
+        location_tx_idx =  location_id[32:]
+
+        if self.realm_utxo_cache.get(location_id) == None: 
+            self.realm_utxo_cache[location_id] = {}
+        
+        self.realm_utxo_cache[location_id] = {
+            'is_found_on_disk': False,
+            'location_tx_hash': location_tx_hash,
+            'location_tx_idx': location_tx_idx,
+            'realm_id': realm_id,
+            'realm_prefix': prefix_value
+        }
+
+    def put_atomicals_utxo(self, location_id, atomical_id, value): 
+        if self.atomicals_utxo_cache.get(location_id) == None: 
+            self.atomicals_utxo_cache[location_id] = {}
+        self.atomicals_utxo_cache[location_id][atomical_id] = value
+
     def advance_blocks(self, blocks):
         '''Synchronously advance the blocks.
 
@@ -406,9 +472,10 @@ class BlockProcessor:
             height += 1
             is_unspendable = (is_unspendable_genesis if height >= genesis_activation
                               else is_unspendable_legacy)
-            undo_info = self.advance_txs(block.transactions, is_unspendable)
+            undo_info, atomicals_undo_info = self.advance_txs(block.transactions, is_unspendable, block.header, height)
             if height >= min_height:
                 self.undo_infos.append((undo_info, height))
+                self.atomicals_undo_infos.append((atomicals_undo_info, height))
                 self.db.write_raw_block(block.raw, height)
 
         headers = [block.header for block in blocks]
@@ -418,61 +485,381 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
+    def create_atomical_from_definition(self, header, height, tx_numb, atomical_num, mint_type_str, tx, tx_hash, input_idx, payload_data):
+        put_general_data = self.general_data_cache.__setitem__
+        # The atomical cannot be created if there is not a corresponding output to put the atomical onto
+        # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
+        # ... then it is not that easy to determine where the atomical mint was located without doing a scan
+        # ... of all the inputs
+        # Therefore it is invalid to mint at the n'th input and have less than n outputs
+        if input_idx >= len(tx.outputs):
+            return
+        to_le_uint32 = pack_le_uint32
+        to_le_uint64 = pack_le_uint64
+        to_be_uint64 = pack_be_uint64
+        # Lookup the txout will be imprinted with the atomical
+        expected_output_index = get_expected_mint_output_index_of_atomical(input_idx, tx) 
+        txout = tx.outputs[expected_output_index]
+        scripthash = double_sha256(txout.pk_script)
+        hashX = self.coin.hashX_from_script(txout.pk_script)
+        output_idx_le = to_le_uint32(expected_output_index) 
+        location = tx_hash + output_idx_le
+        # Establish the atomical_id from the initial location
+        atomical_id = location
+        self.logger.info(f'Atomicals mint type {mint_type_str} in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={location_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}, value={txout.value}') 
+        atomical_count_numb = to_be_uint64(atomical_num)
+        # Save mint data fields
+        put_general_data(b'md' + atomical_id, payload_data)
+        
+        decoded_payload_data = {}
+        try:
+            decoded_payload_data = get_decode_cbor_payload(payload_data)
+        except: 
+            pass
+
+        params = {}
+        try:
+            params = decoded_payload_data['params']
+        except: 
+            pass
+
+        metadata = {}
+        try:
+            metadata = decoded_payload_data['metadata']
+        except: 
+            pass
+
+        # Save mint info
+        mint_info = {
+            'id': atomical_id,
+            'number': atomical_num,
+            'input_idx': input_idx,
+            'output_idx': expected_output_index,
+            'scripthash': scripthash,
+            'value': txout.value,
+            'type': mint_type_str,
+            'script': txout.pk_script,
+            'header': header,
+            'height': height,
+            'params': params,
+            'metadata': metadata
+        }
+        put_general_data(b'mi' + atomical_id, pickle.dumps(mint_info))
+        # Track the atomical number for the newly minted atomical
+        put_general_data(b'n' + atomical_count_numb, atomical_id)
+        # Track active atomical location
+        value_sats = pack_le_uint64(txout.value)
+        # Save the output script of the atomical to lookup at a future point
+        put_general_data(b'z' + location, txout.pk_script)
+        # Save the location to have the atomical located there
+        self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+        return atomical_id
+
+    def create_realm_from_definition(self, header, height, realm_num, tx, tx_hash, input_idx, payload_data):
+        # Invalid to mint at the n'th input and have less than n outputs
+        if input_idx >= len(tx.outputs):
+            return
+        to_le_uint32 = pack_le_uint32
+        to_le_uint64 = pack_le_uint64
+        to_be_uint64 = pack_be_uint64
+        # Lookup the txout will be imprinted with the atomical
+        expected_output_index = get_expected_mint_output_index_of_atomical(input_idx, tx) 
+        txout = tx.outputs[expected_output_index]
+        scripthash = double_sha256(txout.pk_script)
+        hashX = self.coin.hashX_from_script(txout.pk_script)
+        output_idx_le = to_le_uint32(expected_output_index) 
+        location = tx_hash + output_idx_le
+        # Establish the realm_id from the initial location
+        realm_id = location
+        self.logger.info(f'Realm creation in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, realm_id={location_id_bytes_to_compact(realm_id)}, value={txout.value}') 
+        # Save mint data fields
+        self.put_general_data(b'rd' + realm_id, payload_data)
+        
+        decoded_payload_data = {}
+        try:
+            decoded_payload_data = get_decode_cbor_payload(payload_data)
+        except: 
+            pass
+
+        params = {}
+        try:
+            params = decoded_payload_data['params']
+        except: 
+            pass
+
+        metadata = {}
+        try:
+            metadata = decoded_payload_data['metadata']
+        except: 
+            pass
+
+        # Save mint info
+        mint_info = {
+            'id': realm_id,
+            'number': realm_num,
+            'input_idx': input_idx,
+            'output_idx': expected_output_index,
+            'scripthash': scripthash,
+            'value': txout.value,
+            'type': 'REALM',
+            'script': txout.pk_script,
+            'header': header,
+            'height': height,
+            'params': params,
+            'metadata': metadata
+        }
+
+        self.put_general_data(b'ri', realm_id, pickle.dumps(mint_info))
+        # realm_id is the initial location
+        self.put_general_data(b'rl', realm_id, realm_id)
+        # realm prefix information, the root has no prefix
+        self.put_general_data(b'r', realm_id, tx_hash + expected_output_index)
+        return realm_id
+    
+    def create_atomicals(self, operations_found_at_inputs, header, height, tx_numb, atomical_num, tx, tx_hash):
+        atomical_ids_minted = []
+        operations_process = [
+            {
+                'ops_found': operations_found_at_inputs.get('n', None),
+                'str': 'NFT'
+            },
+            {
+                'ops_found': operations_found_at_inputs.get('f', None),
+                'str': 'FT'
+            }
+        ]
+        for item in operations_process:
+            if item['ops_found'] != None:
+                for input_idx, payload_data in item['ops_found'].items():
+                    self.logger.info("create_atomicals found atomical mint")
+                    atomical_num += 1
+                    atomical_id = self.create_atomical_from_definition(header, height, tx_numb, atomical_num, item['str'], tx, tx_hash, input_idx, payload_data)
+                    atomical_ids_minted.append(atomical_id)
+        return atomical_ids_minted, atomical_num
+
+    def create_realms(self, operations_found_at_inputs, header, height, realm_num, tx, tx_hash):
+        realm_ids_minted = []
+        realm_op = operations_found_at_inputs.get('r', None)
+        if realm_op != None:
+            for input_idx, payload_data in realm_op.items():
+                realm_id = self.create_realm_from_definition(header, height, realm_num, tx, tx_hash, input_idx, payload_data)
+                realm_ids_minted.append(realm_id)
+        return realm_ids_minted
+
+    def color_atomicals_outputs(self, operations_found_at_inputs, atomicals_transfers_found_at_inputs, tx, tx_hash, tx_numb):
+        put_general_data = self.general_data_cache.__setitem__
+        map_atomical_ids_to_info = {}
+        atomical_ids_touched = []
+        for txin_index, atomicals_list in atomicals_transfers_found_at_inputs.items():
+            self.logger.info(f'color_atomicals_outputs {txin_index} index found {len(atomicals_list)} inside')
+            # Accumulate the total input value by atomical_id
+            # The value will be used below to determine the amount of input we can allocate
+            for atomicals_entry in atomicals_list:
+                self.logger.info(f'Color_atomicals_outputs {atomicals_entry.hex()}')
+                atomical_id = atomicals_entry[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+                value, = unpack_le_uint64(atomicals_entry[-8:])
+                self.logger.info(f'About to get the atomicals mint info for atomical id {atomical_id.hex()}')
+                atomical_mint_info = self.get_atomicals_id_mint_info(atomical_id)
+                if not atomical_mint_info: 
+                    raise IndexError(f'color_atomicals_outputs {atomical_id.hex()} not found in mint info. IndexError.')
+                if map_atomical_ids_to_info.get(atomical_id, None) == None:
+                    map_atomical_ids_to_info[atomical_id] = {
+                        'type': atomical_mint_info['type'],
+                        'value': 0,
+                        'input_indexes': []
+                    }
+                map_atomical_ids_to_info[atomical_id]['value'] += value
+                map_atomical_ids_to_info[atomical_id]['input_indexes'].append(txin_index)
+    
+        for atomical_id, mint_info in map_atomical_ids_to_info.items():
+            self.logger.info(f'color_atomicals_outputs getting atomical id and mint info {atomical_id.hex()}')
+            if mint_info['type'] == 'NFT':
+                assert(len(mint_info['input_indexes']) == 1)
+                expected_output_indexes = [get_expected_output_index_of_atomical_nft(mint_info['input_indexes'][0], tx, atomical_id, operations_found_at_inputs, mint_info)]
+            elif mint_info['type'] == 'FT':
+                assert(len(mint_info['input_indexes']) >= 1)
+                expected_output_indexes = get_expected_output_indexes_of_atomical_ft(mint_info['input_indexes'], mint_info['value'], tx, atomical_id, operations_found_at_inputs, mint_info) 
+            else:
+                raise 'color_atomicals_outputs: Unknown type. Index Error.'
+            
+            self.logger.info(f'color_atomicals_outputs retrieve update payload {atomical_id.hex()}')
+            update_payload = get_update_payload_from_inputs(mint_info['input_indexes'], operations_found_at_inputs)
+            for expected_output_index in expected_output_indexes:
+                self.logger.info(f'Expected output index: {expected_output_index}') 
+                expected_output_index_packed = pack_le_uint32(expected_output_index)
+                if update_payload:
+                    put_general_data(b's' + atomical_id + tx_numb + expected_output_index_packed, update_payload)
+                # Put all the associated data for the location of the atomical data at each output
+                output_idx_le = pack_le_uint32(expected_output_index) 
+                location = tx_hash + output_idx_le
+                txout = tx.outputs[expected_output_index]
+                scripthash = double_sha256(txout.pk_script)
+                hashX = self.coin.hashX_from_script(txout.pk_script)
+                value_sats = pack_le_uint64(txout.value)
+                self.logger.info(f'advance_txs put_general_data {atomical_id.hex()}')
+                # put_general_data(b'a' + atomical_id + location, hashX + scripthash + value_sats)
+                # Save the output script of the atomical to lookup at a future point
+                put_general_data(b'z' + location, txout.pk_script)
+                self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+                # Leverage existing history table by hashing the atomical_id
+                self.logger.info(f'Processing history for atomical {atomical_id.hex()} at location {location.hex()}')
+            atomical_ids_touched.append(atomical_id)
+        return atomical_ids_touched
+
+    def color_realm_outputs(self, operations_found_at_inputs, realm_spent, tx, tx_hash):
+        is_nft_or_ft_mint = False
+        for op_type_key, data in operations_found_at_inputs.items():
+            if op_type_key == 'n' or op_type_key == 'f':
+                is_nft_or_ft_mint = True
+        realm_id = realm_spent['realm_id']
+        realm_prefix = realm_spent['realm_prefix']
+        mint_info = self.get_realm_id_mint_info(realm_id)
+        if not mint_info: 
+            raise IndexError(f'color_realm_outputs {realm_prefix.hex()} not found in mint info. IndexError.')
+        params = mint_info['params']
+        max_depth = params.get('max_depth', 256)
+        width = params.get('width', 16)
+        # Add the new realm UTXOs...
+        for idx, txout in enumerate(tx.outputs):
+            idx_packed = pack_le_uint32(idx)
+            projected_depth = len(realm_prefix)
+            can_extend_nft_output = False
+            # If the realm_prefix is less than 3 uint32's (12 bytes) then it can be extended still
+            if len(realm_prefix) <= 12:
+                can_extend_nft_output = True 
+            else: 
+                last_uint32_value, = unpack_le_uint32(realm_prefix[-4:])
+                second_to_last_uint32_value, = unpack_le_uint32(realm_prefix[-8:-4])
+                third_to_last_uint32_value, = unpack_le_uint32(realm_prefix[-12:-8])
+                if last_uint32_value != 0 and second_to_last_uint32_value != 0 and third_to_last_uint32_value != 0:
+                    can_extend_nft_output = True 
+            # The 0'th index is always the potential NFT representing the name
+            if idx == 0 and projected_depth <= max_depth:
+                # If a mint is detected, then do not color the outputs and instead associate the b'r' index with the location of the transaction
+                if is_nft_or_ft_mint:
+                    self.put_general_data(b'r' + realm_id + realm_prefix + idx_packed, tx_hash + idx_packed)
+                elif can_extend_nft_output:
+                    # If there wasn't a mint in any of the inputs then color the token if it's permitted (ie there wasn't already 3 consecutive extensions of the 0'th output)
+                    self.put_realm_utxo(tx_hash + idx_packed, realm_id, realm_prefix + idx_packed)
+            elif idx > 0 and idx <= width and projected_depth <= max_depth:
+                can_extend_output = False 
+                # It can be extended since it's the root node
+                if len(realm_prefix) == 0:
+                    can_extend_output = True 
+                else:
+                    # It can only be extended if this is not an extension from an NFT token (0'th output). That case is handled above.
+                    last_uint32_value, = unpack_le_uint32(realm_prefix[-4:])
+                    if last_uint32_value != 0:
+                        can_extend_output = True 
+                # It is allowed to be extended
+                if can_extend_output:
+                    self.put_realm_utxo(tx_hash + idx_packed, realm_id, realm_prefix + idx_packed)
+            else: 
+                break
+
     def advance_txs(
             self,
             txs: Sequence[Tuple[Tx, bytes]],
             is_unspendable: Callable[[bytes], bool],
+            header,
+            height
     ) -> Sequence[bytes]:
         self.tx_hashes.append(b''.join(tx_hash for tx, tx_hash in txs))
 
         # Use local vars for speed in the loops
         undo_info = []
+        atomicals_undo_info = []
         tx_num = self.tx_count
+        atomical_num = self.atomical_count
+        realm_num = self.realm_count
         script_hashX = self.coin.hashX_from_script
         put_utxo = self.utxo_cache.__setitem__
+        put_general_data = self.general_data_cache.__setitem__
         spend_utxo = self.spend_utxo
+        spend_atomicals_utxo = self.spend_atomicals_utxo
         undo_info_append = undo_info.append
+        atomicals_undo_info_extend = atomicals_undo_info.extend
         update_touched = self.touched.update
         hashXs_by_tx = []
         append_hashXs = hashXs_by_tx.append
         to_le_uint32 = pack_le_uint32
         to_le_uint64 = pack_le_uint64
-
+        to_be_uint64 = pack_be_uint64
         for tx, tx_hash in txs:
             hashXs = []
             append_hashX = hashXs.append
             tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
-
+            atomicals_transfers_found_at_inputs = {}
+            realm_spent = None  # Only 1 realm can be spent by only the 0'th input
             # Spend the inputs
+            txin_index = 0
             for txin in tx.inputs:
                 if txin.is_generation():
                     continue
                 cache_value = spend_utxo(txin.prev_hash, txin.prev_idx)
                 undo_info_append(cache_value)
                 append_hashX(cache_value[:HASHX_LEN])
-
+                
+                # Find all the existing transferred atomicals and spend the Atomicals utxos
+                atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
+                if len(atomicals_transferred_list):
+                    atomicals_transfers_found_at_inputs[txin_index] = atomicals_transferred_list
+                atomicals_undo_info_extend(atomicals_transferred_list)
+              
+                # Check if the 0'th input spends a realm
+                if txin_index == 0:
+                    realm_spent = self.spend_realm_utxo(txin.prev_hash, txin.prev_idx, tx_hash, txin_index)
+                txin_index = txin_index + 1
+            
+            # Detect all Atomicals operations in the transaction witness inputs
+            operations_found_at_inputs = parse_atomicals_operations_from_witness_array(tx)
+            
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
                 # Ignore unspendable outputs
                 if is_unspendable(txout.pk_script):
                     continue
-
                 # Get the hashX
-                hashX = script_hashX(txout.pk_script)
+                hashX = self.coin.hashX_from_script(txout.pk_script)
                 append_hashX(hashX)
-                put_utxo(tx_hash + to_le_uint32(idx),
-                         hashX + tx_numb + to_le_uint64(txout.value))
+                put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
+            
+            # Process Atomicals Mints of NFTs and FTs
+            # If there were any mints, then create them
+            atomical_ids_minted, updated_atomical_num = self.create_atomicals(operations_found_at_inputs, header, height, tx_numb, atomical_num, tx, tx_hash)
+            # Sanity check that the updated atomicals number matches the expected based on the atomicals created
+            assert(len(atomical_ids_minted) + atomical_num == updated_atomical_num)
+            atomical_num = updated_atomical_num
+
+            for atomical_id in atomical_ids_minted:
+                append_hashX(double_sha256(atomical_id))
+
+            atomical_ids_transferred = self.color_atomicals_outputs(operations_found_at_inputs, atomicals_transfers_found_at_inputs, tx, tx_hash, tx_numb)
+            for atomical_id in atomical_ids_transferred:
+                self.logger.info('atomical_id in atomical_ids_transferred kw0s')
+                self.logger.info(atomical_id.hex())
+                self.logger.info(double_sha256(atomical_id).hex())
+                append_hashX(double_sha256(atomical_id))
+
+            # Process Realm Mints of NFTs and FTs
+            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, realm_num, tx, tx_hash)
+            realm_num += len(realm_ids_minted)
+            
+            if realm_spent != None:
+                self.color_realm_outputs(operations_found_at_inputs, realm_spent, tx, tx_hash)
 
             append_hashXs(hashXs)
             update_touched(hashXs)
             tx_num += 1
 
         self.db.history.add_unflushed(hashXs_by_tx, self.tx_count)
-
         self.tx_count = tx_num
         self.db.tx_counts.append(tx_num)
-
-        return undo_info
+        self.atomical_count = atomical_num
+        self.db.atomical_counts.append(atomical_num)
+        self.realm_count = realm_num
+        self.db.realm_counts.append(realm_num)
+        return undo_info, atomicals_undo_info
 
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
@@ -500,6 +887,7 @@ class BlockProcessor:
             self.backup_txs(block.transactions, is_unspendable)
             self.height -= 1
             self.db.tx_counts.pop()
+            self.db.atomical_counts.pop()
 
         self.logger.info(f'backed up to height {self.height:,d}')
 
@@ -516,23 +904,130 @@ class BlockProcessor:
                              f'{self.height:,d}')
         n = len(undo_info)
 
+        atomicals_undo_info = self.db.read_atomicals_undo_info(self.height)
+        if atomicals_undo_info is None:
+            raise ChainError(f'no atomicals undo information found for height '
+                             f'{self.height:,d}')
+        m = len(atomicals_undo_info)
+        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8
+        atomicals_count = m / atomicals_undo_entry_len
+
+        has_undo_info_for_atomicals = False
+        if m > 0:
+            has_undo_info_for_atomicals = True
+        c = m
+        atomicals_undo_info_map = {} # Build a map of atomicals location to atomicals located there
+        counted_atomicals_count = 0
+        while c > 0:
+            c -= atomicals_undo_entry_len
+            assert(c >= 0)
+            atomicals_undo_item = atomicals_undo_info[c : c + atomicals_undo_entry_len]
+            atomicals_location = atomicals_undo_item[: ATOMICAL_ID_LEN]
+            atomicals_atomical_id = atomicals_undo_item[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+            # Remainder is: hashX + scripthash + value_sats
+            atomicals_value = atomicals_undo_item[ATOMICAL_ID_LEN + ATOMICAL_ID_LEN :]
+            # There can be many atomicals at the same location
+            if atomicals_undo_info_map.get(atomicals_location, None) == None:
+                atomicals_undo_info_map[atomicals_location] = []
+
+            atomicals_undo_info_map[atomicals_location].append({ 
+                location: atomicals_location,
+                atomical_id: atomicals_atomical_id,
+                value: atomicals_value
+            })
+            counted_atomicals_count += 1
+        
+        assert(counted_atomicals_count == atomicals_count)
+
         # Use local vars for speed in the loops
         put_utxo = self.utxo_cache.__setitem__
         spend_utxo = self.spend_utxo
+        
+        put_general_data = self.general_data_cache.__setitem__
+        spend_atomicals_utxo = self.spend_atomicals_utxo
+        
         touched = self.touched
         undo_entry_len = HASHX_LEN + TXNUM_LEN + 8
 
+        tx_num = self.tx_count
+        atomical_num = self.atomical_count
+        realm_num = self.realm_count
+        atomicals_minted = 0
+        realms_minted = 0
         for tx, tx_hash in reversed(txs):
             for idx, txout in enumerate(tx.outputs):
                 # Spend the TX outputs.  Be careful with unspendable
                 # outputs - we didn't save those in the first place.
                 if is_unspendable(txout.pk_script):
                     continue
-
                 # Get the hashX
                 cache_value = spend_utxo(tx_hash, idx)
                 hashX = cache_value[:HASHX_LEN]
+                txout_value = cache_value[:-8] 
                 touched.add(hashX)
+                output_index_packed = pack_le_uint32(idx)
+                current_location = tx_hash + output_index_packed
+                # Spend the atomicals if there were any
+                spent_atomicals = spend_atomicals_utxo(tx_hash, idx)
+                for spent_atomical in spent_atomicals:
+                    self.logger.info(f'Preparing to rollback {spent_atomical.hex()}')
+                    hashX = spent_atomical[ ATOMICAL_ID_LEN + ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN]
+                    touched.add(hashX)
+                    atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+                    location = spent_atomical[ : ATOMICAL_ID_LEN]
+                    self.logger.info(f'Preparing to rollback atomical_id {atomical_id.hex()} at location {location.hex()}')
+                    # Remove the stored output
+                    self.db_deletes.append(b'z' + location)
+                    # remove the b'a' atomicals entry at the location
+                    # Is this even needed?
+                    self.db_deletes.append(b'a' + atomical_id + location)
+                    # remove the b'i' atomicals entry at the location
+                    self.db_deletes.append(b'i' + location + atomical_id)
+                    # Just delete any potential state updates indiscriminately
+                    self.db_deletes.append(b's' + atomical_id + tx_numb + output_index_packed)
+
+                # Just blindly delete any realms entries if there were any
+                self.db_deletes.append(b'rl' + location)
+
+            atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
+            # Remove any mint data
+            operations_process = [
+                {
+                    'ops_found': atomicals_operations_found.get('n', None),
+                    'str': 'NFT'
+                },
+                {
+                    'ops_found': atomicals_operations_found.get('f', None),
+                    'str': 'FT'
+                }
+            ]
+            for item in operations_process:
+                if item['ops_found'] != None:
+                    for input_idx, payload_data in item['ops_found'].items():
+                        # Lookup the txout that would be imprinted with the atomical
+                        expected_output_index = get_expected_mint_output_index_of_atomical(input_idx, tx) 
+                        output_idx_le = pack_le_uint32(expected_output_index) 
+                        location = tx_hash + output_idx_le
+                        atomical_id = location
+                        self.db_deletes.append(b'md' + atomical_id)
+                        self.db_deletes.append(b'mi' + atomical_id)
+                        # Make sure to remove the atomical number
+                        atomical_numb = pack_be_uint64(atomical_num) 
+                        self.db_deletes.append(b'n' + atomical_numb)
+                        atomical_num -= 1
+                        atomicals_minted += 1
+            
+            realm_ops = atomicals_operations_found.get('r', None)
+            if realm_ops != None:
+                for input_idx, payload_data in realm_ops.items():
+                    # Lookup the txout that would be imprinted with the atomical
+                    expected_output_index = get_expected_mint_output_index_of_atomical(input_idx, tx) 
+                    output_idx_le = pack_le_uint32(expected_output_index) 
+                    location = tx_hash + output_idx_le
+                    realm_id = location
+                    self.db_deletes.append(b'rd' + realm_id)
+                    self.db_deletes.append(b'ri' + realm_id)
+                    realms_minted += 1
 
             # Restore the inputs
             for txin in reversed(tx.inputs):
@@ -544,8 +1039,24 @@ class BlockProcessor:
                 hashX = undo_item[:HASHX_LEN]
                 touched.add(hashX)
 
+                self.db_deletes.append(b'rs' + txin.prev_hash + pack_le_uint32(txin.prev_idx))
+
+                # Restore the atomicals utxos in the undo information
+                potential_atomicals_list_to_restore = atomicals_undo_info_map.get(txin.prev_hash + pack_le_uint32(txin.prev_idx), None)
+                if potential_atomicals_list_to_restore != None:
+                    for atomical_to_restore in potential_atomicals_list_to_restore:
+                        self.put_atomicals_utxo(atomical_to_restore['location'], atomical_to_restore['atomical_id'], atomical_to_restore['value'])
+            
+            tx_num -= 1
+
         assert n == 0
+        assert m == 0
+
         self.tx_count -= len(txs)
+        self.atomical_count -= atomicals_minted
+        self.realm_count -= realms_minted
+        # Sanity check that the expected atomical_num matches the atomicals count at the end
+        assert(atomical_num == atomical_count)
 
     '''An in-memory UTXO cache, representing all changes to UTXO state
     since the last DB flush.
@@ -646,6 +1157,90 @@ class BlockProcessor:
         raise ChainError(f'UTXO {hash_to_hex_str(tx_hash)} / {tx_idx:,d} not '
                          f'found in "h" table')
 
+    def spend_atomicals_utxo(self, tx_hash: bytes, tx_idx: int) -> bytes:
+        '''Spend the atomicals entry for UTXO and return atomicals[].'''
+        idx_packed = pack_le_uint32(tx_idx)
+        location_id = tx_hash + idx_packed
+        cache_map = self.atomicals_utxo_cache.get(location_id, None)
+        if cache_map != None:
+            spent_cache_values = []
+            for key in cache_map.keys(): 
+                value = cache_map[key]
+                #if value_with_tombstone['deleted'] == True: 
+                #    continue # Do not consider deleted
+                # value = value_with_tombstone['value']
+                spent_cache_values.append(location_id + key + value)
+            # return a cache hit
+            if len(spent_cache_values) > 0:
+                # Remove the cache entry so it will not be added to the db on flush
+                self.atomicals_utxo_cache.pop(location_id)
+                # Return the values that were popped for the entry 
+                return spent_cache_values
+ 
+        # Search the locations of existing atomicals
+        # Key:  b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
+        # Value: hashX + scripthash + value
+        prefix = b'i' + location_id
+        found_at_least_one = False
+        atomicals_data_list = []
+        for atomical_i_db_key, atomical_i_db_value in self.db.utxo_db.iterator(prefix=prefix):
+            # Get all of the atomicals for an address to be deleted
+            atomical_id = atomical_i_db_key[ 1 + ATOMICAL_ID_LEN : ]
+            prefix = b'a' + atomical_id + location_id
+            found_at_least_one = False
+            for atomical_a_db_key, atomical_a_db_value in self.db.utxo_db.iterator(prefix=prefix):
+                found_at_least_one = True
+            if found_at_least_one == False: 
+                raise IndexError(f'Did not find expected at least one entry for atomicals table for atomical: {atomical_id.hex()} at location {location.hex()}')
+            self.db_deletes.append(b'a' + atomical_id + location_id)
+            atomicals_data_list.append(atomical_i_db_key[ 1 : ] + atomical_i_db_value)
+            # Return the full data spent
+        return atomicals_data_list
+ 
+    def spend_realm_utxo(self, tx_hash: bytes, tx_idx: int, spend_tx_hash: bytes, spend_tx_input_idx: int) -> bytes:
+        '''Spend the atomicals entry for UTXO and return atomicals[].'''
+        idx_packed = pack_le_uint32(tx_idx)
+        location_id = tx_hash + idx_packed
+        tx_hash = location_id
+        cache_map = self.realm_utxo_cache.get(location_id, None)
+        if cache_map != None:
+            for key in cache_map.keys(): 
+                data = cache_map[key]
+                if data.get('spent_by', None) != None: 
+                    raise IndexError(f'Fatal index error {tx_hash}')
+                
+                assert(data['location_tx_hash'] == location_id)
+                assert(data['location_tx_idx_packed'] == idx_packed)
+                assert(data['realm_id'] != None)
+                assert(data['realm_prefix'] != None)
+                
+                data['spent_by'] = {
+                    'spend_tx_hash': spend_tx_hash,
+                    'spend_tx_input_idx' : spend_tx_input_idx
+                }
+                return data
+        
+        # Search the locations of existing atomicals
+        # b'rl' + location(tx_hash + tx_out_idx) 
+        # Value: realm_id(tx_hash + tx_out_idx) [byte [...byte]]
+        prefix = b'rl' + location_id
+        data = None
+        for realm_rl_db_key, realm_rl_db_value in self.db.utxo_db.iterator(prefix=prefix):
+            data = {}
+            data['is_found_on_disk'] = True
+            data['location_tx_hash'] = tx_hash
+            data['location_tx_idx_packed'] = idx_packed
+            data['realm_id'] = realm_rl_db_value[ 2 : ATOMICAL_ID_LEN]
+            data['realm_prefix'] = realm_rl_db_value[ 2 + ATOMICAL_ID_LEN : ]
+            data['spent_by'] = {
+                'spend_tx_hash': spend_tx_hash,
+                'spend_tx_input_idx' : spend_tx_input_idx
+            }
+            # Save it to the cache, because the cache will be flushed and the spend will be registered
+            # the flag is_found_on_disk is used to ensure the b'r' and other entries are not written again (since it already exists)
+            self.realm_utxo_cache[location_id] = data
+        return data
+
     async def _process_prefetched_blocks(self):
         '''Loop forever processing blocks as they arrive.'''
         while True:
@@ -679,6 +1274,8 @@ class BlockProcessor:
         self.height = self.db.db_height
         self.tip = self.db.db_tip
         self.tx_count = self.db.db_tx_count
+        self.atomical_count = self.db.db_atomical_count
+        self.realm_count = self.db.db_realm_count
 
     # --- External API
 
