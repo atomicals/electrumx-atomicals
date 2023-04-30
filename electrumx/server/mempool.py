@@ -22,7 +22,7 @@ from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 from electrumx.lib.tx import SkipTxDeserialize
 from electrumx.lib.util import class_logger, chunks, OldTaskGroup, pack_le_uint32, unpack_le_uint32
 from electrumx.server.db import UTXO
-from electrumx.lib.util_atomicals import parse_atomicals_operations_from_witness_array, get_expected_output_index_of_atomical_in_tx, atomical_id_bytes_to_compact
+from electrumx.lib.util_atomicals import check_unpack_mint_data, parse_atomicals_operations_from_witness_array, get_expected_output_index_of_atomical_in_tx, atomical_id_bytes_to_compact
 from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 
 if TYPE_CHECKING:
@@ -395,7 +395,7 @@ class MemPool:
                                         'scripthash_hex': scripthash.hex(),
                                         'value': txout.value,
                                         'script': txout.pk_script.hex(),
-                                        'data': payload_data.hex()
+                                        'fields': check_unpack_mint_data(payload_data)
                                     },
                                     'state_info': {
                                         'history': {}

@@ -526,6 +526,13 @@ class BlockProcessor:
                 input_idx_map = atomicals_operations_found['m']
                 atomical_num += 1
                 for input_idx, payload_data in input_idx_map.items():
+                    # The atomical cannot be created if there is not a corresponding output to put the atomical onto
+                    # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
+                    # ... then it is not that easy to determine where the atomical mint was located without doing a scan
+                    # ... of all the inputs
+                    # Therefore it is invalid to mint at the n'th input and have less than n outputs
+                    if input_idx >= len(tx.outputs):
+                        continue
                     # Lookup the txout will be imprinted with the atomical
                     expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
                     txout = tx.outputs[expected_output_index]
@@ -562,23 +569,23 @@ class BlockProcessor:
                 self.logger.info(idx)
                 self.logger.info('Atomicals list')
                 self.logger.info(atomicals_list)
-                input_idx_packed = pack_le_uint32(idx)
-                expected_output_index_packed = pack_le_uint32(get_expected_output_index_of_atomical_in_tx(idx, tx))
-                # There is an update operation at the Atomical outpoint being spent
-                if atomicals_operations_found.get('u') != None and atomicals_operations_found['u'].get(idx) != None:
-                    update_payload = atomicals_operations_found['u'][idx]
-                    for atomical_item in atomicals_list:
-                        atomical_id = atomical_item[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-                        # Save the latest updated fields (beta)
-                        put_atomicals_idempotent_data(b's' + atomical_id + tx_numb + b'u', update_payload)
+               
                 # Process the generic transfer and the extract operation (if there is one for the specific Atomicals)
                 for atomical_item in atomicals_list:
                     self.logger.info('atomical_item being processed for a transfer found at the inputs')
                     self.logger.info(atomical_item.hex())
+                    
                     atomical_id = atomical_item[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-                    # Leverage existing history table by hashing the atomical_id
-                    append_hashX(double_sha256(atomical_id))
+                    # input_idx_packed = pack_le_uint32(idx)
                     expected_output_index = get_expected_output_index_of_atomical_in_tx(idx, tx) 
+                    expected_output_index_packed = pack_le_uint32(expected_output_index)
+                    # There is an update operation at the Atomical outpoint being spent
+                    if atomicals_operations_found.get('u') != None and atomicals_operations_found['u'].get(idx) != None:
+                        update_payload = atomicals_operations_found['u'][idx]
+                        for atomical_item in atomicals_list:    
+                            # Save the latest updated fields (beta)
+                            put_atomicals_idempotent_data(b's' + atomical_id + tx_numb + expected_output_index_packed, update_payload)
+                    
                     # If the extract operation refers to the current atomical, then force it to the 0'th output
                     if atomicals_operations_found.get('x') != None and atomicals_operations_found['x'].get(idx) != None and atomicals_operations_found['x'][idx].get(atomical_id) != None:
                         expected_output_index = 0 
@@ -602,6 +609,8 @@ class BlockProcessor:
                     self.logger.info('atomical_item')
                     self.logger.info(atomical_item.hex())
                     self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+                    # Leverage existing history table by hashing the atomical_id
+                    append_hashX(double_sha256(atomical_id))
 
             append_hashXs(hashXs)
             update_touched(hashXs)
@@ -720,7 +729,8 @@ class BlockProcessor:
                 cache_value = spend_utxo(tx_hash, idx)
                 hashX = cache_value[:HASHX_LEN]
                 touched.add(hashX)
-                current_location = tx_hash + pack_le_uint32(idx)
+                output_index_packed = pack_le_uint32(idx)
+                current_location = tx_hash + output_index_packed
                 if has_undo_info_for_atomicals:
                     # Spend the atomicals
                     spent_atomicals = spend_atomicals_utxo(tx_hash, idx)
@@ -739,12 +749,7 @@ class BlockProcessor:
                         if updates_map != None:
                             for input_idx, fieldsmap in updates_map.items():
                                 for field, value_not_used in fieldsmap.items():
-                                    self.db_deletes.append(b's' + atomical_id + tx_numb + b'u' + field_name)
-                        extracts_map = atomicals_operations_found.get('x', None)
-                        if extracts_map != None:
-                            for input_idx, fieldsmap in extracts_map.items():
-                                for field, value_not_used in fieldsmap.items():
-                                    self.db_deletes.append(b's' + atomical_id + tx_numb + b'x')
+                                    self.db_deletes.append(b's' + atomical_id + tx_numb + output_index_packed)
 
             atomicals_operations_found = {}
             # This will need to apply per input
@@ -780,7 +785,6 @@ class BlockProcessor:
                 put_utxo(txin.prev_hash + pack_le_uint32(txin.prev_idx), undo_item)
                 hashX = undo_item[:HASHX_LEN]
                 touched.add(hashX)
-
                 # Restore the atomicals utxos in the undo information
                 # Note that we do not need to restart any of the b's' states because they are already recorded from before
                 # We only had to make sure the appropriate b's' states were deleted above

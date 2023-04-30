@@ -34,6 +34,7 @@ from electrumx.lib.util import unpack_le_uint16_from, unpack_le_uint32_from, \
 
 from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 import re
+import sys
 from cbor2 import dumps, loads, CBORDecodeError
 from collections.abc import Mapping
 to_le_uint32 = pack_le_uint32
@@ -239,3 +240,32 @@ def parse_atomicals_operations_from_witness_array(tx):
                 operation_datas_by_input["x"][txin_idx] = operation_data["x"]
         txin_idx = txin_idx + 1
     return operation_datas_by_input
+
+def check_unpack_mint_data(db_mint_value):
+    try:
+        fieldset = {}
+        loaded_data = loads(db_mint_value)
+        if type(loaded_data) is dict: 
+            for key, value in loaded_data.items():
+                fieldset[key] = {}
+                if value:
+                    if value.get('$ct', None) != None:
+                        if len(value['$ct']) < 50:
+                            fieldset[key]['content-type'] = value['$ct']
+                        else:
+                            fieldset[key]['content-type'] = 'invalid-content-type-too-long'
+                    else: 
+                        fieldset[key]['content-type'] = 'application/json'
+                        serialized_object_size = sys.getsizeof(dumps(value))
+                        fieldset[key]['content-length'] = serialized_object_size
+                    if value.get('$d', None) != None:
+                        fieldset[key]['content-length'] = len(value['$d'])
+                else: 
+                    # Empty value unparsed
+                    fieldset[key] = {}
+            return fieldset
+    except Exception as e:
+        print('exception')
+        print(e)
+        pass
+    return None

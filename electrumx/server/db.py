@@ -28,9 +28,11 @@ from electrumx.lib.util import (
     formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
     unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
-from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, atomical_id_bytes_to_compact, decode_op_byte
+from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, atomical_id_bytes_to_compact, decode_op_byte, check_unpack_mint_data
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
+
+from cbor2 import dumps, loads, CBORDecodeError
 
 import pickle
 
@@ -158,11 +160,9 @@ class DB:
         # Value: tx_hash + txout_idx + scripthash + value_sats + txout.pk_script
         # "maps an atomical_id to a location and details"
         # ---
-        # Key: b's' + atomical_id + tx_num + op [ + field_name ]
-        # Value: maps the atomical, transaction number and operation to state transition info such as { content_type, content_length, body, location } | { deleted } | { input_index, output_index}
-        # In the event that the op is a plain transfer b't', then there is no field name
-        # Every tranfer will have a b't' or b'x' record along with any optional b'd', b'u' updates
-        # "maps maps the atomical, transaction number and operation to state transition info to delete, update, extract, mint, transfer data"
+        # Key: b's' + atomical_id + tx_num + out_idx
+        # Value: maps the atomical, transaction number and output that took the state
+        # "maps maps the atomical, transaction number and output for the state"
         # ---
         # Key: b'z' + tx_hash + tx_out_idx
         # Value: pk_script output
@@ -987,8 +987,6 @@ class DB:
             db_mint_value = self.utxo_db.get(atomical_mint_data_key)
             if not db_mint_value:
                 return None
-            
-            # mint_data_definition = pickle.loads(db_mint_value)
 
             # Get Mint Block data
             atomical_mint_blockdata_key = b'mb' + atomical_id
@@ -1053,26 +1051,15 @@ class DB:
                 txnum_padding = bytes(8-TXNUM_LEN)
                 tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
                 state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
-                op = db_state_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1]
-                state_entry = {'tx_num': tx_num_padded, 'height': state_height, 'txid': hash_to_hex_str(state_tx_hash),'op': decode_op_byte(op)}
+                out_idx_packed = db_state_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
+                out_idx = unpack_le_uint32(out_idx_packed)
+                state_entry = {'tx_num': tx_num_padded, 'height': state_height, 'txid': hash_to_hex_str(state_tx_hash), 'index': out_idx}
                 state_data = {}
                 FIELD_START_IDX = 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1
                 field_name = db_state_key[FIELD_START_IDX : ]
-                if state_entry['op'] == 'mint':
-                    state_data = {}
-                elif state_entry['op'] == 'tr':
-                    state_entry['data'] = db_state_value
-                elif state_entry['op'] == 'upd':
-                    state_entry['data'] = db_state_value
-                elif state_entry['op'] == 'del':
-                    state_entry['data'] = db_state_value
-                elif state_entry['op'] == 'ex':
-                    state_entry['data'] = db_state_value
-
+                state_entry['data'] = db_state_value
                 state_history.append(state_entry)
-            #state_data = self.build_state_data(state_history)
-
-            #The addressing scheme for state file name is:
+            # The addressing scheme for state file name is:
             # /atomical_id/mint/filename
             # /atomical_id/state/filename[/location_id] (if ommitted it defaults to the latest)
             # => Readers X-LOCATION-ID, X-BLOCKHASH, X-BLOCKHEIGHT, X-ATOMICAL-ID, X-FIELDTYPE={mint/state}, X-INPUT-INDEX, X-TXID
@@ -1099,15 +1086,18 @@ class DB:
                     'scripthash': hash_to_hex_str(scripthash),
                     'scripthash_hex': scripthash.hex(),
                     'script': mint_pkscript.hex(),
-                    'value': mint_value,
-                    'data': db_mint_value.hex()
+                    'value': mint_value
                 },
                 'state_info': {
                     'history': state_history
-                },
+                }
             }
+            unpacked_data_summary = check_unpack_mint_data(db_mint_value)
+            if unpacked_data_summary != None:
+                atomical['mint_info']['fields'] = unpacked_data_summary
+            else: 
+                atomical['mint_info']['fields'] = {}
             return atomical
-
         atomical = await run_in_thread(read_atomical)
         return atomical
 
