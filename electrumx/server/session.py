@@ -1235,6 +1235,26 @@ class ElectrumX(SessionBase):
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
+    async def atomical_id_get_location(self, compact_atomical_id):
+        atomical_id = compact_to_atomical_id_bytes(compact_atomical_id)
+        atomical = await self.db.get_by_atomical_id(atomical_id)
+        confirmed = 0
+        # todo: Return atomical number here if confirmed
+        if atomical == None:
+            # Check mempool
+            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
+            if atomical_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+            
+            atomical = atomical_in_mempool
+        else:
+            confirmed = 1    
+
+        info = {'atomical_id': compact_atomical_id,
+            'atomical_number': atomical['atomical_number'],
+            'location_info': atomical['location_info']
+        return info
+
     async def atomical_id_get(self, compact_atomical_id):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''
@@ -1268,7 +1288,7 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_infos': atomical['location_infos'],
+            # 'location_info': atomical['location_info'],
             'mint_info': {
                 'txid': atomical['mint_info']['txid'],
                 'input_index': atomical['mint_info']['input_index'], 
@@ -1305,7 +1325,7 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_infos': atomical['location_infos'],
+            'location_info': atomical['location_info'],
             'state_info': atomical['state_info']}
 
         return status_info
@@ -1329,7 +1349,7 @@ class ElectrumX(SessionBase):
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_infos': atomical['location_infos'],
+            'location_info': atomical['location_info'],
             'history': history}
 
         return status_info
@@ -1400,6 +1420,14 @@ class ElectrumX(SessionBase):
     async def atomicals_list(self, offset, limit, asc):
         '''Return the list of atomicals order by reverse atomical number'''
         return await self.atomicals_list_get(offset, limit, asc)
+
+    async def atomicals_get_location(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = compact_atomical_id_or_atomical_number
+        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
+            assert_atomical_id(compact_atomical_id)
+        else:
+            compact_atomical_id = atomical_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
+        return {'global': await self.get_atomicals_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
 
     async def atomicals_get(self, compact_atomical_id_or_atomical_number):
         '''Return the status of an Atomical```
@@ -1781,6 +1809,7 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.listscripthash': self.atomicals_listscripthash,
             'blockchain.atomicals.list': self.atomicals_list,
             'blockchain.atomicals.at_location': self.atomicals_at_location,
+            'blockchain.atomicals.get_location': self.atomicals_get_location,
             'blockchain.atomicals.get': self.atomicals_get,
             'blockchain.atomicals.get_state': self.atomicals_get_state,
             'blockchain.atomicals.get_history': self.atomicals_get_history,

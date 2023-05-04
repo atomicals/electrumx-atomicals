@@ -1014,7 +1014,7 @@ class DB:
             mint_pkscript = atomical_mint_info_value[  45 : ]
 
             # Key: b'a' + atomical_id + <location>
-            location_infos = []
+            location_info = []
             atomical_active_location_key_prefix = b'a' + atomical_id
             for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
                 if not atomical_active_location_value:
@@ -1036,7 +1036,7 @@ class DB:
                 atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
                 location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
                 location_value, = unpack_le_uint64(atomical_active_location_value[ATOMICAL_ID_LEN + SCRIPTHASH_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN + 8])
-                location_infos.append({
+                location_info.append({
                     'location': atomical_id_bytes_to_compact(location),
                     'txid': hash_to_hex_str(location_tx_hash),
                     'index': atomical_location_idx,
@@ -1078,7 +1078,7 @@ class DB:
             atomical = {
                 'atomical_id': atomical_id,
                 'atomical_number': atomical_number,
-                'location_infos': location_infos,
+                'location_info': location_info,
                 'mint_info': {
                     'txid':  hash_to_hex_str(mint_tx_hash),
                     'input_index': mint_input_index, 

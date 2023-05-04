@@ -373,7 +373,7 @@ class MemPool:
                                 atomicals_updates_map[atomical_id] = {
                                     'atomical_id': atomical_id_bytes_to_compact(atomical_id),
                                     'atomical_number': -1,
-                                    'location_infos': [{
+                                    'location_info': [{
                                         'location': atomical_id_bytes_to_compact(location),
                                         'txid': hash_to_hex_str(tx_hash),
                                         'index': expected_output_index,
