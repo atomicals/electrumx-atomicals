@@ -1273,6 +1273,12 @@ class ElectrumX(SessionBase):
         else:
             confirmed = 1    
 
+ 
+        if atomical == None: # This can happen if it was removed from the mempool beforing being committed to disk
+            raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+        else: 
+            print("atomical is not null")
+
         blockheader = ''
         spv = {}
         if atomical['mint_info'].get('blockheader') != None:
