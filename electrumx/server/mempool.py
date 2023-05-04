@@ -342,7 +342,7 @@ class MemPool:
             atomicals_updates_map = {}
 
             def create_atomical_from_definition(mint_type, tx, tx_hash, input_idx, payload_data, atomicals_updates_map):
-                self.logger.info(f'Atomicals mint #{type} found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
+                self.logger.info(f'Atomicals mint #{mint_type} found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
                 # Lookup the txout will be imprinted with the atomical
                 expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
                 txout = tx.outputs[expected_output_index]
