@@ -1097,8 +1097,7 @@ class DB:
                     'scripthash': hash_to_hex_str(scripthash),
                     'scripthash_hex': scripthash.hex(),
                     'script': mint_pkscript.hex(),
-                    'value': mint_value,
-                    'type': mint_type,
+                    'value': mint_value
                 },
                 'state_info': {
                     'history': state_history
