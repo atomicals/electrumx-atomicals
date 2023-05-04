@@ -184,7 +184,7 @@ def parse_atomicals_operation_from_script(script, n):
         return 'x', parse_atomicals_mint_or_update_operation(script, end), None
     
     print(f'Undefined Atomicals operation found. {script[n : end].hex()}')
-    return None, None
+    return None, None, None
 
 def parse_atomicals_operations_from_witness_for_input(txinwitness):
     '''Detect and parse all operations of atomicals across the witness input arrays from a tx'''
@@ -210,7 +210,7 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
                         if "0473707232" == script[n : n + 5].hex():
                             found_atomical = True
                             # Parse to ensure it is in the right format
-                            operation_type, parsed_data, rawpayload= parse_atomicals_operation_from_script(script, n + 5)
+                            operation_type, parsed_data, rawpayload = parse_atomicals_operation_from_script(script, n + 5)
                             if parsed_data != None:
                                 operation_type_map[operation_type] = parsed_data
                             else: 

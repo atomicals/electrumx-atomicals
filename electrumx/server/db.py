@@ -1031,7 +1031,6 @@ class DB:
                     return None
 
                 location_script = atomical_output_script_value
-
                 location = atomical_active_location_value[:ATOMICAL_ID_LEN]
                 location_tx_hash = atomical_active_location_value[ : 32]
                 atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
