@@ -1014,7 +1014,7 @@ class DB:
 
             if atomical_type == b'n':
                 atomical_type = 'NFT'
-            elif atomical_type = b'f':
+            elif atomical_type == b'f':
                 atomical_type = 'FT'
             else: 
                 atomical_type = 'unknown' # should never happen
