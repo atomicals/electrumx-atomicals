@@ -1042,6 +1042,7 @@ class DB:
                 atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
                 location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
                 location_value, = unpack_le_uint64(atomical_active_location_value[ATOMICAL_ID_LEN + SCRIPTHASH_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN + 8])
+                atomicals_at_location = self.get_atomicals_by_location(location)
                 location_info.append({
                     'location': atomical_id_bytes_to_compact(location),
                     'txid': hash_to_hex_str(location_tx_hash),
@@ -1054,7 +1055,7 @@ class DB:
                 })
 
 
-            atomicals_at_location = self.get_atomicals_by_location(location)
+
             #for key, val in data_definition.items():
             #    if data_definition[key]['content_length'] > 256:
             #        del data_definition[key]['body']
