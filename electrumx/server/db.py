@@ -1030,8 +1030,7 @@ class DB:
                     # This can happen if the DB was updated between
                     # getting the hashXs and getting the UTXOs
                     return None
-                # Get the output script to deduce the address
-                # Get the script at the location, stored in another index
+                location = atomical_active_location_value[:ATOMICAL_ID_LEN]
                 atomical_output_script_key = b'z' + location
                 atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
                 if not atomical_output_script_value:
@@ -1039,7 +1038,6 @@ class DB:
                     return None
 
                 location_script = atomical_output_script_value
-                location = atomical_active_location_value[:ATOMICAL_ID_LEN]
                 location_tx_hash = atomical_active_location_value[ : 32]
                 atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
                 location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
