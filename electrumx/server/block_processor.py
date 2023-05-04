@@ -553,11 +553,11 @@ class BlockProcessor:
                     # Save mint block info
                     put_atomicals_idempotent_data(b'mb' + atomical_id, atomical_count_numb + header + to_le_uint32(height))
                     # Save mint info
-                    put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + txout.pk_script)
+                    put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + b'n' + txout.pk_script)
                     # Track the atomical number for the newly minted atomical
                     put_atomicals_idempotent_data(b'n' + atomical_count_numb, atomical_id)
                     # Track active atomical location
-                    put_atomicals_idempotent_data(b'a' + atomical_id, location + scripthash + value_sats)
+                    put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
                     # Save the output script of the atomical to lookup at a future point
                     put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
                     # Save the location to have the atomical located there
@@ -595,7 +595,7 @@ class BlockProcessor:
                     scripthash = double_sha256(txout.pk_script)
                     hashX = script_hashX(txout.pk_script)
                     value_sats = to_le_uint64(txout.value)
-                    put_atomicals_idempotent_data(b'a' + atomical_id, location + scripthash + value_sats)
+                    put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
                      # Save the output script of the atomical to lookup at a future point
                     put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
                     self.logger.info('new atomical locations for atomical_id')
@@ -768,11 +768,11 @@ class BlockProcessor:
                         self.db_deletes.append(b'md' + atomical_id)
                         self.db_deletes.append(b'mb' + atomical_id)
                         self.db_deletes.append(b'mi' + atomical_id)
-                        # remove the b'a' state since we know it was a mint and it's no longer needed
-                        self.db_deletes.append(b'a' + atomical_id)
                         # Make sure to remove the atomical number
                         atomical_numb = pack_be_uint64(atomical_num) 
                         self.db_deletes.append(b'n' + atomical_numb)
+                        # remove the b'a' state since we know it was a mint and it's no longer needed
+                        self.db_deletes.append(b'a' + atomical_id + location)
                         atomical_num -= 1
                         atomicals_minted += 1
 
@@ -795,7 +795,7 @@ class BlockProcessor:
                     for atomical_to_restore in potential_atomicals_list_to_restore:
                         self.put_atomicals_utxo(atomical_to_restore['location'], atomical_to_restore['atomical_id'], atomical_to_restore['value'])
                         # Make sure not to take the hashX in the value since it's not needed in the b'a' index
-                        put_atomicals_idempotent_data(b'a' + atomical_to_restore['atomical_id'], atomical_to_restore['location'] + atomical_to_restore['value'][ HASHX_LEN : ])
+                        put_atomicals_idempotent_data(b'a' + atomical_to_restore['atomical_id'] + atomical_to_restore['location'], atomical_to_restore['location'] + atomical_to_restore['value'][ HASHX_LEN : ])
             
             # Delete the atomical number index for the current atomical number
             atomical_count_numb = pack_be_uint64(atomical_num)

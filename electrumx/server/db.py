@@ -142,7 +142,7 @@ class DB:
         # ---
         # Key: b'md' + atomical_id
         # Value: mint data serialized.
-        # "maps atomical_id to mint data { content_type, content_length, body } "
+        # "maps atomical_id to mint data { key value pairs } "
         # ---
         # Key: b'mb' + atomical_id
         # Value: mint block data serialized.
@@ -150,19 +150,19 @@ class DB:
         # ---
         # Key: b'mi' + atomical_id
         # Value: mint info serialized.
-        # "maps atomical_id to mint info data: input_index + scripthash + value_sats + txout.pk_script)"
+        # "maps atomical_id to mint info data: input_index + scripthash + value_sats + <n | f> txout.pk_script" (TODO)
         # ---
         # Key: b'n' + atomical_number (8 bytes integer)
         # Value: Atomical_id
         # "maps atomical number to an atomical id"
         # ---
-        # Key: b'a' + atomical_id
+        # Key: b'a' + atomical_id + tx_hash + txout_idx
         # Value: tx_hash + txout_idx + scripthash + value_sats + txout.pk_script
         # "maps an atomical_id to a location and details"
         # ---
         # Key: b's' + atomical_id + tx_num + out_idx
         # Value: maps the atomical, transaction number and output that took the state
-        # "maps maps the atomical, transaction number and output for the state"
+        # "maps the atomical, transaction number and output for the state"
         # ---
         # Key: b'z' + tx_hash + tx_out_idx
         # Value: pk_script output
@@ -1010,25 +1010,35 @@ class DB:
             mint_input_index, = unpack_le_uint32(atomical_mint_info_value[  : 4])
             scripthash = atomical_mint_info_value[ 4 : 36 ]
             mint_value, = unpack_le_uint64(atomical_mint_info_value[ 36 : 44])
-            mint_pkscript = atomical_mint_info_value[  44 : ]
+            mint_type, = atomical_mint_info_value[ 44 : 45])
+            mint_pkscript = atomical_mint_info_value[  45 : ]
 
-            # Key: b'a' + atomical_id
-            # Value:  
-            atomical_active_location_key = b'a' + atomical_id
-            atomical_active_location_value = self.utxo_db.get(atomical_active_location_key)
-            if not atomical_active_location_value:
-                self.logger.error(f'a{atomical_id} active location not found for get_by_atomical_id')
-                # This can happen if the DB was updated between
-                # getting the hashXs and getting the UTXOs
-                return None
-        
-            # Get the output script to deduce the address
-            location = atomical_active_location_value[:ATOMICAL_ID_LEN]
-            location_tx_hash = atomical_active_location_value[ : 32]
-            atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
-            location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
-            location_value, = unpack_le_uint64(atomical_active_location_value[ATOMICAL_ID_LEN + SCRIPTHASH_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN + 8])
-            
+            # Key: b'a' + atomical_id + <location>
+            location_infos = []
+            atomical_active_location_key_prefix = b'a' + atomical_id
+            for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
+                if not atomical_active_location_value:
+                    self.logger.error(f'a{atomical_id} active location not found for get_by_atomical_id')
+                    # This can happen if the DB was updated between
+                    # getting the hashXs and getting the UTXOs
+                    return None
+                # Get the output script to deduce the address
+                location = atomical_active_location_value[:ATOMICAL_ID_LEN]
+                location_tx_hash = atomical_active_location_value[ : 32]
+                atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
+                location_scripthash = atomical_active_location_value[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN]  
+                location_value, = unpack_le_uint64(atomical_active_location_value[ATOMICAL_ID_LEN + SCRIPTHASH_LEN : ATOMICAL_ID_LEN + SCRIPTHASH_LEN + 8])
+                location_infos.append({
+                    'location': atomical_id_bytes_to_compact(location),
+                    'txid': hash_to_hex_str(location_tx_hash),
+                    'index': atomical_location_idx,
+                    'scripthash': hash_to_hex_str(location_scripthash),
+                    'scripthash_hex': location_scripthash.hex(),
+                    'value': location_value,
+                    'script': location_script.hex(),
+                    'atomicals_at_location': atomicals_at_location
+                })
+
             # Get the script at the location, stored in another index
             atomical_output_script_key = b'z' + location
             atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
@@ -1063,19 +1073,11 @@ class DB:
             # /atomical_id/mint/filename
             # /atomical_id/state/filename[/location_id] (if ommitted it defaults to the latest)
             # => Readers X-LOCATION-ID, X-BLOCKHASH, X-BLOCKHEIGHT, X-ATOMICAL-ID, X-FIELDTYPE={mint/state}, X-INPUT-INDEX, X-TXID
+
             atomical = {
                 'atomical_id': atomical_id,
                 'atomical_number': atomical_number,
-                'location_info': {
-                    'location': atomical_id_bytes_to_compact(location),
-                    'txid': hash_to_hex_str(location_tx_hash),
-                    'index': atomical_location_idx,
-                    'scripthash': hash_to_hex_str(location_scripthash),
-                    'scripthash_hex': location_scripthash.hex(),
-                    'value': location_value,
-                    'script': location_script.hex(),
-                    'atomicals_at_location': atomicals_at_location
-                },
+                'location_infos': location_infos,
                 'mint_info': {
                     'txid':  hash_to_hex_str(mint_tx_hash),
                     'input_index': mint_input_index, 
@@ -1086,7 +1088,8 @@ class DB:
                     'scripthash': hash_to_hex_str(scripthash),
                     'scripthash_hex': scripthash.hex(),
                     'script': mint_pkscript.hex(),
-                    'value': mint_value
+                    'value': mint_value,
+                    'type': mint_type,
                 },
                 'state_info': {
                     'history': state_history

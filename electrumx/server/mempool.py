@@ -371,10 +371,9 @@ class MemPool:
                                 atomical_id = location
                                 compact_atomical_id = atomical_id_bytes_to_compact(atomical_id)
                                 atomicals_updates_map[atomical_id] = {
-                                    'op': 'm',
                                     'atomical_id': atomical_id_bytes_to_compact(atomical_id),
                                     'atomical_number': -1,
-                                    'location_info': {
+                                    'location_infos': [{
                                         'location': atomical_id_bytes_to_compact(location),
                                         'txid': hash_to_hex_str(tx_hash),
                                         'index': expected_output_index,
@@ -383,7 +382,7 @@ class MemPool:
                                         'value': txout.value,
                                         'script': txout.pk_script.hex(),
                                         'atomicals_at_location': [compact_atomical_id]
-                                    },
+                                    }],
                                     'mint_info': {
                                         'txid': hash_to_hex_str(tx_hash),
                                         'input_index': input_idx,
@@ -396,10 +395,7 @@ class MemPool:
                                         'value': txout.value,
                                         'script': txout.pk_script.hex(),
                                         'fields': check_unpack_mint_data(payload_data)
-                                    },
-                                    'state_info': {
-                                        'history': {}
-                                    }       
+                                    }     
                                 }
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')

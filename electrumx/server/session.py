@@ -1268,15 +1268,7 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_info': {
-                'location': atomical['location_info']['location'],
-                'txid': atomical['location_info']['txid'],
-                'index': atomical['location_info']['index'],
-                'scripthash': atomical['location_info']['scripthash'],
-                'value': atomical['location_info']['value'],
-                'script': atomical['location_info']['script'],
-                'atomicals_at_location': atomical['location_info']['atomicals_at_location'],
-            },
+            'location_infos': atomical['location_infos'],
             'mint_info': {
                 'txid': atomical['mint_info']['txid'],
                 'input_index': atomical['mint_info']['input_index'], 
@@ -1313,15 +1305,7 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_info': {
-                'location': atomical['location_info']['location'],
-                'txid': atomical['location_info']['txid'],
-                'index': atomical['location_info']['index'],
-                'scripthash': atomical['location_info']['scripthash'],
-                'value': atomical['location_info']['value'],
-                'script': atomical['location_info']['script'],
-                'atomicals_at_location': atomical['location_info']['atomicals_at_location'],
-            },
+            'location_infos': atomical['location_infos'],
             'state_info': atomical['state_info']}
 
         return status_info
@@ -1345,15 +1329,7 @@ class ElectrumX(SessionBase):
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'location_info': {
-                'location': atomical['location_info']['location'],
-                'txid': atomical['location_info']['txid'],
-                'index': atomical['location_info']['index'],
-                'scripthash': atomical['location_info']['scripthash'],
-                'value': atomical['location_info']['value'],
-                'script': atomical['location_info']['script'],
-                'atomicals_at_location': atomical['location_info']['atomicals_at_location'],
-            },
+            'location_infos': atomical['location_infos'],
             'history': history}
 
         return status_info
