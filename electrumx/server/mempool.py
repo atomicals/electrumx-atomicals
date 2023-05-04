@@ -355,8 +355,8 @@ class MemPool:
                     # so that the user does not need to wait until block confirmation to see the state changes applied
                     try:
                         atomicals_operations = parse_atomicals_operations_from_witness_array(tx)
-                        if atomicals_operations.get('m') != None:
-                            input_idx_map = atomicals_operations['m']
+                        if atomicals_operations.get('n') != None:
+                            input_idx_map = atomicals_operations['n']
                             for input_idx, payload_data in input_idx_map.items():
                                 self.logger.info(f'Atomicals mint found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
                                 # Lookup the txout will be imprinted with the atomical

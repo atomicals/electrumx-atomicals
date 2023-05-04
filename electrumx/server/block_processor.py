@@ -522,8 +522,8 @@ class BlockProcessor:
             #
             
             # Process Mint operations
-            if atomicals_operations_found.get('m') != None:
-                input_idx_map = atomicals_operations_found['m']
+            if atomicals_operations_found.get('n') != None:
+                input_idx_map = atomicals_operations_found['n']
                 atomical_num += 1
                 for input_idx, payload_data in input_idx_map.items():
                     # The atomical cannot be created if there is not a corresponding output to put the atomical onto
@@ -756,8 +756,8 @@ class BlockProcessor:
             if has_undo_info_for_atomicals:
                 atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
                 # remove the mint data if this was a mint
-                if atomicals_operations_found.get('m') != None: 
-                    input_idx_map = atomicals_operations_found['m']
+                if atomicals_operations_found.get('n') != None: 
+                    input_idx_map = atomicals_operations_found['n']
                     for input_idx, fields_map in input_idx_map.items():
                         # Lookup the txout that would be imprinted with the atomical
                         expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
