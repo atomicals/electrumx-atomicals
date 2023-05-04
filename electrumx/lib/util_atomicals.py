@@ -194,7 +194,7 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
         script_entry_len = len(script)
         if script_entry_len < 39 or script[0] != 0x20:
             continue
-        found_atomical = False
+        found_atomical_operation_definition = False
         while n < script_entry_len - 5:
             op = script[n]
             n += 1
@@ -208,7 +208,7 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
                     if op == OpCodes.OP_IF:
                         # spr1
                         if "0473707232" == script[n : n + 5].hex():
-                            found_atomical = True
+                            found_atomical_operation_definition = True
                             # Parse to ensure it is in the right format
                             operation_type, parsed_data, rawpayload = parse_atomicals_operation_from_script(script, n + 5)
                             if parsed_data != None:
@@ -216,7 +216,7 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
                             else: 
                                 operation_type_map[operation_type] = {} 
                             break
-                if found_atomical:
+                if found_atomical_operation_definition:
                     break
             else:
                 break
@@ -233,9 +233,12 @@ def parse_atomicals_operations_from_witness_array(tx):
         if operation_data != None and len(operation_data.items()) > 0: 
             operation_datas_by_input[txin_idx] = {}
             # Group by operation type
-            if operation_data.get("m") != None:
-                operation_datas_by_input["m"] = {}
-                operation_datas_by_input["m"][txin_idx] = operation_data["m"]
+            if operation_data.get("n") != None:
+                operation_datas_by_input["n"] = {}
+                operation_datas_by_input["n"][txin_idx] = operation_data["n"]
+            if operation_data.get("f") != None:
+                operation_datas_by_input["f"] = {}
+                operation_datas_by_input["f"][txin_idx] = operation_data["f"]
             if operation_data.get("u") != None:
                 operation_datas_by_input["u"] = {}
                 operation_datas_by_input["u"][txin_idx] = operation_data["u"]

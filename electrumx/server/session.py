@@ -1252,6 +1252,7 @@ class ElectrumX(SessionBase):
 
         info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
+            'atomical_type': atomical['atomical_type'],
             'location_info': atomical['location_info']}
         return info
 
@@ -1288,7 +1289,7 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            # 'location_info': atomical['location_info'],
+            'atomical_type': atomical['atomical_type'],
             'mint_info': {
                 'txid': atomical['mint_info']['txid'],
                 'input_index': atomical['mint_info']['input_index'], 
@@ -1325,7 +1326,6 @@ class ElectrumX(SessionBase):
 
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            #'location_info': atomical['location_info'],
             'state_info': atomical['state_info']}
 
         return status_info
@@ -1349,7 +1349,7 @@ class ElectrumX(SessionBase):
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         status_info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            #'location_info': atomical['location_info'],
+            'atomical_type': atomical['atomical_type'],
             'history': history}
 
         return status_info

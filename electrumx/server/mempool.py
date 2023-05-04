@@ -340,6 +340,51 @@ class MemPool:
 
             txs = {}
             atomicals_updates_map = {}
+
+            def create_atomical_from_definition(mint_type, tx, tx_hash, input_idx, payload_data, atomicals_updates_map):
+                self.logger.info(f'Atomicals mint #{type} found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
+                # Lookup the txout will be imprinted with the atomical
+                expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
+                txout = tx.outputs[expected_output_index]
+                scripthash = double_sha256(txout.pk_script)
+                hashX = script_hashX(txout.pk_script)
+                output_idx_le = pack_le_uint32(expected_output_index) 
+                input_idx_le = pack_le_uint32(input_idx)
+                location = tx_hash + output_idx_le
+                # Establish the atomical_id from the initial location
+                atomical_id = location
+                compact_atomical_id = atomical_id_bytes_to_compact(atomical_id)
+                atomicals_updates_map[atomical_id] = {
+                    'atomical_id': atomical_id_bytes_to_compact(atomical_id),
+                    'atomical_number': -1,
+                    'atomical_type': mint_type,
+                    'location_info': [{
+                        'location': atomical_id_bytes_to_compact(location),
+                        'txid': hash_to_hex_str(tx_hash),
+                        'index': expected_output_index,
+                        'scripthash': hash_to_hex_str(scripthash),
+                        'scripthash_hex': scripthash.hex(),
+                        'value': txout.value,
+                        'script': txout.pk_script.hex(),
+                        'atomicals_at_location': [compact_atomical_id]
+                    }],
+                    'mint_info': {
+                        'txid': hash_to_hex_str(tx_hash),
+                        'input_index': input_idx,
+                        'index': expected_output_index,
+                        #'blockheader': atomical['mint_info']['blockheader'],
+                        #'blockhash': atomical['mint_info']['blockhash'],
+                        #'height': atomical['mint_info']['height'],
+                        'scripthash': hash_to_hex_str(scripthash),
+                        'scripthash_hex': scripthash.hex(),
+                        'value': txout.value,
+                        'script': txout.pk_script.hex(),
+                        'fields': check_unpack_mint_data(payload_data)
+                    },
+                    'state_info': {},
+                    'history': {}
+                }
+
             for hash, raw_tx in zip(hashes, raw_txs):
                 # The daemon may have evicted the tx from its
                 # mempool or it may have gotten in a block
@@ -347,7 +392,6 @@ class MemPool:
                     continue
                 try:
                     tx, tx_size = deserializer(raw_tx).read_tx_and_vsize()
-                    tx_hash = hash
                     # Parse the atomicals in the tx if there are any
                     # Note that for the current version we do not actually update atomicals state in mempool
                     # We only track what is to be minted to give feedback to clients
@@ -355,48 +399,14 @@ class MemPool:
                     # so that the user does not need to wait until block confirmation to see the state changes applied
                     try:
                         atomicals_operations = parse_atomicals_operations_from_witness_array(tx)
-                        if atomicals_operations.get('n') != None:
-                            input_idx_map = atomicals_operations['n']
-                            for input_idx, payload_data in input_idx_map.items():
-                                self.logger.info(f'Atomicals mint found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
-                                # Lookup the txout will be imprinted with the atomical
-                                expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
-                                txout = tx.outputs[expected_output_index]
-                                scripthash = double_sha256(txout.pk_script)
-                                hashX = script_hashX(txout.pk_script)
-                                output_idx_le = pack_le_uint32(expected_output_index) 
-                                input_idx_le = pack_le_uint32(input_idx)
-                                location = tx_hash + output_idx_le
-                                # Establish the atomical_id from the initial location
-                                atomical_id = location
-                                compact_atomical_id = atomical_id_bytes_to_compact(atomical_id)
-                                atomicals_updates_map[atomical_id] = {
-                                    'atomical_id': atomical_id_bytes_to_compact(atomical_id),
-                                    'atomical_number': -1,
-                                    'location_info': [{
-                                        'location': atomical_id_bytes_to_compact(location),
-                                        'txid': hash_to_hex_str(tx_hash),
-                                        'index': expected_output_index,
-                                        'scripthash': hash_to_hex_str(scripthash),
-                                        'scripthash_hex': scripthash.hex(),
-                                        'value': txout.value,
-                                        'script': txout.pk_script.hex(),
-                                        'atomicals_at_location': [compact_atomical_id]
-                                    }],
-                                    'mint_info': {
-                                        'txid': hash_to_hex_str(tx_hash),
-                                        'input_index': input_idx,
-                                        'index': expected_output_index,
-                                        #'blockheader': atomical['mint_info']['blockheader'],
-                                        #'blockhash': atomical['mint_info']['blockhash'],
-                                        #'height': atomical['mint_info']['height'],
-                                        'scripthash': hash_to_hex_str(scripthash),
-                                        'scripthash_hex': scripthash.hex(),
-                                        'value': txout.value,
-                                        'script': txout.pk_script.hex(),
-                                        'fields': check_unpack_mint_data(payload_data)
-                                    }     
-                                }
+                        atomical_operation_nft = atomicals_operations.get('n', None)
+                        if atomical_operation_nft != None:
+                            for input_idx, payload_data in atomical_operation_nft.items():
+                                create_atomical_from_definition('nft', tx, hash, input_idx, payload_data, atomicals_updates_map)
+                        atomical_operation_ft = atomicals_operations.get('f', None)
+                        if atomical_operation_ft != None:
+                            for input_idx, payload_data in atomical_operation_ft.items():
+                                create_atomical_from_definition('ft', tx, hash, input_idx, payload_data, atomicals_updates_map)
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')
       

@@ -1010,7 +1010,15 @@ class DB:
             mint_input_index, = unpack_le_uint32(atomical_mint_info_value[  : 4])
             scripthash = atomical_mint_info_value[ 4 : 36 ]
             mint_value, = unpack_le_uint64(atomical_mint_info_value[ 36 : 44])
-            mint_type, = atomical_mint_info_value[ 44 : 45]
+            atomical_type, = atomical_mint_info_value[ 44 : 45]
+
+            if atomical_type == b'n':
+                atomical_type = 'nft'
+            elif atomical_type = b'f':
+                atomical_type = 'ft'
+            else: 
+                atomical_type = 'unknown' # should never happen
+
             mint_pkscript = atomical_mint_info_value[  45 : ]
 
             # Key: b'a' + atomical_id + <location>
@@ -1078,6 +1086,7 @@ class DB:
             atomical = {
                 'atomical_id': atomical_id,
                 'atomical_number': atomical_number,
+                'atomical_type': atomical_type,
                 'location_info': location_info,
                 'mint_info': {
                     'txid':  hash_to_hex_str(mint_tx_hash),
