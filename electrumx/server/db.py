@@ -1023,6 +1023,15 @@ class DB:
                     # getting the hashXs and getting the UTXOs
                     return None
                 # Get the output script to deduce the address
+                # Get the script at the location, stored in another index
+                atomical_output_script_key = b'z' + location
+                atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
+                if not atomical_output_script_value:
+                    self.logger.error(f'a{atomical_id} location script not found for get_by_atomical_id')
+                    return None
+
+                location_script = atomical_output_script_value
+
                 location = atomical_active_location_value[:ATOMICAL_ID_LEN]
                 location_tx_hash = atomical_active_location_value[ : 32]
                 atomical_location_idx, = unpack_le_uint32(atomical_active_location_value[ 32 : 36])
@@ -1039,14 +1048,7 @@ class DB:
                     'atomicals_at_location': atomicals_at_location
                 })
 
-            # Get the script at the location, stored in another index
-            atomical_output_script_key = b'z' + location
-            atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
-            if not atomical_output_script_value:
-                self.logger.error(f'a{atomical_id} location script not found for get_by_atomical_id')
-                return None
 
-            location_script = atomical_output_script_value
             atomicals_at_location = self.get_atomicals_by_location(location)
             #for key, val in data_definition.items():
             #    if data_definition[key]['content_length'] > 256:

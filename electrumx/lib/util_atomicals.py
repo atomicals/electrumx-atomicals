@@ -46,8 +46,10 @@ def get_expected_output_index_of_atomical_in_tx(input_idx, tx):
     return expected_output_index
 
 def decode_op_byte(byteop):
-    if byteop == b'm':
-        return 'mint'
+    if byteop == b'n':
+        return 'nft'
+    elif byteop == b'f':
+        return 'ft',
     elif byteop == b'x':
         return 'ex',
     elif byteop == b'u':
@@ -168,16 +170,18 @@ def parse_atomicals_operation_from_script(script, n):
     end = n + 2
     atom_op = script[n : end].hex()
     print(f'Atomicals operation found. {atom_op}')
-    # Mint operation
-    if atom_op == "016d":
-        return 'm', parse_atomicals_mint_or_update_operation(script, end), None
-    # Update operation
+    if atom_op == "016e":
+        # Mint NFT
+        return 'n', parse_atomicals_mint_or_update_operation(script, end), None
+    if atom_op == "0166":
+        # Mint FT
+        return 'f', parse_atomicals_mint_or_update_operation(script, end), None
     elif atom_op == "0175":
+        # Update operation
         return 'u', parse_atomicals_mint_or_update_operation(script, end), None
-    # Extract operation
     elif atom_op == "0178":
-        values, payload = parse_atomicals_extract_operation(script, end)
-        return 'x', values, payload
+        # Extract operation
+        return 'x', parse_atomicals_mint_or_update_operation(script, end), None
     
     print(f'Undefined Atomicals operation found. {script[n : end].hex()}')
     return None, None
