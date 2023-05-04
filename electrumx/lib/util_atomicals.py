@@ -44,18 +44,7 @@ def get_expected_output_index_of_atomical_in_tx(input_idx, tx):
     if input_idx >= len(tx.outputs):
         expected_output_index = 0
     return expected_output_index
-
-def decode_op_byte(byteop):
-    if byteop == b'n':
-        return 'nft'
-    elif byteop == b'f':
-        return 'ft',
-    elif byteop == b'x':
-        return 'ex',
-    elif byteop == b'u':
-        return 'up'
-
-    raise TypeError(f'Invalid byteop {byteop}')
+ 
 
 def compact_to_atomical_id_bytes(value):
     '''Convert the 36 byte atomical_id to the compact form with the "i" at the end

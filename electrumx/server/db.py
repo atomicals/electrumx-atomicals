@@ -28,7 +28,7 @@ from electrumx.lib.util import (
     formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
     unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
-from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, atomical_id_bytes_to_compact, decode_op_byte, check_unpack_mint_data
+from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, atomical_id_bytes_to_compact, check_unpack_mint_data
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
 
@@ -1013,9 +1013,9 @@ class DB:
             atomical_type, = atomical_mint_info_value[ 44 : 45]
 
             if atomical_type == b'n':
-                atomical_type = 'nft'
+                atomical_type = 'NFT'
             elif atomical_type = b'f':
-                atomical_type = 'ft'
+                atomical_type = 'FT'
             else: 
                 atomical_type = 'unknown' # should never happen
 

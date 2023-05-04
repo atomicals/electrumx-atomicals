@@ -402,11 +402,11 @@ class MemPool:
                         atomical_operation_nft = atomicals_operations.get('n', None)
                         if atomical_operation_nft != None:
                             for input_idx, payload_data in atomical_operation_nft.items():
-                                create_atomical_from_definition('nft', tx, hash, input_idx, payload_data, atomicals_updates_map)
+                                create_atomical_from_definition('NFT', tx, hash, input_idx, payload_data, atomicals_updates_map)
                         atomical_operation_ft = atomicals_operations.get('f', None)
                         if atomical_operation_ft != None:
                             for input_idx, payload_data in atomical_operation_ft.items():
-                                create_atomical_from_definition('ft', tx, hash, input_idx, payload_data, atomicals_updates_map)
+                                create_atomical_from_definition('FT', tx, hash, input_idx, payload_data, atomicals_updates_map)
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')
       
