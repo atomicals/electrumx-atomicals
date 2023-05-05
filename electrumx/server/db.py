@@ -1010,7 +1010,7 @@ class DB:
             mint_input_index, = unpack_le_uint32(atomical_mint_info_value[  : 4])
             scripthash = atomical_mint_info_value[ 4 : 36 ]
             mint_value, = unpack_le_uint64(atomical_mint_info_value[ 36 : 44])
-            atomical_type, = atomical_mint_info_value[ 44 : 45]
+            atomical_type = atomical_mint_info_value[ 44 : 45]
 
             if atomical_type == b'n':
                 atomical_type = 'NFT'
