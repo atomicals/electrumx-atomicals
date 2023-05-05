@@ -438,6 +438,7 @@ class BlockProcessor:
         self.tip_advanced_event.clear()
 
     def create_atomical_from_definition(self, mint_type_str, tx, tx_hash, input_idx, payload_data):
+        print('create_atomical_from_definition b')
         put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
         # The atomical cannot be created if there is not a corresponding output to put the atomical onto
         # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
@@ -446,8 +447,10 @@ class BlockProcessor:
         # Therefore it is invalid to mint at the n'th input and have less than n outputs
         if input_idx >= len(tx.outputs):
             return
+        print('create_atomical_from_definition b 1')
         # Lookup the txout will be imprinted with the atomical
         expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
+        print('create_atomical_from_definition b 1a')
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
@@ -455,6 +458,7 @@ class BlockProcessor:
         input_idx_le = to_le_uint32(input_idx) 
         location = tx_hash + output_idx_le
         value_sats = to_le_uint64(txout.value)
+        print('create_atomical_from_definition b 2')
         # Establish the atomical_id from the initial location
         atomical_id = location
         mint_type = b'n'
@@ -464,7 +468,7 @@ class BlockProcessor:
             mint_type = b'f'
         else:
             assert(false)
-
+        print('create_atomical_from_definition b 3')
         self.logger.info(f'Atomicals mint {mint_type_str} in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={atomical_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}') 
         # Leverage existing history table by double hashing the atomical_id
         append_hashX(double_sha256(atomical_id))
