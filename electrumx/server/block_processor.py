@@ -455,10 +455,10 @@ class BlockProcessor:
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
-        output_idx_le = to_le_uint32(expected_output_index) 
-        input_idx_le = to_le_uint32(input_idx) 
+        output_idx_le = pack_le_uint32(expected_output_index) 
+        input_idx_le = pack_le_uint32(input_idx) 
         location = tx_hash + output_idx_le
-        value_sats = to_le_uint64(txout.value)
+        value_sats = pack_le_uint64(txout.value)
         print('create_atomical_from_definition b 2')
         # Establish the atomical_id from the initial location
         atomical_id = location
