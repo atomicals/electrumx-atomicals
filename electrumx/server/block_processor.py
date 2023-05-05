@@ -437,6 +437,53 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
+    def create_atomical_from_definition(self, mint_type_str, tx, tx_hash, input_idx, payload_data):
+        put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
+        # The atomical cannot be created if there is not a corresponding output to put the atomical onto
+        # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
+        # ... then it is not that easy to determine where the atomical mint was located without doing a scan
+        # ... of all the inputs
+        # Therefore it is invalid to mint at the n'th input and have less than n outputs
+        if input_idx >= len(tx.outputs):
+            return
+        # Lookup the txout will be imprinted with the atomical
+        expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
+        txout = tx.outputs[expected_output_index]
+        scripthash = double_sha256(txout.pk_script)
+        hashX = script_hashX(txout.pk_script)
+        output_idx_le = to_le_uint32(expected_output_index) 
+        input_idx_le = to_le_uint32(input_idx) 
+        location = tx_hash + output_idx_le
+        value_sats = to_le_uint64(txout.value)
+        # Establish the atomical_id from the initial location
+        atomical_id = location
+        mint_type = b'n'
+        if mint_type_str == 'NFT'
+            mint_type = b'n'
+        elif mint_type_str == 'FT':
+            mint_type = b'f'
+        else
+            assert(false)
+
+        self.logger.info(f'Atomicals mint {mint_type_str} in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={atomical_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}') 
+        # Leverage existing history table by double hashing the atomical_id
+        append_hashX(double_sha256(atomical_id))
+        atomical_count_numb = to_be_uint64(atomical_num)
+        # Save mint data
+        put_atomicals_idempotent_data(b'md' + atomical_id, payload_data)
+        # Save mint block info
+        put_atomicals_idempotent_data(b'mb' + atomical_id, atomical_count_numb + header + to_le_uint32(height))
+        # Save mint info
+        put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + mint_type + txout.pk_script)
+        # Track the atomical number for the newly minted atomical
+        put_atomicals_idempotent_data(b'n' + atomical_count_numb, atomical_id)
+        # Track active atomical location
+        put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
+        # Save the output script of the atomical to lookup at a future point
+        put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
+        # Save the location to have the atomical located there
+        self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+
     def advance_txs(
             self,
             txs: Sequence[Tuple[Tx, bytes]],
@@ -520,48 +567,18 @@ class BlockProcessor:
             #    map(input_idx" =>
             #       map("fieldname" => True
             #
-            
-            # Process Mint operations
-            if atomicals_operations_found.get('n') != None:
-                input_idx_map = atomicals_operations_found['n']
+          
+            # Process Mint (NFT) operations 
+            atomicals_operations_found_nft = atomicals_operations_found.get('n', None)
+            if atomicals_operations_found_nft != None:
                 atomical_num += 1
-                for input_idx, payload_data in input_idx_map.items():
-                    # The atomical cannot be created if there is not a corresponding output to put the atomical onto
-                    # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
-                    # ... then it is not that easy to determine where the atomical mint was located without doing a scan
-                    # ... of all the inputs
-                    # Therefore it is invalid to mint at the n'th input and have less than n outputs
-                    if input_idx >= len(tx.outputs):
-                        continue
-                    # Lookup the txout will be imprinted with the atomical
-                    expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
-                    txout = tx.outputs[expected_output_index]
-                    scripthash = double_sha256(txout.pk_script)
-                    hashX = script_hashX(txout.pk_script)
-                    output_idx_le = to_le_uint32(expected_output_index) 
-                    input_idx_le = to_le_uint32(input_idx) 
-                    location = tx_hash + output_idx_le
-                    value_sats = to_le_uint64(txout.value)
-                    # Establish the atomical_id from the initial location
-                    atomical_id = location
-                    self.logger.info(f'Atomicals mint in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={atomical_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}') 
-                    # Leverage existing history table by double hashing the atomical_id
-                    append_hashX(double_sha256(atomical_id))
-                    atomical_count_numb = to_be_uint64(atomical_num)
-                    # Save mint data
-                    put_atomicals_idempotent_data(b'md' + atomical_id, payload_data)
-                    # Save mint block info
-                    put_atomicals_idempotent_data(b'mb' + atomical_id, atomical_count_numb + header + to_le_uint32(height))
-                    # Save mint info
-                    put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + b'n' + txout.pk_script)
-                    # Track the atomical number for the newly minted atomical
-                    put_atomicals_idempotent_data(b'n' + atomical_count_numb, atomical_id)
-                    # Track active atomical location
-                    put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
-                    # Save the output script of the atomical to lookup at a future point
-                    put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
-                    # Save the location to have the atomical located there
-                    self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+                for input_idx, payload_data in atomicals_operations_found_nft.items():
+                    self.create_atomical_from_definition('NFT', tx, hash, input_idx, payload_data)
+            atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
+            if atomicals_operations_found_ft != None:
+                atomical_num += 1
+                for input_idx, payload_data in atomicals_operations_found_ft.items():
+                    self.create_atomical_from_definition('FT', tx, hash, input_idx, payload_data)
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
@@ -956,13 +973,15 @@ class BlockProcessor:
                             f'found in "k" table')
 
             self.db_deletes.append(atomical_db_key)
+            # Delete the b'a' location for the spent atomical
+            atomical_id = atomical_db_key[ 1 + ATOMICAL_ID_LEN : ]
+            self.db_deletes.append(b'a' + atomical_id + location_id)
+
             self.logger.info("adding atomical to atomicals data list to be spent")
             self.logger.info(atomical_db_key.hex())
             self.logger.info(atomical_db_value.hex())
             atomicals_data_list.append(atomical_db_key[ 1 : ] + atomical_db_value)
-            self.logger.info("atomicals_data_list.append")
-            self.logger.info(atomical_db_key.hex())
-            self.logger.info(atomical_db_value.hex())
+ 
  
         # Return the full data spent
         return atomicals_data_list

@@ -131,26 +131,8 @@ def parse_atomicals_extract_operation_push_datas(script, n):
         raise ScriptError(f'parse_atomicals_mint_operation script error {e}') from None
 
 def parse_atomicals_extract_operation(script, n):
-    '''Parse an Atomicals extract operation'''
-    payload = parse_atomicals_data_definition_operation(script, n)
-    try:
-        decoded_cbor = loads(payload)
-        extract_keys = {}
-        if decoded_cbor == None:
-            print("Atomicals Extract: Payload CBOR parsing returned None. Doing nothing for the operation.")
-            return {}
-        try:
-            iterator = iter(decoded_cbor)
-            for item in decoded_cbor:
-                extract_keys[item] = True     
-        except TypeError:
-            # Not iterable
-            print('Atomicals Extract: Payload is not an array. Doing nothing for the operation.')
-        return extract_keys, payload
-    except CBORDecodeError:
-        print("Atomicals Extract: CBORDecodeError. Doing nothing for the operation.")
-    return None, payload
-    
+    return parse_atomicals_data_definition_operation(script, n) 
+
 def parse_atomicals_mint_or_update_operation(script, n):
     return parse_atomicals_data_definition_operation(script, n) 
  
@@ -170,9 +152,21 @@ def parse_atomicals_operation_from_script(script, n):
         return 'u', parse_atomicals_mint_or_update_operation(script, end), None
     elif atom_op == "0178":
         # Extract operation
-        return 'x', parse_atomicals_mint_or_update_operation(script, end), None
-    
-    print(f'Undefined Atomicals operation found. {script[n : end].hex()}')
+        payload = parse_atomicals_extract_operation(script, end)
+        try:
+            decoded_cbor = loads(payload)
+            extract_keys = {}
+            if decoded_cbor == None:
+                print("Atomicals Extract: Payload CBOR parsing returned None. Doing nothing for the operation.")
+                return None, None, None
+            if isinstance(decoded_cbor, dict):
+                for item_key, item_value in decoded_cbor.items():
+                    extract_keys[item_key] = True     
+            return 'x', extract_keys, None
+        except CBORDecodeError:
+            print("Atomicals Extract: CBORDecodeError. Doing nothing for the operation.")
+        
+    print(f'Invalid Atomicals operation data. {script[n : end].hex()}')
     return None, None, None
 
 def parse_atomicals_operations_from_witness_for_input(txinwitness):
