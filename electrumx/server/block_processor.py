@@ -437,7 +437,7 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
-    def create_atomical_from_definition(self, mint_type_str, tx, tx_hash, input_idx, payload_data):
+    def create_atomical_from_definition(self, mint_type_str, tx, tx_hash, input_idx, payload_data, append_hashX):
         print('create_atomical_from_definition b')
         put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
         # The atomical cannot be created if there is not a corresponding output to put the atomical onto
@@ -451,6 +451,7 @@ class BlockProcessor:
         # Lookup the txout will be imprinted with the atomical
         expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
         print('create_atomical_from_definition b 1a')
+        script_hashX = self.coin.hashX_from_script
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
@@ -550,7 +551,7 @@ class BlockProcessor:
                 # Ignore unspendable outputs
                 if is_unspendable(txout.pk_script):
                     continue
-
+    
                 # Get the hashX
                 hashX = script_hashX(txout.pk_script)
                 append_hashX(hashX)
@@ -577,12 +578,12 @@ class BlockProcessor:
             if atomicals_operations_found_nft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_nft.items():
-                    self.create_atomical_from_definition('NFT', tx, hash, input_idx, payload_data)
+                    self.create_atomical_from_definition('NFT', tx, hash, input_idx, payload_data, append_hashX)
             atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
             if atomicals_operations_found_ft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_ft.items():
-                    self.create_atomical_from_definition('FT', tx, hash, input_idx, payload_data)
+                    self.create_atomical_from_definition('FT', tx, hash, input_idx, payload_data, append_hashX)
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
