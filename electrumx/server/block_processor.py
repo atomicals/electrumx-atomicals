@@ -458,7 +458,7 @@ class BlockProcessor:
         # Establish the atomical_id from the initial location
         atomical_id = location
         mint_type = b'n'
-        if mint_type_str == 'NFT'
+        if mint_type_str == 'NFT':
             mint_type = b'n'
         elif mint_type_str == 'FT':
             mint_type = b'f'
