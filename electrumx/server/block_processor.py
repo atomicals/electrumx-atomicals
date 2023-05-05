@@ -448,6 +448,10 @@ class BlockProcessor:
         if input_idx >= len(tx.outputs):
             return
         print('create_atomical_from_definition b 1')
+        to_le_uint32 = pack_le_uint32
+        to_le_uint64 = pack_le_uint64
+        to_be_uint64 = pack_be_uint64
+
         # Lookup the txout will be imprinted with the atomical
         expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
         print('create_atomical_from_definition b 1a')
@@ -455,10 +459,10 @@ class BlockProcessor:
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
-        output_idx_le = pack_le_uint32(expected_output_index) 
-        input_idx_le = pack_le_uint32(input_idx) 
+        output_idx_le = to_le_uint32(expected_output_index) 
+        input_idx_le = to_le_uint32(input_idx) 
         location = tx_hash + output_idx_le
-        value_sats = pack_le_uint64(txout.value)
+        value_sats = to_le_uint64(txout.value)
         print('create_atomical_from_definition b 2')
         # Establish the atomical_id from the initial location
         atomical_id = location
@@ -477,7 +481,7 @@ class BlockProcessor:
         # Save mint data
         put_atomicals_idempotent_data(b'md' + atomical_id, payload_data)
         # Save mint block info
-        put_atomicals_idempotent_data(b'mb' + atomical_id, atomical_count_numb + header + pack_le_uint32(height))
+        put_atomicals_idempotent_data(b'mb' + atomical_id, atomical_count_numb + header + to_le_uint32(height))
         # Save mint info
         put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + mint_type + txout.pk_script)
         # Track the atomical number for the newly minted atomical
