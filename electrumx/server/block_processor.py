@@ -462,7 +462,7 @@ class BlockProcessor:
             mint_type = b'n'
         elif mint_type_str == 'FT':
             mint_type = b'f'
-        else
+        else:
             assert(false)
 
         self.logger.info(f'Atomicals mint {mint_type_str} in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={atomical_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}') 
