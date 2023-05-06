@@ -75,7 +75,7 @@ class FlushData:
     adds = attr.ib()  # type: Dict[bytes, bytes]  # txid+out_idx -> hashX+tx_num+value_sats
     atomicals_adds = attr.ib()  # type: Dict[bytes, bytes]  # txid+out_idx + txid+out_idx -> hashX + scripthash + value_sats
     atomicals_idempotent_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and b'i' and b'k' db keys
+    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and b'k' db keys
     tip = attr.ib()
 
 COMP_TXID_LEN = 4
@@ -135,10 +135,6 @@ class DB:
         # Key: b'L' + block_height
         # Value: byte-concat list of (tx_hash + txout_idx + mint_tx_hash + mint_txout_idx + hashX + scripthash + value_sats)
         # "undo data: list of atomicals UTXOs spent at block height"
-        # ---
-        # Key: b't' + tx_hash
-        # Value: rawtx
-        # "maps a tx_hash to a rawtx, used by Atomicals for mint and transfer storage"
         # ---
         # Key: b'md' + atomical_id
         # Value: mint data serialized.
@@ -964,16 +960,6 @@ class DB:
             atomicals_at_location.append(atomical_id_bytes_to_compact(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]))
         return atomicals_at_location
 
-    def build_state_data(self, history):
-        state_data_map = {}
-        for item in history:
-            if item['op'] == 'upd':
-                state_data_map[item['field_name']] = item['field_data']
-            elif item['op'] == 'del':
-                del state_data_map[item['field_name']]
- 
-        return state_data_map
-
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
         '''Return all UTXOs for an address sorted in no particular order.'''
 
@@ -1053,12 +1039,6 @@ class DB:
                     'script': location_script.hex(),
                     'atomicals_at_location': atomicals_at_location
                 })
-
-
-
-            #for key, val in data_definition.items():
-            #    if data_definition[key]['content_length'] > 256:
-            #        del data_definition[key]['body']
             prefix = b's' + atomical_id
             state_fields = {}
             state_history = []
@@ -1181,20 +1161,7 @@ class DB:
             return atomical_ids
 
         return await run_in_thread(read_atomical_list)
-
-    async def get_atomical_txs(self, txids):
-        def read_txs():
-            rawtxs = []
-            for txid in txids: 
-                tx_key = b't' + txid
-                rawtx_value = self.db.utxo_db.get(tx_key)
-                if rawtx_value:
-                    rawtxs.append(rawtx_value)
-            return rawtxs
-
-        rawtxs = await run_in_thread(read_txs)
-        return rawtxs
-
+ 
     async def all_utxos(self, hashX):
         '''Return all UTXOs for an address sorted in no particular order.'''
         def read_utxos():

@@ -486,6 +486,7 @@ class BlockProcessor:
         put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
         # Save the location to have the atomical located there
         self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
+        return atomical_id
 
     def advance_txs(
             self,
@@ -533,19 +534,13 @@ class BlockProcessor:
                 # Find all the existing transferred atomicals and spend the Atomicals utxos
                 atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
                 if len(atomicals_transferred_list):
-                    atomicals_transfers_found_at_inputs[txin_index] = {
-                        'atomicals': atomicals_transferred_list
-                    }
+                    atomicals_transfers_found_at_inputs[txin_index] = atomicals_transferred_list
                 atomicals_undo_info_extend(atomicals_transferred_list)
                 txin_index = txin_index + 1
             
             # Detect all Atomicals operations in the transaction witness inputs
             atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
             atomicals_operations_or_transfer_found = (atomicals_operations_found != None and len(atomicals_operations_found.items()) > 0) or ( atomicals_transfers_found_at_inputs != None and len(atomicals_transfers_found_at_inputs.items()) > 0)
-            if atomicals_operations_or_transfer_found:
-                # How to get the original tx rawtx??? or should we just pass in the deserialized?
-                put_atomicals_idempotent_data(b't' + tx_hash, pickle.dumps(tx))
-
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
                 # Ignore unspendable outputs
@@ -578,12 +573,19 @@ class BlockProcessor:
             if atomicals_operations_found_nft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_nft.items():
-                    self.create_atomical_from_definition(header, height, tx_numb, atomical_num, 'NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    atomical_id = self.create_atomical_from_definition(header, height, tx_numb, atomical_num, 'NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    hashX = script_hashX(atomical_id)
+                    append_hashX(hashX)
+                    put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
+
             atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
             if atomicals_operations_found_ft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_ft.items():
-                    self.create_atomical_from_definition(header, height, tx_numb, atomical_num, 'FT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    atomical_id = self.create_atomical_from_definition(header, height, tx_numb, atomical_num, 'FT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    hashX = script_hashX(atomical_id)
+                    append_hashX(hashX)
+                    put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
@@ -601,11 +603,20 @@ class BlockProcessor:
                     # input_idx_packed = pack_le_uint32(idx)
                     expected_output_index = get_expected_output_index_of_atomical_in_tx(idx, tx) 
                     expected_output_index_packed = pack_le_uint32(expected_output_index)
+
+                    hashX = script_hashX(atomical_id)
+                    append_hashX(hashX)
+
+                    ## 
+                    wtf ? How to put utxo to the location?
+                    put_utxo(tx_hash + expected_output_index_packed, hashX + tx_numb + to_le_uint64(txout.value))
+
+
                     # There is an update operation at the Atomical outpoint being spent
                     if atomicals_operations_found.get('u') != None and atomicals_operations_found['u'].get(idx) != None:
                         update_payload = atomicals_operations_found['u'][idx]
                         for atomical_item in atomicals_list:    
-                            # Save the latest updated fields (beta)
+                            # Save the latest updated fields
                             put_atomicals_idempotent_data(b's' + atomical_id + tx_numb + expected_output_index_packed, update_payload)
                     
                     # If the extract operation refers to the current atomical, then force it to the 0'th output
@@ -955,8 +966,8 @@ class BlockProcessor:
             if found_at_least_one == False: 
                 raise IndexError(f'Did not find expected at least one entry for atomicals: {hash_to_hex_str(tx_hash)} / {tx_idx:,d} not '
                             f'found in "k" table')
-
-            self.db_deletes.append(atomical_db_key)
+            # Do not need to delete it>????
+            # self.db_deletes.append(atomical_db_key)
             # Delete the b'a' location for the spent atomical
             atomical_id = atomical_db_key[ 1 + ATOMICAL_ID_LEN : ]
             self.db_deletes.append(b'a' + atomical_id + location_id)

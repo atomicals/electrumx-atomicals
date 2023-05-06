@@ -166,36 +166,7 @@ Return an ordered list of atomicals UTXOs sent to a script hash.
       "atomical_id_hex": "9f2c45a12db0144909b5db269415f7319179105982ac70ed80d76ea79d923ebf01000000"
     }
   ]
-
-
-blockchain.atomicals.get_txs
-=================================
-
-Return the rawtxs that were involved in an atomical mint or transfer. Max request up to 20 txids
-
-**Signature**
-
-  .. function:: blockchain.atomicals.get_txs(txids)
-  .. versionadded:: 1.6
-
-  *txids*
-
-    Array of transaction ids to get the rawtxs for
-
-**Result**
-
-  Returns an array of rawtxs for the txids. The client must ensure all the rawtxs correspond to the txids requested by hashing them and correlating
-  to the txids.
-
-**Result Examples**
-
-::
-[
-  "00000144909b5d....",
-  "00000144909b5d...."
-]
-
-
+ 
 blockchain.atomicals.get_data
 =================================
 

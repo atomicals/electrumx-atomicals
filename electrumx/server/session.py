@@ -1360,11 +1360,6 @@ class ElectrumX(SessionBase):
 
         return status_info
 
-    async def atomical_get_txs(self, txids):
-        if len(txids) > 20:
-            raise RPCError(BAD_REQUEST, f'"too many txids > {len(txids)} max per request is 20')
-        return await self.db.get_atomical_txs(txids)
-
     async def get_atomicals_summary_info(self):
         return {
             'coin': self.env.coin.__name__,
@@ -1819,7 +1814,6 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.get': self.atomicals_get,
             'blockchain.atomicals.get_state': self.atomicals_get_state,
             'blockchain.atomicals.get_history': self.atomicals_get_history,
-            'blockchain.transaction.get_txs': self.atomical_get_txs,
             'blockchain.transaction.broadcast': self.transaction_broadcast,
             'blockchain.transaction.get': self.transaction_get,
             'blockchain.transaction.get_merkle': self.transaction_merkle,
