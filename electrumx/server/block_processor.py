@@ -437,8 +437,7 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
-    def create_atomical_from_definition(self, mint_type_str, tx, tx_hash, input_idx, payload_data, append_hashX):
-        print('create_atomical_from_definition b')
+    def create_atomical_from_definition(self, atomical_num, mint_type_str, tx, tx_hash, input_idx, payload_data, append_hashX):
         put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
         # The atomical cannot be created if there is not a corresponding output to put the atomical onto
         # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
@@ -447,14 +446,11 @@ class BlockProcessor:
         # Therefore it is invalid to mint at the n'th input and have less than n outputs
         if input_idx >= len(tx.outputs):
             return
-        print('create_atomical_from_definition b 1')
         to_le_uint32 = pack_le_uint32
         to_le_uint64 = pack_le_uint64
         to_be_uint64 = pack_be_uint64
-
         # Lookup the txout will be imprinted with the atomical
         expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
-        print('create_atomical_from_definition b 1a')
         script_hashX = self.coin.hashX_from_script
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
@@ -465,7 +461,6 @@ class BlockProcessor:
         print(tx_hash)
         location = tx_hash + output_idx_le
         value_sats = to_le_uint64(txout.value)
-        print('create_atomical_from_definition b 2')
         # Establish the atomical_id from the initial location
         atomical_id = location
         mint_type = b'n'
@@ -475,7 +470,6 @@ class BlockProcessor:
             mint_type = b'f'
         else:
             assert(false)
-        print('create_atomical_from_definition b 3')
         self.logger.info(f'Atomicals mint {mint_type_str} in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, atomical_id={atomical_id_bytes_to_compact(atomical_id)}, atomical_number={atomical_num}') 
         # Leverage existing history table by double hashing the atomical_id
         append_hashX(double_sha256(atomical_id))
@@ -584,12 +578,12 @@ class BlockProcessor:
             if atomicals_operations_found_nft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_nft.items():
-                    self.create_atomical_from_definition('NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition(atomical_num, 'NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
             atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
             if atomicals_operations_found_ft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_ft.items():
-                    self.create_atomical_from_definition('FT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition(atomical_num, 'FT', tx, tx_hash, input_idx, payload_data, append_hashX)
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
