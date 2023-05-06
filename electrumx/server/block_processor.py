@@ -584,12 +584,12 @@ class BlockProcessor:
             if atomicals_operations_found_nft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_nft.items():
-                    self.create_atomical_from_definition('NFT', tx, hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition('NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
             atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
             if atomicals_operations_found_ft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_ft.items():
-                    self.create_atomical_from_definition('FT', tx, hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition('FT', tx, tx_hash, input_idx, payload_data, append_hashX)
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
