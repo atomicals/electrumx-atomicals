@@ -462,6 +462,7 @@ class BlockProcessor:
         output_idx_le = to_le_uint32(expected_output_index) 
         input_idx_le = to_le_uint32(input_idx) 
         print(output_idx_le)
+        print(tx_hash)
         location = tx_hash + output_idx_le
         value_sats = to_le_uint64(txout.value)
         print('create_atomical_from_definition b 2')
