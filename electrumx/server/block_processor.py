@@ -457,8 +457,6 @@ class BlockProcessor:
         hashX = script_hashX(txout.pk_script)
         output_idx_le = to_le_uint32(expected_output_index) 
         input_idx_le = to_le_uint32(input_idx) 
-        print(output_idx_le)
-        print(tx_hash)
         location = tx_hash + output_idx_le
         value_sats = to_le_uint64(txout.value)
         # Establish the atomical_id from the initial location
@@ -535,7 +533,9 @@ class BlockProcessor:
                 # Find all the existing transferred atomicals and spend the Atomicals utxos
                 atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
                 if len(atomicals_transferred_list):
-                    atomicals_transfers_found_at_inputs[txin_index] = atomicals_transferred_list
+                    atomicals_transfers_found_at_inputs[txin_index] = {
+                        'atomicals': atomicals_transferred_list
+                    }
                 atomicals_undo_info_extend(atomicals_transferred_list)
                 txin_index = txin_index + 1
             
@@ -620,16 +620,6 @@ class BlockProcessor:
                     put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
                      # Save the output script of the atomical to lookup at a future point
                     put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
-                    self.logger.info('new atomical locations for atomical_id')
-                    self.logger.info(atomical_id.hex())
-                    self.logger.info('location')
-                    self.logger.info(location.hex())
-                    self.logger.info('scripthash')
-                    self.logger.info(scripthash)
-                    self.logger.info('value_sats')
-                    self.logger.info(value_sats)
-                    self.logger.info('atomical_item')
-                    self.logger.info(atomical_item.hex())
                     self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
                     # Leverage existing history table by hashing the atomical_id
                     append_hashX(double_sha256(atomical_id))
@@ -740,16 +730,15 @@ class BlockProcessor:
         atomical_num = self.atomical_count
         atomicals_minted = 0
         for tx, tx_hash in reversed(txs):
-
             for idx, txout in enumerate(tx.outputs):
                 # Spend the TX outputs.  Be careful with unspendable
                 # outputs - we didn't save those in the first place.
                 if is_unspendable(txout.pk_script):
                     continue
-
                 # Get the hashX
                 cache_value = spend_utxo(tx_hash, idx)
                 hashX = cache_value[:HASHX_LEN]
+                txout_value = cache_value[:-8] 
                 touched.add(hashX)
                 output_index_packed = pack_le_uint32(idx)
                 current_location = tx_hash + output_index_packed
@@ -763,6 +752,8 @@ class BlockProcessor:
                         location = spent_atomical[ : ATOMICAL_ID_LEN]
                         # Remove the stored output
                         self.db_deletes.append(b'z' + location)
+                        # remove the b'a' atomicals entry at the location
+                        self.db_deletes.append(b'a' + atomical_id + location)
                         # Just delete any potential state updates indiscriminately
                         # what that means is that we do not actually correlate which input event/field corresponds to the spent atomical
                         # We merely wipe out every possible state and field update even if it was for another atomical
@@ -793,8 +784,7 @@ class BlockProcessor:
                         # Make sure to remove the atomical number
                         atomical_numb = pack_be_uint64(atomical_num) 
                         self.db_deletes.append(b'n' + atomical_numb)
-                        # remove the b'a' state since we know it was a mint and it's no longer needed
-                        self.db_deletes.append(b'a' + atomical_id + location)
+
                         atomical_num -= 1
                         atomicals_minted += 1
 
@@ -931,13 +921,6 @@ class BlockProcessor:
 
     def spend_atomicals_utxo(self, tx_hash: bytes, tx_idx: int) -> bytes:
         '''Spend the atomicals entry for UTXO and return atomicals[].'''
-        # Todo: For now we don't use a cache and we always use the disk.
-        # Later we will find a way to store and query the entries efficiently for cache
-        # Fast track is it being in the cache
-        # idx_packed = pack_le_uint32(tx_idx)
-        # cache_value = self.atomicals_utxo_cache.pop(tx_hash + idx_packed, None)
-        # if cache_value:
-        #     return cache_value
         idx_packed = pack_le_uint32(tx_idx)
         location_id = tx_hash + idx_packed
         cache_map = self.atomicals_utxo_cache.pop(location_id, None)
@@ -947,10 +930,6 @@ class BlockProcessor:
             for key in cache_map.keys(): 
                 value = cache_map[key]
                 spent_cache_values.append(location_id + key + value)
-                self.logger.info("cache_map")
-                self.logger.info(location_id.hex())
-                self.logger.info(key.hex())
-                self.logger.info(value.hex())
             return spent_cache_values
             
         # Search the locations of existing atomicals
