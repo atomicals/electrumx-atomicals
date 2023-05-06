@@ -437,7 +437,7 @@ class BlockProcessor:
         self.tip_advanced_event.set()
         self.tip_advanced_event.clear()
 
-    def create_atomical_from_definition(self, header, atomical_num, mint_type_str, tx, tx_hash, input_idx, payload_data, append_hashX):
+    def create_atomical_from_definition(self, header, height, atomical_num, mint_type_str, tx, tx_hash, input_idx, payload_data, append_hashX):
         put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
         # The atomical cannot be created if there is not a corresponding output to put the atomical onto
         # This is done so that if an atomical mint is in the n'th input, and there are insufficient outputs
@@ -578,12 +578,12 @@ class BlockProcessor:
             if atomicals_operations_found_nft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_nft.items():
-                    self.create_atomical_from_definition(header, atomical_num, 'NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition(header, height, atomical_num, 'NFT', tx, tx_hash, input_idx, payload_data, append_hashX)
             atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
             if atomicals_operations_found_ft != None:
                 atomical_num += 1
                 for input_idx, payload_data in atomicals_operations_found_ft.items():
-                    self.create_atomical_from_definition(header, atomical_num, 'FT', tx, tx_hash, input_idx, payload_data, append_hashX)
+                    self.create_atomical_from_definition(header, height, atomical_num, 'FT', tx, tx_hash, input_idx, payload_data, append_hashX)
 
             # Process the updates data
             for idx, atomicals_list in atomicals_transfers_found_at_inputs.items():
