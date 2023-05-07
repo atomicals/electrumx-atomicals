@@ -411,6 +411,10 @@ class BlockProcessor:
 
         self.atomicals_utxo_cache[location_id][atomical_id] = value
 
+        # But we also permanently store the atomicals utxo because we can always find which atomicals were located at the location
+        put_atomicals_idempotent_data = self.atomicals_idempotent_data.__setitem__
+        put_atomicals_idempotent_data(b'i' + location_id + atomical_id, value)  
+
     def advance_blocks(self, blocks):
         '''Synchronously advance the blocks.
 
@@ -480,8 +484,6 @@ class BlockProcessor:
         put_atomicals_idempotent_data(b'mi' + atomical_id, input_idx_le + scripthash + value_sats + mint_type + txout.pk_script)
         # Track the atomical number for the newly minted atomical
         put_atomicals_idempotent_data(b'n' + atomical_count_numb, atomical_id)
-        # Track active atomical location
-        put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
         # Save the output script of the atomical to lookup at a future point
         put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
         # Save the location to have the atomical located there
@@ -496,7 +498,7 @@ class BlockProcessor:
             height
     ) -> Sequence[bytes]:
         self.tx_hashes.append(b''.join(tx_hash for tx, tx_hash in txs))
-
+        
         # Use local vars for speed in the loops
         undo_info = []
         atomicals_undo_info = []
@@ -598,37 +600,30 @@ class BlockProcessor:
                 for atomical_item in atomicals_list:
                     self.logger.info('atomical_item being processed for a transfer found at the inputs')
                     self.logger.info(atomical_item.hex())
-                    
                     atomical_id = atomical_item[ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-                    # input_idx_packed = pack_le_uint32(idx)
                     expected_output_index = get_expected_output_index_of_atomical_in_tx(idx, tx) 
                     expected_output_index_packed = pack_le_uint32(expected_output_index)
 
                     hashX = script_hashX(atomical_id)
                     append_hashX(hashX)
 
-                    ## 
-                    wtf ? How to put utxo to the location?
-                    put_utxo(tx_hash + expected_output_index_packed, hashX + tx_numb + to_le_uint64(txout.value))
-
-
                     # There is an update operation at the Atomical outpoint being spent
                     if atomicals_operations_found.get('u') != None and atomicals_operations_found['u'].get(idx) != None:
                         update_payload = atomicals_operations_found['u'][idx]
                         for atomical_item in atomicals_list:    
                             # Save the latest updated fields
-                            put_atomicals_idempotent_data(b's' + atomical_id + tx_numb + expected_output_index_packed, update_payload)
+                            put_atomicals_idempotent_data(b's' + atomical_id + tx_hash + expected_output_index_packed, update_payload)
                     
                     # If the extract operation refers to the current atomical, then force it to the 0'th output
                     if atomicals_operations_found.get('x') != None and atomicals_operations_found['x'].get(idx) != None and atomicals_operations_found['x'][idx].get(atomical_id) != None:
                         expected_output_index = 0 
+
                     output_idx_le = to_le_uint32(expected_output_index) 
                     location = tx_hash + output_idx_le
                     txout = tx.outputs[expected_output_index]
                     scripthash = double_sha256(txout.pk_script)
                     hashX = script_hashX(txout.pk_script)
                     value_sats = to_le_uint64(txout.value)
-                    put_atomicals_idempotent_data(b'a' + atomical_id + location, location + scripthash + value_sats)
                      # Save the output script of the atomical to lookup at a future point
                     put_atomicals_idempotent_data(b'z' + tx_hash + output_idx_le, txout.pk_script)
                     self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
@@ -752,7 +747,6 @@ class BlockProcessor:
                 txout_value = cache_value[:-8] 
                 touched.add(hashX)
                 output_index_packed = pack_le_uint32(idx)
-                current_location = tx_hash + output_index_packed
                 if has_undo_info_for_atomicals:
                     # Spend the atomicals
                     spent_atomicals = spend_atomicals_utxo(tx_hash, idx)
@@ -763,23 +757,14 @@ class BlockProcessor:
                         location = spent_atomical[ : ATOMICAL_ID_LEN]
                         # Remove the stored output
                         self.db_deletes.append(b'z' + location)
-                        # remove the b'a' atomicals entry at the location
-                        self.db_deletes.append(b'a' + atomical_id + location)
-                        # Just delete any potential state updates indiscriminately
-                        # what that means is that we do not actually correlate which input event/field corresponds to the spent atomical
-                        # We merely wipe out every possible state and field update even if it was for another atomical
-                        # Since we are deleting for the tx_numb, this is safe, albeit inefficient
-                        updates_map = atomicals_operations_found.get('u', None)
-                        if updates_map != None:
-                            for input_idx, fieldsmap in updates_map.items():
-                                for field, value_not_used in fieldsmap.items():
-                                    self.db_deletes.append(b's' + atomical_id + tx_numb + output_index_packed)
-
+                        self.db_deletes.append(b's' + atomical_id + location)
+                                    
             atomicals_operations_found = {}
             # This will need to apply per input
             if has_undo_info_for_atomicals:
+                this is fucked up? doesn it need to apply per input?
                 atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
-                # remove the mint data if this was a mint
+                # remove the mint NFT data if this was a mint
                 if atomicals_operations_found.get('n') != None: 
                     input_idx_map = atomicals_operations_found['n']
                     for input_idx, fields_map in input_idx_map.items():
@@ -795,7 +780,24 @@ class BlockProcessor:
                         # Make sure to remove the atomical number
                         atomical_numb = pack_be_uint64(atomical_num) 
                         self.db_deletes.append(b'n' + atomical_numb)
-
+                        atomical_num -= 1
+                        atomicals_minted += 1
+                # Remove the mint FT data if it was a mint
+                if atomicals_operations_found.get('f') != None: 
+                    input_idx_map = atomicals_operations_found['f']
+                    for input_idx, fields_map in input_idx_map.items():
+                        # Lookup the txout that would be imprinted with the atomical
+                        expected_output_index = get_expected_output_index_of_atomical_in_tx(input_idx, tx) 
+                        output_idx_le = to_le_uint32(expected_output_index) 
+                        location = tx_hash + output_idx_le
+                        # Establish the atomical_id from the initial location
+                        atomical_id = location
+                        self.db_deletes.append(b'md' + atomical_id)
+                        self.db_deletes.append(b'mb' + atomical_id)
+                        self.db_deletes.append(b'mi' + atomical_id)
+                        # Make sure to remove the atomical number
+                        atomical_numb = pack_be_uint64(atomical_num) 
+                        self.db_deletes.append(b'n' + atomical_numb)
                         atomical_num -= 1
                         atomicals_minted += 1
 
@@ -812,14 +814,10 @@ class BlockProcessor:
                 # Note that we do not need to restart any of the b's' states because they are already recorded from before
                 # We only had to make sure the appropriate b's' states were deleted above
                 # And therefore the only thing left for us to do here is to restore the correct spend status of the atomicals here
-                # so that we can correctly lookup the atomicals by address/scripthash and also by the b'a' location.
                 potential_atomicals_list_to_restore = atomicals_undo_info_map.get(txin.prev_hash + pack_le_uint32(txin.prev_idx), None)
                 if potential_atomicals_list_to_restore != None:
                     for atomical_to_restore in potential_atomicals_list_to_restore:
                         self.put_atomicals_utxo(atomical_to_restore['location'], atomical_to_restore['atomical_id'], atomical_to_restore['value'])
-                        # Make sure not to take the hashX in the value since it's not needed in the b'a' index
-                        put_atomicals_idempotent_data(b'a' + atomical_to_restore['atomical_id'] + atomical_to_restore['location'], atomical_to_restore['location'] + atomical_to_restore['value'][ HASHX_LEN : ])
-            
             # Delete the atomical number index for the current atomical number
             atomical_count_numb = pack_be_uint64(atomical_num)
             self.db_deletes.append(b'n' + atomical_count_numb)
@@ -935,50 +933,41 @@ class BlockProcessor:
         idx_packed = pack_le_uint32(tx_idx)
         location_id = tx_hash + idx_packed
         cache_map = self.atomicals_utxo_cache.pop(location_id, None)
-        
         if cache_map:
             spent_cache_values = []
             for key in cache_map.keys(): 
                 value = cache_map[key]
                 spent_cache_values.append(location_id + key + value)
             return spent_cache_values
-            
-        # Search the locations of existing atomicals
+        # Search which atomicals are at the location
         # Key:  b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
         # Value: hashX + scripthash + value
         prefix = b'i' + location_id
         found_at_least_one = False
         atomicals_data_list = []
         for atomical_db_key, atomical_db_value in self.db.utxo_db.iterator(prefix=prefix):
-            # Remove the 2 entries for atomicals utxo
-            # Note: we do not delete the b'a' key for the atomical id mapping because it gets updated elsewhere on rollback and advance
             # Get all of the atomicals for an address to be deleted
             hashX = atomical_db_value[ : HASHX_LEN ]
             kdb_key_prefix = b'k' + hashX + location_id
             k_list = []
+ 
             for atomical_kdb_key, not_used_value in self.db.utxo_db.iterator(prefix=kdb_key_prefix):
                 k_list.append(atomical_kdb_key)
-
+                hashX_of_atomical_id = self.coin.hashX_from_script(atomical_id)
+                txout_idx = atomical_kdb_key[1 + HashX + TX_HASH_LEN:1 + HashX + TX_HASH_LEN + 4]
+                tx_num = atomical_kdb_key[-TXNUM_LEN:]
+                suffix = txout_idx + tx_num
+                self.db_deletes.append(b'u' + hashX_of_atomical_id + suffix)
             for del_elem in k_list:
                 self.db_deletes.append(del_elem)
                 found_at_least_one = True
-
             if found_at_least_one == False: 
                 raise IndexError(f'Did not find expected at least one entry for atomicals: {hash_to_hex_str(tx_hash)} / {tx_idx:,d} not '
                             f'found in "k" table')
-            # Do not need to delete it>????
-            # self.db_deletes.append(atomical_db_key)
-            # Delete the b'a' location for the spent atomical
             atomical_id = atomical_db_key[ 1 + ATOMICAL_ID_LEN : ]
-            self.db_deletes.append(b'a' + atomical_id + location_id)
-
-            self.logger.info("adding atomical to atomicals data list to be spent")
-            self.logger.info(atomical_db_key.hex())
-            self.logger.info(atomical_db_value.hex())
             atomicals_data_list.append(atomical_db_key[ 1 : ] + atomical_db_value)
  
- 
-        # Return the full data spent
+        # Return all of the atomicals that were at the spent location
         return atomicals_data_list
 
     async def _process_prefetched_blocks(self):

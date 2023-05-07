@@ -1807,6 +1807,7 @@ class ElectrumX(SessionBase):
             'blockchain.scripthash.get_mempool': self.scripthash_get_mempool,
             'blockchain.scripthash.listunspent': self.scripthash_listunspent,
             'blockchain.scripthash.subscribe': self.scripthash_subscribe,
+            'blockchain.atomicals.beacon_merkle': self.atomicals_listscripthash, # put in the beacon spv hash for the changes. For each atomical type
             'blockchain.atomicals.listscripthash': self.atomicals_listscripthash,
             'blockchain.atomicals.list': self.atomicals_list,
             'blockchain.atomicals.at_location': self.atomicals_at_location,

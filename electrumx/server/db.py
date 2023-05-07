@@ -124,7 +124,7 @@ class DB:
         # Value: byte-concat list of (hashX + tx_num + value_sats)
         # "undo data: list of UTXOs spent at block height"
         # ---
-        # Key: b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
+        # Key: b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx (NEVER DELETED, KEPT PERMANENTLY EVEN WITH ROLLBACKS)
         # Value: hashX + scripthash + value_sats
         # "maps an outpoint location to a list of atomical_ids (mint_tx_hash + mint_txout_idx) and their hashX, scripthash and value"
         # ---
@@ -151,10 +151,6 @@ class DB:
         # Key: b'n' + atomical_number (8 bytes integer)
         # Value: Atomical_id
         # "maps atomical number to an atomical id"
-        # ---
-        # Key: b'a' + atomical_id + tx_hash + txout_idx
-        # Value: tx_hash + txout_idx + scripthash + value_sats + txout.pk_script
-        # "maps an atomical_id to a location and details"
         # ---
         # Key: b's' + atomical_id + tx_num + out_idx
         # Value: maps the atomical, transaction number and output that took the state
@@ -464,8 +460,11 @@ class DB:
                 scripthash = value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]
                 value_sats = value[HASHX_LEN + SCRIPTHASH_LEN: HASHX_LEN + SCRIPTHASH_LEN + 8]
                 tx_num = value[HASHX_LEN + SCRIPTHASH_LEN + 8: HASHX_LEN + SCRIPTHASH_LEN + 8 + TXNUM_LEN]
-                batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats)
                 batch_put(b'k' + hashX + location_key + atomical_id + tx_num, value_sats)
+                # Mock the atomical as an UTXO by hashX
+                hashX_of_atomical_id = self.coin.hashX_from_script(atomical_id)
+                suffix = location_key[:-4] + tx_num
+                batch_put(b'u' + hashX_of_atomical_id + suffix, value_sats)
 
         flush_data.atomicals_adds.clear()
 
@@ -1008,6 +1007,7 @@ class DB:
             mint_pkscript = atomical_mint_info_value[  45 : ]
 
             # Key: b'a' + atomical_id + <location>
+            TODO change this to use the hashX
             location_info = []
             atomical_active_location_key_prefix = b'a' + atomical_id
             for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
