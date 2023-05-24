@@ -1242,8 +1242,6 @@ class ElectrumX(SessionBase):
         }
         for returned_utxo in returned_utxos: 
             for atomical_id_ref in returned_utxo['atomicals']:
-                self.logger.info(f'atomical_id_ref {atomical_id_ref}') 
-               
                 if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
                     return_struct['atomicals'][atomical_id_ref] = {
                         'type': '-',

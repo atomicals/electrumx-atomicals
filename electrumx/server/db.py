@@ -454,7 +454,7 @@ class DB:
 
         atomical_add_count = 0
         for location_key, atomical_map in flush_data.atomicals_adds.items():
-            for atomical_id, value in atomical_map.items():
+            for atomical_id, value_with_tombstone in atomical_map.items():
                 atomical_add_count = atomical_add_count + 1
 
         spend_count = len(flush_data.deletes) // 2
@@ -505,12 +505,15 @@ class DB:
         # New atomicals UTXOs
         batch_put = batch.put
         for location_key, atomical_map in flush_data.atomicals_adds.items():
-            for atomical_id, value in atomical_map.items():
+            for atomical_id, value_with_tombstone in atomical_map.items():
+                value = value_with_tombstone['value']
                 hashX = value[:HASHX_LEN]
                 scripthash = value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]
                 value_sats = value[HASHX_LEN + SCRIPTHASH_LEN: HASHX_LEN + SCRIPTHASH_LEN + 8]
                 batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats)
-                batch_put(b'a' + atomical_id + location_key, hashX + scripthash + value_sats)
+                # Add the active b'a' atomicals location if it was not deleted
+                if not value_with_tombstone.get('deleted', False):
+                    batch_put(b'a' + atomical_id + location_key, hashX + scripthash + value_sats)
 
         flush_data.atomicals_adds.clear()
  
@@ -1027,8 +1030,6 @@ class DB:
         # Get any other atomicals at the same location
         atomicals_at_location = []
         atomicals_at_location_prefix = b'i' + location
-        self.logger.info('atomicals_at_location_prefix')
-        self.logger.info(atomicals_at_location_prefix.hex())
         for location_key, location_result_value in self.utxo_db.iterator(prefix=atomicals_at_location_prefix):
             atomicals_at_location.append(location_id_bytes_to_compact(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]))
         return atomicals_at_location
@@ -1036,16 +1037,6 @@ class DB:
     def get_atomicals_by_utxo(self, utxo):
         location = utxo.tx_hash + pack_le_uint32(utxo.tx_pos)
         return self.get_atomicals_by_location(location)
-
-    def build_state_data(self, history):
-        state_data_map = {}
-        for item in history:
-            if item['op'] == 'upd':
-                state_data_map[item['field_name']] = item['field_data']
-            elif item['op'] == 'del':
-                del state_data_map[item['field_name']]
- 
-        return state_data_map
 
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
         '''Return all UTXOs for an address sorted in no particular order.'''
@@ -1067,9 +1058,6 @@ class DB:
                 self.logger.error(f'mi{atomical_id} mint info not found for get_by_atomical_id')
                 return None
             mint_info = pickle.loads(atomical_mint_info_value)
-            self.logger.info('mint_output_index assert')
-            self.logger.info(mint_output_index)
-            self.logger.info(mint_info)
             assert(mint_output_index == mint_info['output_idx'])
 
             location_info = []
@@ -1080,10 +1068,8 @@ class DB:
                     # This can happen if the DB was updated between
                     # getting the hashXs and getting the UTXOs
                     return None
-                self.logger.info(f'atomical_active_location_key {atomical_active_location_key.hex()} with value {atomical_active_location_value.hex()}')
                 location = atomical_active_location_key[1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
                 atomical_output_script_key = b'z' + location
-                self.logger.info(f'atomical_output_script_key {atomical_output_script_key.hex()} with location {location.hex()}')
                 atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
                 if not atomical_output_script_value:
                     self.logger.error(f'a{atomical_id.hex()} location {location.hex()} script not found for get_by_atomical_id')

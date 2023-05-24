@@ -39,6 +39,8 @@ import pylru
 TX_HASH_LEN = 32
 SCRIPTHASH_LEN = 32
 ATOMICAL_ID_LEN = 36
+REALM_ID_LEN = 36
+LOCATION_ID_LEN = 36
 TX_OUPUT_IDX_LEN = 4
 
 class Prefetcher:
@@ -227,7 +229,6 @@ class BlockProcessor:
             try:
                 result = unpack_mint_info(self.general_data_cache[b'mi' + atomical_id])
             except KeyError:
-                self.logger.info(f'about to fallback to db to get mint info for {atomical_id.hex()}')
                 result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
             self.atomicals_id_cache[atomical_id] = result
         return result 
@@ -240,7 +241,6 @@ class BlockProcessor:
             try:
                 result = unpack_mint_info(self.general_data_cache[b'ri' + realm_id])
             except KeyError:
-                self.logger.info(f'about to fallback to db to get mint info for {realm_id.hex()}')
                 result = unpack_mint_info(self.db.get_realm_mint_info_dump(realm_id))
             self.realm_id_cache[realm_id] = result
         return result 
@@ -457,8 +457,10 @@ class BlockProcessor:
     def put_atomicals_utxo(self, location_id, atomical_id, value): 
         if self.atomicals_utxo_cache.get(location_id) == None: 
             self.atomicals_utxo_cache[location_id] = {}
-        self.atomicals_utxo_cache[location_id][atomical_id] = value
-
+        self.atomicals_utxo_cache[location_id][atomical_id] = {
+            'deleted': False,
+            'value': value
+        }
     def advance_blocks(self, blocks):
         '''Synchronously advance the blocks.
 
@@ -629,7 +631,6 @@ class BlockProcessor:
         for item in operations_process:
             if item['ops_found'] != None:
                 for input_idx, payload_data in item['ops_found'].items():
-                    self.logger.info("create_atomicals found atomical mint")
                     atomical_num += 1
                     atomical_id = self.create_atomical_from_definition(header, height, tx_numb, atomical_num, item['str'], tx, tx_hash, input_idx, payload_data)
                     atomical_ids_minted.append(atomical_id)
@@ -645,14 +646,13 @@ class BlockProcessor:
         return realm_ids_minted
 
     def color_atomicals_outputs(self, operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb):
-        """
-        color_atomicals_outputs Tags or "colors" the outputs in a given transaction according to the NFT/FT atomicals rules
-        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the "atom" envelope)
+        '''color_atomicals_outputs Tags or colors the outputs in a given transaction according to the NFT/FT atomicals rules
+        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the atom envelope)
         :param atomicals_spent_at_inputs The atomicals that were found to be transferred at the given inputs
         :param tx Transaction context
         :param tx_hash Transaction hash of the context
         :param tx_numb Global transaction number
-        """
+        '''
         put_general_data = self.general_data_cache.__setitem__
         map_atomical_ids_to_info = {}
         atomical_ids_touched = []
@@ -700,14 +700,13 @@ class BlockProcessor:
         return atomical_ids_touched
 
     def color_realm_outputs(self, operations_found_at_inputs, realm_spent, tx, tx_hash):
-        """
-        color_realm_outputs Tags or "colors" the outputs in a given transaction according to the Realm rules
-        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the "atom" envelope)
+        '''color_realm_outputs Tags or colors the outputs in a given transaction according to the Realm rules
+        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the atom envelope)
         :param realm_spent The realm that was spent
         :param tx Transaction context
         :param tx_hash Transaction hash of the context
-        """
-       is_nft_or_ft_mint = False
+        '''
+        is_nft_or_ft_mint = False
         for op_type_key, data in operations_found_at_inputs.items():
             if op_type_key == 'n' or op_type_key == 'f':
                 is_nft_or_ft_mint = True
@@ -1158,16 +1157,12 @@ class BlockProcessor:
         if cache_map != None:
             spent_cache_values = []
             for key in cache_map.keys(): 
-                value = cache_map[key]
-                #if value_with_tombstone['deleted'] == True: 
-                #    continue # Do not consider deleted
-                # value = value_with_tombstone['value']
+                value_with_tombstone = cache_map[key]
+                value = value_with_tombstone['value']
                 spent_cache_values.append(location_id + key + value)
+                value_with_tombstone['deleted'] = True  # Flag it as deleted so the b'a' active location will not be written on flushed
             # return a cache hit
             if len(spent_cache_values) > 0:
-                # Remove the cache entry so it will not be added to the db on flush
-                self.atomicals_utxo_cache.pop(location_id)
-                # Return the values that were popped for the entry 
                 return spent_cache_values
  
         # Search the locations of existing atomicals

@@ -558,7 +558,6 @@ class MemPool:
         '''Check if there was an atomical minted in the mempool
         '''
         tx_hash = atomical_id[ : 32 ]
-        self.logger.info(self.atomicals_mints)
         if self.atomicals_mints.get(tx_hash) != None:
             return self.atomicals_mints[tx_hash][atomical_id]
         return None
