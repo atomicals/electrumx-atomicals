@@ -75,7 +75,7 @@ class FlushData:
     atomicals_adds = attr.ib()  # type: Dict[bytes, bytes]  # b'a' + atomical_id(txid+out_idx) + location(txid+out_idx) -> hashX + scripthash + value_sats
     general_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
     realm_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and b'a' db keys
+    deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and Atomicals and Realms related keys
     tip = attr.ib()
 
 COMP_TXID_LEN = 4
@@ -126,35 +126,31 @@ class DB:
         # ---
         # Key: b'i' + location(tx_hash + txout_idx) + atomical_id(tx_hash + txout_idx)
         # Value: hashX + scripthash + value_sats
-        # "Reverse map of location to atomicals located at the location. Permanently stored for every location even if spent."
+        # "Map location to all the Atomicals located there. Permanently stored for every location even if spent."
         # ---
         # Key: b'a' + atomical_id(tx_hash + txout_idx) + location(tx_hash + txout_idx)
         # Value: hashX + scripthash + value_sats
-        # "Map atomical_id to an active location. Deleted/spent UTXOs result in the active location being removed and updated"
+        # "Map Atomical ID to an unspent location. Used to located the NFT/FT Atomical UTXOs."
         # ---
         # Key: b'L' + block_height
-        # Value: byte-concat list of (tx_hash + txout_idx + mint_tx_hash + mint_txout_idx + hashX + scripthash + value_sats)
+        # Value: byte-concat list of (tx_hash + txout_idx + atomical_id(mint_tx_hash + mint_txout_idx) + hashX + scripthash + value_sats)
         # "undo data: list of atomicals UTXOs spent at block height"
         # ---
         # Key: b'md' + atomical_id
         # Value: mint data serialized.
-        # "maps atomical_id to mint data { key value pairs } "
+        # "maps atomical_id to mint data fields { object key-value pairs } "
         # ---
         # Key: b'mi' + atomical_id
         # Value: mint info serialized.
-        # "maps atomical_id to mint information"
+        # "maps atomical_id to mint information such as block info"
         # ---
         # Key: b'n' + atomical_number (8 bytes integer)
         # Value: Atomical_id
-        # "maps atomical number to an atomical id"
+        # "maps atomical number to an atomical_id"
         # ---
         # Key: b's' + atomical_id + tx_num + out_idx
         # Value: maps the atomical, transaction number and output that took the state
         # "maps the atomical, transaction number and output for the state"
-        # ---
-        # Key: b'z' + tx_hash + tx_out_idx
-        # Value: pk_script output
-        # "maps location to a script. Useful for deducing what address stores the Atomical"
         # ---
         # Key: b'rd' + atomical_id
         # Value: mint data serialized.
@@ -164,17 +160,17 @@ class DB:
         # Value: mint info serialized.
         # "maps atomical_id to mint information"
         # ---
-        # Key: b'r' + realm_id(tx_hash + tx_out_idx) [byte [...byte]]
-        # Value: tx_hash
-        # "maps realm and nodes to a tx_hash"
-        # ---
         # Key: b'rl' + location(tx_hash + tx_out_idx) 
         # Value: realm_id(tx_hash + tx_out_idx) [byte [...byte]]
         # "maps location to realm id and prefix "
         # ---
         # Key: b'rs' + prev_location(prev_tx_hash + tx_prev_idx) 
         # Value: location(tx_hash + tx_in_idx)
-        # "maps realm prev location to spend input"
+        # "maps Realm prev location to spend inputs"
+        # ---
+        # Key: b'z' + tx_hash + tx_out_idx
+        # Value: pk_script output
+        # "maps arbitrary location to an output script. Useful for decoding what address/scripthash as the Atomicals"
         self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
@@ -458,7 +454,7 @@ class DB:
 
         atomical_add_count = 0
         for location_key, atomical_map in flush_data.atomicals_adds.items():
-            for atomical_id, value_with_tombstone in atomical_map.items():
+            for atomical_id, value in atomical_map.items():
                 atomical_add_count = atomical_add_count + 1
 
         spend_count = len(flush_data.deletes) // 2
@@ -482,15 +478,15 @@ class DB:
         for key, v in flush_data.realm_adds.items():
             assert(key[:32] == v['location_tx_hash'])
             assert(key[32:] == v['location_tx_idx_packed'])
-            # if v['is_found_on_disk']:
-            #     continue
+            batch_put(b'rl' + key, v['realm_id'] + v['realm_prefix'])
             spent_by = v.get('spent_by', None)
             if spent_by != None:
                 spend_tx_hash = spent_by['spend_tx_hash']
                 spend_tx_input_idx = spent_by['spend_tx_input_idx']
                 batch_put(b'rs' + key, spend_tx_hash + spend_tx_input_idx)
-            batch_put(b'rl' + key, v['realm_id'] + v['realm_prefix'])
-        
+            else:
+                batch_delete(b'rs' + key)
+
         flush_data.realm_adds.clear()
 
         # New UTXOs

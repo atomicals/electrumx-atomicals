@@ -555,7 +555,7 @@ class BlockProcessor:
         self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
         return atomical_id
 
-    def create_realm_from_definition(self, header, height, realm_num, tx, tx_hash, input_idx, payload_data):
+    def create_realm_from_definition(self, header, height, tx, tx_hash, input_idx, payload_data):
         # Invalid to mint at the n'th input and have less than n outputs
         if input_idx >= len(tx.outputs):
             return
@@ -596,7 +596,6 @@ class BlockProcessor:
         # Save mint info
         mint_info = {
             'id': realm_id,
-            'number': realm_num,
             'input_idx': input_idx,
             'output_idx': expected_output_index,
             'scripthash': scripthash,
@@ -608,7 +607,6 @@ class BlockProcessor:
             'params': params,
             'metadata': metadata
         }
-
         self.put_general_data(b'ri', realm_id, pickle.dumps(mint_info))
         # realm_id is the initial location
         self.put_general_data(b'rl', realm_id, realm_id)
@@ -637,28 +635,33 @@ class BlockProcessor:
                     atomical_ids_minted.append(atomical_id)
         return atomical_ids_minted, atomical_num
 
-    def create_realms(self, operations_found_at_inputs, header, height, realm_num, tx, tx_hash):
+    def create_realms(self, operations_found_at_inputs, header, height, tx, tx_hash):
         realm_ids_minted = []
         realm_op = operations_found_at_inputs.get('r', None)
         if realm_op != None:
             for input_idx, payload_data in realm_op.items():
-                realm_id = self.create_realm_from_definition(header, height, realm_num, tx, tx_hash, input_idx, payload_data)
+                realm_id = self.create_realm_from_definition(header, height, tx, tx_hash, input_idx, payload_data)
                 realm_ids_minted.append(realm_id)
         return realm_ids_minted
 
-    def color_atomicals_outputs(self, operations_found_at_inputs, atomicals_transfers_found_at_inputs, tx, tx_hash, tx_numb):
+    def color_atomicals_outputs(self, operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb):
+        """
+        color_atomicals_outputs Tags or "colors" the outputs in a given transaction according to the NFT/FT atomicals rules
+        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the "atom" envelope)
+        :param atomicals_spent_at_inputs The atomicals that were found to be transferred at the given inputs
+        :param tx Transaction context
+        :param tx_hash Transaction hash of the context
+        :param tx_numb Global transaction number
+        """
         put_general_data = self.general_data_cache.__setitem__
         map_atomical_ids_to_info = {}
         atomical_ids_touched = []
-        for txin_index, atomicals_list in atomicals_transfers_found_at_inputs.items():
-            self.logger.info(f'color_atomicals_outputs {txin_index} index found {len(atomicals_list)} inside')
+        for txin_index, atomicals_list in atomicals_spent_at_inputs.items():
             # Accumulate the total input value by atomical_id
-            # The value will be used below to determine the amount of input we can allocate
+            # The value will be used below to determine the amount of input we can allocate for FT's
             for atomicals_entry in atomicals_list:
-                self.logger.info(f'Color_atomicals_outputs {atomicals_entry.hex()}')
                 atomical_id = atomicals_entry[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
                 value, = unpack_le_uint64(atomicals_entry[-8:])
-                self.logger.info(f'About to get the atomicals mint info for atomical id {atomical_id.hex()}')
                 atomical_mint_info = self.get_atomicals_id_mint_info(atomical_id)
                 if not atomical_mint_info: 
                     raise IndexError(f'color_atomicals_outputs {atomical_id.hex()} not found in mint info. IndexError.')
@@ -670,9 +673,8 @@ class BlockProcessor:
                     }
                 map_atomical_ids_to_info[atomical_id]['value'] += value
                 map_atomical_ids_to_info[atomical_id]['input_indexes'].append(txin_index)
-    
+        # For each atomical, get the expected output indexes to color
         for atomical_id, mint_info in map_atomical_ids_to_info.items():
-            self.logger.info(f'color_atomicals_outputs getting atomical id and mint info {atomical_id.hex()}')
             if mint_info['type'] == 'NFT':
                 assert(len(mint_info['input_indexes']) == 1)
                 expected_output_indexes = [get_expected_output_index_of_atomical_nft(mint_info['input_indexes'][0], tx, atomical_id, operations_found_at_inputs, mint_info)]
@@ -681,33 +683,31 @@ class BlockProcessor:
                 expected_output_indexes = get_expected_output_indexes_of_atomical_ft(mint_info['input_indexes'], mint_info['value'], tx, atomical_id, operations_found_at_inputs, mint_info) 
             else:
                 raise 'color_atomicals_outputs: Unknown type. Index Error.'
-            
-            self.logger.info(f'color_atomicals_outputs retrieve update payload {atomical_id.hex()}')
             update_payload = get_update_payload_from_inputs(mint_info['input_indexes'], operations_found_at_inputs)
             for expected_output_index in expected_output_indexes:
-                self.logger.info(f'Expected output index: {expected_output_index}') 
                 expected_output_index_packed = pack_le_uint32(expected_output_index)
                 if update_payload:
                     put_general_data(b's' + atomical_id + tx_numb + expected_output_index_packed, update_payload)
-                # Put all the associated data for the location of the atomical data at each output
                 output_idx_le = pack_le_uint32(expected_output_index) 
                 location = tx_hash + output_idx_le
                 txout = tx.outputs[expected_output_index]
                 scripthash = double_sha256(txout.pk_script)
                 hashX = self.coin.hashX_from_script(txout.pk_script)
                 value_sats = pack_le_uint64(txout.value)
-                self.logger.info(f'advance_txs put_general_data {atomical_id.hex()}')
-                # put_general_data(b'a' + atomical_id + location, hashX + scripthash + value_sats)
-                # Save the output script of the atomical to lookup at a future point
                 put_general_data(b'z' + location, txout.pk_script)
                 self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
-                # Leverage existing history table by hashing the atomical_id
-                self.logger.info(f'Processing history for atomical {atomical_id.hex()} at location {location.hex()}')
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
 
     def color_realm_outputs(self, operations_found_at_inputs, realm_spent, tx, tx_hash):
-        is_nft_or_ft_mint = False
+        """
+        color_realm_outputs Tags or "colors" the outputs in a given transaction according to the Realm rules
+        :param operations_found_at_inputs The operations for at the inputs to the transaction (under the "atom" envelope)
+        :param realm_spent The realm that was spent
+        :param tx Transaction context
+        :param tx_hash Transaction hash of the context
+        """
+       is_nft_or_ft_mint = False
         for op_type_key, data in operations_found_at_inputs.items():
             if op_type_key == 'n' or op_type_key == 'f':
                 is_nft_or_ft_mint = True
@@ -789,7 +789,7 @@ class BlockProcessor:
             hashXs = []
             append_hashX = hashXs.append
             tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
-            atomicals_transfers_found_at_inputs = {}
+            atomicals_spent_at_inputs = {}
             realm_spent = None  # Only 1 realm can be spent by only the 0'th input
             # Spend the inputs
             txin_index = 0
@@ -803,7 +803,7 @@ class BlockProcessor:
                 # Find all the existing transferred atomicals and spend the Atomicals utxos
                 atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
                 if len(atomicals_transferred_list):
-                    atomicals_transfers_found_at_inputs[txin_index] = atomicals_transferred_list
+                    atomicals_spent_at_inputs[txin_index] = atomicals_transferred_list
                 atomicals_undo_info_extend(atomicals_transferred_list)
               
                 # Check if the 0'th input spends a realm
@@ -824,8 +824,6 @@ class BlockProcessor:
                 append_hashX(hashX)
                 put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
             
-            # Process Atomicals Mints of NFTs and FTs
-            # If there were any mints, then create them
             atomical_ids_minted, updated_atomical_num = self.create_atomicals(operations_found_at_inputs, header, height, tx_numb, atomical_num, tx, tx_hash)
             # Sanity check that the updated atomicals number matches the expected based on the atomicals created
             assert(len(atomical_ids_minted) + atomical_num == updated_atomical_num)
@@ -834,17 +832,15 @@ class BlockProcessor:
             for atomical_id in atomical_ids_minted:
                 append_hashX(double_sha256(atomical_id))
 
-            atomical_ids_transferred = self.color_atomicals_outputs(operations_found_at_inputs, atomicals_transfers_found_at_inputs, tx, tx_hash, tx_numb)
+            atomical_ids_transferred = self.color_atomicals_outputs(operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb)
             for atomical_id in atomical_ids_transferred:
                 self.logger.info('atomical_id in atomical_ids_transferred kw0s')
                 self.logger.info(atomical_id.hex())
                 self.logger.info(double_sha256(atomical_id).hex())
                 append_hashX(double_sha256(atomical_id))
 
-            # Process Realm Mints of NFTs and FTs
-            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, realm_num, tx, tx_hash)
+            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, tx, tx_hash)
             realm_num += len(realm_ids_minted)
-            
             if realm_spent != None:
                 self.color_realm_outputs(operations_found_at_inputs, realm_spent, tx, tx_hash)
 
@@ -924,12 +920,10 @@ class BlockProcessor:
             atomicals_undo_item = atomicals_undo_info[c : c + atomicals_undo_entry_len]
             atomicals_location = atomicals_undo_item[: ATOMICAL_ID_LEN]
             atomicals_atomical_id = atomicals_undo_item[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-            # Remainder is: hashX + scripthash + value_sats
             atomicals_value = atomicals_undo_item[ATOMICAL_ID_LEN + ATOMICAL_ID_LEN :]
             # There can be many atomicals at the same location
             if atomicals_undo_info_map.get(atomicals_location, None) == None:
                 atomicals_undo_info_map[atomicals_location] = []
-
             atomicals_undo_info_map[atomicals_location].append({ 
                 location: atomicals_location,
                 atomical_id: atomicals_atomical_id,
@@ -975,7 +969,6 @@ class BlockProcessor:
                     touched.add(hashX)
                     atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
                     location = spent_atomical[ : ATOMICAL_ID_LEN]
-                    self.logger.info(f'Preparing to rollback atomical_id {atomical_id.hex()} at location {location.hex()}')
                     # Remove the stored output
                     self.db_deletes.append(b'z' + location)
                     # remove the b'a' atomicals entry at the location
@@ -990,7 +983,7 @@ class BlockProcessor:
                 self.db_deletes.append(b'rl' + location)
 
             atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
-            # Remove any mint data
+            # Remove Atomicals mints
             operations_process = [
                 {
                     'ops_found': atomicals_operations_found.get('n', None),
@@ -1016,7 +1009,7 @@ class BlockProcessor:
                         self.db_deletes.append(b'n' + atomical_numb)
                         atomical_num -= 1
                         atomicals_minted += 1
-            
+            # Remove Realm mints
             realm_ops = atomicals_operations_found.get('r', None)
             if realm_ops != None:
                 for input_idx, payload_data in realm_ops.items():
