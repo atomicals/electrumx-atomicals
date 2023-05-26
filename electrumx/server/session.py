@@ -1247,8 +1247,11 @@ class ElectrumX(SessionBase):
                         'type': '-',
                         'confirmed': 0,
                     }
-                return_struct['atomicals'][atomical_id_ref]['confirmed'] += returned_utxo['confirmed']
-
+                if returned_utxo['height'] <= 0:
+                    return_struct['atomicals'][atomical_id_ref]['unconfirmed'] += returned_utxo['value']
+                else:
+                    return_struct['atomicals'][atomical_id_ref]['confirmed'] += returned_utxo['value']
+            
         for atomical_id_key, data in return_struct['atomicals'].items():
             atomical_id_key_bytes = compact_to_location_id_bytes(atomical_id_key)
             atomical = await self.db.get_by_atomical_id(atomical_id_key_bytes)
