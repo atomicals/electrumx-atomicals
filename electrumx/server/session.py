@@ -1245,7 +1245,7 @@ class ElectrumX(SessionBase):
                 if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
                     return_struct['atomicals'][atomical_id_ref] = {
                         'type': '-',
-                        'value': 0
+                        'confirmed': 0,
                     }
                 return_struct['atomicals'][atomical_id_ref]['value'] += returned_utxo['value']
 
