@@ -1247,7 +1247,7 @@ class ElectrumX(SessionBase):
                         'type': '-',
                         'confirmed': 0,
                     }
-                return_struct['atomicals'][atomical_id_ref]['value'] += returned_utxo['value']
+                return_struct['atomicals'][atomical_id_ref]['confirmed'] += returned_utxo['confirmed']
 
         for atomical_id_key, data in return_struct['atomicals'].items():
             atomical_id_key_bytes = compact_to_location_id_bytes(atomical_id_key)
