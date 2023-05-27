@@ -25,7 +25,7 @@ from electrumx.lib.util import (
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
-from electrumx.lib.util_atomicals import unpack_mint_info, get_decode_cbor_payload, parse_atomicals_operations_from_witness_array, get_expected_mint_output_index_of_atomical, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, get_update_payload_from_inputs
+from electrumx.lib.util_atomicals import unpack_mint_info, get_decode_cbor_payload, parse_protocols_operations_from_witness_array, get_expected_mint_output_index_of_atomical, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, get_update_payload_from_inputs
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -599,6 +599,7 @@ class BlockProcessor:
         # Save mint info
         mint_info = {
             'id': realm_id,
+            'number': realm_num,
             'input_idx': input_idx,
             'output_idx': expected_output_index,
             'scripthash': scripthash,
@@ -813,8 +814,8 @@ class BlockProcessor:
                     realm_spent = self.spend_realm_utxo(txin.prev_hash, txin.prev_idx, tx_hash, txin_index)
                 txin_index = txin_index + 1
             
-            # Detect all Atomicals operations in the transaction witness inputs
-            operations_found_at_inputs = parse_atomicals_operations_from_witness_array(tx)
+            # Detect all protocol operations in the transaction witness inputs
+            atomicals_operations_found_at_inputs, realms_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
             
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
@@ -826,7 +827,7 @@ class BlockProcessor:
                 append_hashX(hashX)
                 put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
             
-            atomical_ids_minted, updated_atomical_num = self.create_atomicals(operations_found_at_inputs, header, height, tx_numb, atomical_num, tx, tx_hash)
+            atomical_ids_minted, updated_atomical_num = self.create_atomicals(atomicals_operations_found_at_inputs, header, height, tx_numb, atomical_num, tx, tx_hash)
             # Sanity check that the updated atomicals number matches the expected based on the atomicals created
             assert(len(atomical_ids_minted) + atomical_num == updated_atomical_num)
             atomical_num = updated_atomical_num
@@ -834,17 +835,17 @@ class BlockProcessor:
             for atomical_id in atomical_ids_minted:
                 append_hashX(double_sha256(atomical_id))
 
-            atomical_ids_transferred = self.color_atomicals_outputs(operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb)
+            atomical_ids_transferred = self.color_atomicals_outputs(atomicals_operations_found_at_inputs, atomicals_spent_at_inputs, tx, tx_hash, tx_numb)
             for atomical_id in atomical_ids_transferred:
                 self.logger.info('atomical_id in atomical_ids_transferred kw0s')
                 self.logger.info(atomical_id.hex())
                 self.logger.info(double_sha256(atomical_id).hex())
                 append_hashX(double_sha256(atomical_id))
 
-            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, realm_num, tx, tx_hash)
+            realm_ids_minted = self.create_realms(realms_operations_found_at_inputs, header, height, realm_num, tx, tx_hash)
             realm_num += len(realm_ids_minted)
             if realm_spent != None:
-                self.color_realm_outputs(operations_found_at_inputs, realm_spent, tx, tx_hash)
+                self.color_realm_outputs(realms_operations_found_at_inputs, realm_spent, tx, tx_hash)
 
             append_hashXs(hashXs)
             update_touched(hashXs)
@@ -984,7 +985,7 @@ class BlockProcessor:
                 # Just blindly delete any realms entries if there were any
                 self.db_deletes.append(b'rl' + location)
 
-            atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
+            atomicals_operations_found = parse_protocols_operations_from_witness_array(tx)
             # Remove Atomicals mints
             operations_process = [
                 {

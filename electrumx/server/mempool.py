@@ -22,7 +22,7 @@ from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 from electrumx.lib.tx import SkipTxDeserialize
 from electrumx.lib.util import class_logger, chunks, OldTaskGroup, pack_le_uint32, unpack_le_uint32
 from electrumx.server.db import UTXO
-from electrumx.lib.util_atomicals import check_unpack_mint_data, parse_atomicals_operations_from_witness_array, get_expected_mint_output_index_of_atomical, location_id_bytes_to_compact
+from electrumx.lib.util_atomicals import check_unpack_mint_data, parse_protocols_operations_from_witness_array, get_expected_mint_output_index_of_atomical, location_id_bytes_to_compact
 
 from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 
@@ -397,31 +397,22 @@ class MemPool:
                     'history': {}
                 }
 
-            realms_updates_map = {}
-            def create_realm_from_definition(mint_type, tx, tx_hash, input_idx, payload_data, realms_updates_map):
-                self.logger.info(f'Realm mint {mint_type} found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
+            def create_realm_from_definition(tx, tx_hash, input_idx, payload_data, realms_updates_map):
+                self.logger.info(f'Realm mint REALM found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
                 # Lookup the txout will be imprinted with the atomical
-                expected_output_index = get_expected_mint_output_index_of_atomical(input_idx, tx) 
+                expected_output_index = get_expected_mint_outpwWHATut_index_of_atomical(input_idx, tx) 
                 txout = tx.outputs[expected_output_index]
                 scripthash = double_sha256(txout.pk_script)
                 hashX = script_hashX(txout.pk_script)
                 output_idx_le = pack_le_uint32(expected_output_index) 
                 input_idx_le = pack_le_uint32(input_idx)
                 location = tx_hash + output_idx_le
-                # Establish the atomical_id from the initial location
+                # Establish the realm_id from the initial location
                 realm_id = location
                 realms_updates_map[realm_id] = {
                     'realm_id': location_id_bytes_to_compact(realm_id),
+                    'realm_number': -1,
                     'type': 'REALM',
-                    'location_info': [{
-                        'location': location_id_bytes_to_compact(location),
-                        'txid': hash_to_hex_str(tx_hash),
-                        'index': expected_output_index,
-                        'scripthash': hash_to_hex_str(scripthash),
-                        'scripthash_hex': scripthash.hex(),
-                        'value': txout.value,
-                        'script': txout.pk_script.hex(),
-                    }],
                     'mint_info': {
                         'txid': hash_to_hex_str(tx_hash),
                         'input_index': input_idx,
@@ -450,7 +441,7 @@ class MemPool:
                     # Todo: Having rolling real-time state updates into the atomical at the speed of mempool txs
                     # so that the user does not need to wait until block confirmation to see the state changes applied
                     try:
-                        atomicals_operations_found = parse_atomicals_operations_from_witness_array(tx)
+                        atomicals_operations_found, realms_operations_found = parse_protocols_operations_from_witness_array(tx)
                         atomicals_operations_found_nft = atomicals_operations_found.get('n', None)
                         atomicals_operations_found_ft = atomicals_operations_found.get('f', None)
 
@@ -467,11 +458,11 @@ class MemPool:
                             for input_idx, payload_data in atomicals_op.items():
                                 create_atomical_from_definition(token_type, tx, hash, input_idx, payload_data, atomicals_updates_map)
                         
-                        atomicals_operations_found_realm = atomicals_operations_found.get('r', None)
-                        if atomicals_operations_found_realm != None: 
-                            atomicals_op = atomicals_operations_found_realm
-                            for input_idx, payload_data in atomicals_op.items():
-                                create_realm_from_definition(token_type, tx, hash, input_idx, payload_data, realms_updates_map)
+                        realm_operations_found_realm = realms_operations_found.get('r', None)
+                        if realm_operations_found_realm != None: 
+                            realms_op = realm_operations_found_realm
+                            for input_idx, payload_data in realms_op.items():
+                                create_realm_from_definition(tx, hash, input_idx, payload_data, realms_updates_map)
                             
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')

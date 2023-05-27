@@ -27,7 +27,7 @@ from electrumx.lib.util import (
     formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
     unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
-from electrumx.lib.util_atomicals import get_tx_hash_index_from_atomical_id, location_id_bytes_to_compact, check_unpack_mint_data
+from electrumx.lib.util_atomicals import get_tx_hash_index_from_location_id, location_id_bytes_to_compact, check_unpack_mint_data
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
 
@@ -1055,9 +1055,58 @@ class DB:
 
     async def get_by_realm_id(self, realm_id):
         def read_realm():
+            mint_tx_hash, mint_output_index = get_tx_hash_index_from_location_id(atomical_id)
+            # Get Mint data
+            mint_data_key = b'rd' + realm_id
+            db_mint_value = self.utxo_db.get(mint_data_key)
+            if not db_mint_value:
+                return None
+    
+            # Get Mint Info
+            mint_info_key = b'ri' + realm_id
+            mint_info_value = self.utxo_db.get(mint_info_key)
+            if not mint_info_value:
+                self.logger.error(f'ri{realm_id} mint info not found for get_by_realm_id')
+                return None
+            mint_info = pickle.loads(mint_info_value)
+            assert(mint_output_index == mint_info['output_idx'])
+
+            location_info = []
+            
+            # Get Atomical number and check match
+            realm_number = mint_info['number']
+            realm_number_key = b'nr' + pack_be_uint64(realm_number)
+            realm_number_value = self.utxo_db.get(realm_number_key)
+            if not realm_number_value:
+                self.logger.error(f'nr{realm_number} realm number not found. IndexError.')
+                raise IndexError(f'nr{realm_number} realm number not found. IndexError.')
+           
+            assert(realm_number_value == realm_id)
+            assert(realm_number_value == mint_tx_hash + pack_le_uint32(mint_output_index))
+            assert(mint_output_index == mint_info['output_idx'])
+ 
             realm = {
-                'realm_id': realm_id
+                'realm_id': realm_id,
+                'realm_number': realm_number,
+                'type': mint_info['type'],
+                'mint_info': {
+                    'txid':  hash_to_hex_str(mint_tx_hash),
+                    'input_index': mint_info['input_idx'], 
+                    'index': mint_output_index,
+                    'blockheader': mint_info['header'].hex(),
+                    'blockhash': hash_to_hex_str(self.coin.header_hash(mint_info['header'])),
+                    'height': mint_info['height'],
+                    'scripthash': hash_to_hex_str(mint_info['scripthash']),
+                    'scripthash_hex': mint_info['scripthash'].hex(),
+                    'script': mint_info['script'].hex(),
+                    'value': mint_info['value']
+                }
             }
+            unpacked_data_summary = check_unpack_mint_data(db_mint_value)
+            if unpacked_data_summary != None:
+                realm['mint_info']['fields'] = unpacked_data_summary
+            else: 
+                realm['mint_info']['fields'] = {}
             return realm
         realm = await run_in_thread(read_realm)
         return realm
@@ -1068,7 +1117,7 @@ class DB:
         def read_atomical():
             utxos = []
             utxos_append = utxos.append
-            mint_tx_hash, mint_output_index = get_tx_hash_index_from_atomical_id(atomical_id)
+            mint_tx_hash, mint_output_index = get_tx_hash_index_from_location_id(atomical_id)
             # Get Mint data
             atomical_mint_data_key = b'md' + atomical_id
             db_mint_value = self.utxo_db.get(atomical_mint_data_key)
@@ -1133,7 +1182,6 @@ class DB:
                 state_entry['data'] = db_state_value
                 state_history.append(state_entry)
 
-            mint_info = pickle.loads(atomical_mint_info_value)
             # Get Atomical number and check match
             atomical_number = mint_info['number']
             atomical_number_key = b'n' + pack_be_uint64(atomical_number)
@@ -1182,7 +1230,7 @@ class DB:
         def read_atomical():
             utxos = []
             utxos_append = utxos.append
-            mint_tx_hash, mint_output_index = get_tx_hash_index_from_atomical_id(atomical_id)
+            mint_tx_hash, mint_output_index = get_tx_hash_index_from_location_id(atomical_id)
             # Get Mint data
             atomical_mint_data_key = b'md' + atomical_id
             db_mint_value = self.utxo_db.get(atomical_mint_data_key)

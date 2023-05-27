@@ -1265,16 +1265,16 @@ class ElectrumX(SessionBase):
         return await self.db.get_realm_id_by_realm_number(realm_number)
 
     async def realm_id_get(self, compact_realm_id):
-        '''Return the list of UTXOs of a script hash, including mempool
-        effects.'''
         realm_id = compact_to_location_id_bytes(compact_realm_id)
         realm = await self.db.get_by_realm_id(realm_id)
         confirmed = 0
+        # todo: Return realm number here if confirmed
         if realm == None:
             # Check mempool
             realm_in_mempool = await self.mempool.get_realm_mint(realm_id)
             if realm_in_mempool == None: 
                 raise RPCError(BAD_REQUEST, f'"{compact_realm_id}" is not found')
+            
             realm = realm_in_mempool
         else:
             confirmed = 1    
@@ -1283,8 +1283,38 @@ class ElectrumX(SessionBase):
             raise RPCError(BAD_REQUEST, f'"{compact_realm_id}" is not found')
         else: 
             print("realm is not null")
-            
-        status_info = {'realm_id': compact_realm_id}
+
+        blockheader = ''
+        spv = {}
+        if realm['mint_info'].get('blockheader') != None:
+            blockheader = realm['mint_info']['blockheader']
+            spv = await self.transaction_merkle(realm['mint_info']['txid'], realm['mint_info']['height'])
+
+        blockhash = ''
+        if realm['mint_info'].get('blockhash') != None:
+            blockhash = realm['mint_info']['blockhash']
+        
+        height = 0
+        if realm['mint_info'].get('height') != None:
+            height = realm['mint_info']['height']
+
+        status_info = {'realm_id': compact_realm_id,
+            'realm_number': realm['realm_number'],
+            'type': realm['type'],
+            'mint_info': {
+                'txid': realm['mint_info']['txid'],
+                'input_index': realm['mint_info']['input_index'], 
+                'index': realm['mint_info']['index'],
+                'blockheader': blockheader,
+                'blockhash': blockhash,
+                'height': height,
+                'merkle': spv,
+                'scripthash': realm['mint_info']['scripthash'],
+                'script': realm['mint_info']['script'],
+                'value': realm['mint_info']['value'],
+                'fields': realm['mint_info']['fields']
+            }}
+
         return status_info
 
     async def atomical_id_get_location(self, compact_atomical_id):
@@ -1300,7 +1330,6 @@ class ElectrumX(SessionBase):
             atomical = atomical_in_mempool
         else:
             confirmed = 1   
-
         info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
             'type': atomical['type'],
@@ -1324,7 +1353,6 @@ class ElectrumX(SessionBase):
         else:
             confirmed = 1    
 
- 
         if atomical == None: # This can happen if it was removed from the mempool beforing being committed to disk
             raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
         else: 
@@ -1491,7 +1519,7 @@ class ElectrumX(SessionBase):
 
     async def realms_get_prefix(self, realm_id, prefix):
         return await self.db.get_prefix_nodes(realm_id, prefix)
-        
+
     async def atomicals_get(self, compact_atomical_id_or_atomical_number):
         '''Return the status of an Atomical```
         atomical_id: the mint transaction hash + 'i'<index> of the atomical id

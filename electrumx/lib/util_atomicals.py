@@ -135,7 +135,7 @@ def location_id_bytes_to_compact(atomical_id):
     digit, = unpack_le_uint32_from(atomical_id[32:])
     return f'{hash_to_hex_str(atomical_id[:32])}i{digit}'
  
-def get_tx_hash_index_from_atomical_id(atomical_id): 
+def get_tx_hash_index_from_location_id(atomical_id): 
     output_index, = unpack_le_uint32_from(atomical_id[ 32 : 36])
     return atomical_id[ : 32], output_index 
     
@@ -208,15 +208,15 @@ def parse_atomicals_operation_from_script(script, n):
     print(f'Invalid Atomicals Operation Code. Skipping... "{script[n : end].hex()}"')
     return None, None
 
-def parse_atomicals_operations_from_witness_for_input(txinwitness):
-    '''Detect and parse all operations of atomicals across the witness input arrays from a tx'''
+def parse_protocols_operations_from_witness_for_input(txinwitness):
+    '''Detect and parse all operations across the witness input arrays from a tx'''
     operation_type_map = {}
     for script in txinwitness:
         n = 0
         script_entry_len = len(script)
         if script_entry_len < 39 or script[0] != 0x20:
             continue
-        found_atomical_operation_definition = False
+        found_operation_definition = False
         while n < script_entry_len - 5:
             op = script[n]
             n += 1
@@ -227,9 +227,9 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
                     op = script[n]
                     n += 1               
                     if op == OpCodes.OP_IF:
-                        # spr3
+                        # spr3 / atom
                         if "0473707233" == script[n : n + 5].hex():
-                            found_atomical_operation_definition = True
+                            found_operation_definition = True
                             # Parse to ensure it is in the right format
                             operation_type, parsed_data = parse_atomicals_operation_from_script(script, n + 5)
                             if operation_type != None and parsed_data != None:
@@ -237,40 +237,59 @@ def parse_atomicals_operations_from_witness_for_input(txinwitness):
                             else: 
                                 operation_type_map[operation_type] = {} 
                             break
-                if found_atomical_operation_definition:
+                        # rollo / realm
+                        elif "0573707233" == script[n : n + 6].hex():
+                            found_operation_definition = True
+                            # Parse to ensure it is in the right format
+                            operation_type, parsed_data = parse_atomicals_operation_from_script(script, n + 6)
+                            if operation_type != None and parsed_data != None:
+                                operation_type_map[operation_type] = parsed_data
+                            else: 
+                                operation_type_map[operation_type] = {} 
+                            break
+                if found_operation_definition:
                     break
             else:
                 break
     return operation_type_map
 
-def parse_atomicals_operations_from_witness_array(tx):
+def parse_protocols_operations_from_witness_array(tx):
     '''Detect and parse all operations of atomicals across the witness input arrays from a tx'''
     if not hasattr(tx, 'witness'):
         return {}
-    operation_datas_by_input = {}
+    atomicals_operation_datas_by_input = {}
+    realms_operation_datas_by_input = {}
     txin_idx = 0
     for txinwitness in tx.witness:
-        operation_data = parse_atomicals_operations_from_witness_for_input(txinwitness)
-        if operation_data != None and len(operation_data.items()) > 0: 
-            operation_datas_by_input[txin_idx] = {}
-            # Group by operation type, ensure the n (NFT) and f (FT) mints can only happen from the 0'th index
-            if operation_data.get("n") != None:
-                operation_datas_by_input["n"] = {}
-                operation_datas_by_input["n"][txin_idx] = operation_data["n"]
-            elif operation_data.get("f") != None:
-                operation_datas_by_input["f"] = {}
-                operation_datas_by_input["f"][txin_idx] = operation_data["f"]
-            elif operation_data.get("u") != None:
-                operation_datas_by_input["u"] = {}
-                operation_datas_by_input["u"][txin_idx] = operation_data["u"]
-            elif operation_data.get("x") != None:
-                operation_datas_by_input["x"] = {}
-                operation_datas_by_input["x"][txin_idx] = operation_data["x"]
-            elif operation_data.get("s") != None:
-                operation_datas_by_input["s"] = {}
-                operation_datas_by_input["s"][txin_idx] = operation_data["s"]
+        atomicals_operation_data, realms_operation_data = parse_protocols_operations_from_witness_for_input(txinwitness)
+        if atomicals_operation_data != None and len(atomicals_operation_data.items()) > 0: 
+            atomicals_operation_datas_by_input[txin_idx] = {}
+            # Group by operation type, 'n' for NFT atomical mint and 'f' for FT atomical mint
+            if atomicals_operation_data.get("n") != None:
+                atomicals_operation_datas_by_input["n"] = {}
+                atomicals_operation_datas_by_input["n"][txin_idx] = atomicals_operation_data["n"]
+            elif atomicals_operation_data.get("f") != None:
+                atomicals_operation_datas_by_input["f"] = {}
+                atomicals_operation_datas_by_input["f"][txin_idx] = atomicals_operation_data["f"]
+            elif atomicals_operation_data.get("u") != None:
+                atomicals_operation_datas_by_input["u"] = {}
+                atomicals_operation_datas_by_input["u"][txin_idx] = atomicals_operation_data["u"]
+            elif atomicals_operation_data.get("x") != None:
+                atomicals_operation_datas_by_input["x"] = {}
+                atomicals_operation_datas_by_input["x"][txin_idx] = atomicals_operation_data["x"]
+            elif atomicals_operation_data.get("s") != None:
+                atomicals_operation_datas_by_input["s"] = {}
+                atomicals_operation_datas_by_input["s"][txin_idx] = atomicals_operation_data["s"]
+        
+        if realms_operation_data != None and len(realms_operation_data.items()) > 0: 
+            realms_operation_datas_by_input[txin_idx] = {}
+            # Group by operation type, 'r' for realm mint
+            if realms_operation_data.get("r") != None:
+                realms_operation_datas_by_input["r"] = {}
+                realms_operation_datas_by_input["r"][txin_idx] = realms_operation_data["r"]
         txin_idx = txin_idx + 1
-    return operation_datas_by_input
+
+    return { 'atom': operation_datas_by_input, 'realm': realms_operation_data }
 
 def check_unpack_mint_data(db_mint_value):
     try:
