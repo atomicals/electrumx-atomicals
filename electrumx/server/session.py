@@ -1261,6 +1261,32 @@ class ElectrumX(SessionBase):
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
+    async def get_realm_id_by_realm_number(self, realm_number):
+        return await self.db.get_realm_id_by_realm_number(realm_number)
+
+    async def realm_id_get(self, compact_realm_id):
+        '''Return the list of UTXOs of a script hash, including mempool
+        effects.'''
+        realm_id = compact_to_location_id_bytes(compact_realm_id)
+        realm = await self.db.get_by_realm_id(realm_id)
+        confirmed = 0
+        if realm == None:
+            # Check mempool
+            realm_in_mempool = await self.mempool.get_realm_mint(realm_id)
+            if realm_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_realm_id}" is not found')
+            realm = realm_in_mempool
+        else:
+            confirmed = 1    
+
+        if realm == None: # This can happen if it was removed from the mempool beforing being committed to disk
+            raise RPCError(BAD_REQUEST, f'"{compact_realm_id}" is not found')
+        else: 
+            print("realm is not null")
+            
+        status_info = {'realm_id': compact_realm_id}
+        return status_info
+
     async def atomical_id_get_location(self, compact_atomical_id):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.db.get_by_atomical_id(atomical_id)
@@ -1437,10 +1463,7 @@ class ElectrumX(SessionBase):
         conf = [{'tx_hash': hash_to_hex_str(tx_hash), 'height': height}
                 for tx_hash, height in history]
         return conf + await self.unconfirmed_history(hashX)
-
-    async def realms_get_prefix(self, realm_id, prefix):
-        return await self.db.get_prefix_nodes(realm_id, prefix)
-
+    
     async def atomicals_listscripthash(self, scripthash):
         '''Return the list of Atomical UTXOs for an address'''
         hashX = scripthash_to_hashX(scripthash)
@@ -1458,6 +1481,17 @@ class ElectrumX(SessionBase):
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
 
+    async def realms_get(self, compact_realm_id_or_realm_number = 0):
+        compact_realm_id = compact_realm_id_or_realm_number
+        if isinstance(compact_realm_id_or_realm_number, int) != True and is_compact_atomical_id(compact_realm_id_or_realm_number):
+            assert_atomical_id(compact_realm_id)
+        else:
+            compact_realm_id = location_id_bytes_to_compact(await self.get_realm_id_by_realm_number(compact_realm_id_or_realm_number))
+        return {'global': await self.get_summary_info(), 'result': await self.realm_id_get(compact_realm_id)} 
+
+    async def realms_get_prefix(self, realm_id, prefix):
+        return await self.db.get_prefix_nodes(realm_id, prefix)
+        
     async def atomicals_get(self, compact_atomical_id_or_atomical_number):
         '''Return the status of an Atomical```
         atomical_id: the mint transaction hash + 'i'<index> of the atomical id
@@ -1835,14 +1869,15 @@ class ElectrumX(SessionBase):
             'blockchain.scripthash.get_mempool': self.scripthash_get_mempool,
             'blockchain.scripthash.listunspent': self.scripthash_listunspent,
             'blockchain.scripthash.subscribe': self.scripthash_subscribe,
-            'blockchain.atomicals.listscripthash': self.atomicals_listscripthash,
-            'blockchain.atomicals.list': self.atomicals_list,
-            'blockchain.atomicals.at_location': self.atomicals_at_location,
-            'blockchain.atomicals.get_location': self.atomicals_get_location,
-            'blockchain.atomicals.get': self.atomicals_get,
-            'blockchain.atomicals.get_state': self.atomicals_get_state,
-            'blockchain.atomicals.get_history': self.atomicals_get_history,
-            'blockchain.atomicals.get_realm_prefix': self.realms_get_prefix,
+            'blockchain.atomical.listscripthash': self.atomicals_listscripthash,
+            'blockchain.atomical.list': self.atomicals_list,
+            'blockchain.atomical.at_location': self.atomicals_at_location,
+            'blockchain.atomical.get_location': self.atomicals_get_location,
+            'blockchain.atomical.get': self.atomicals_get,
+            'blockchain.atomical.get_state': self.atomicals_get_state,
+            'blockchain.atomical.get_history': self.atomicals_get_history,
+            'blockchain.realm.get': self.realms_get,
+            'blockchain.realm.get_prefix': self.realms_get_prefix,
             'blockchain.transaction.broadcast': self.transaction_broadcast,
             'blockchain.transaction.get': self.transaction_get,
             'blockchain.transaction.get_merkle': self.transaction_merkle,

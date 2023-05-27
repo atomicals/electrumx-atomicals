@@ -160,6 +160,10 @@ class DB:
         # Value: mint info serialized.
         # "maps atomical_id to mint information"
         # ---
+        # Key: b'nr' + realm_number (8 bytes integer)
+        # Value: Realm_id
+        # "maps realm number to an realm_id"
+        # ---
         # Key: b'rl' + location(tx_hash + tx_out_idx) 
         # Value: realm_id(tx_hash + tx_out_idx) [byte [...byte]]
         # "maps location to realm id and prefix "
@@ -1026,6 +1030,17 @@ class DB:
 
         return await run_in_thread(read_atomical_id)
 
+    async def get_realm_id_by_realm_number(self, realm_number):
+        def read_realm_id():
+            # Get Mint Block data
+            realm_num_key = b'nr' + pack_be_uint64(int(realm_number))
+            realm_id_value = self.utxo_db.get(realm_num_key)
+            if not realm_id_value:
+                self.logger.error(f'nr{realm_id_value} realm id not found by realm number')
+                return None
+            return realm_id_value
+        return await run_in_thread(read_realm_id)
+
     def get_atomicals_by_location(self, location): 
         # Get any other atomicals at the same location
         atomicals_at_location = []
@@ -1037,6 +1052,15 @@ class DB:
     def get_atomicals_by_utxo(self, utxo):
         location = utxo.tx_hash + pack_le_uint32(utxo.tx_pos)
         return self.get_atomicals_by_location(location)
+
+    async def get_by_realm_id(self, realm_id):
+        def read_realm():
+            realm = {
+                'realm_id': realm_id
+            }
+            return realm
+        realm = await run_in_thread(read_realm)
+        return realm
 
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
         '''Return all UTXOs for an address sorted in no particular order.'''

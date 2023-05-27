@@ -557,7 +557,7 @@ class BlockProcessor:
         self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
         return atomical_id
 
-    def create_realm_from_definition(self, header, height, tx, tx_hash, input_idx, payload_data):
+    def create_realm_from_definition(self, header, height, realm_num, tx, tx_hash, input_idx, payload_data):
         # Invalid to mint at the n'th input and have less than n outputs
         if input_idx >= len(tx.outputs):
             return
@@ -571,6 +571,7 @@ class BlockProcessor:
         hashX = self.coin.hashX_from_script(txout.pk_script)
         output_idx_le = to_le_uint32(expected_output_index) 
         location = tx_hash + output_idx_le
+        realm_count_numb = to_be_uint64(realm_num)
         # Establish the realm_id from the initial location
         realm_id = location
         self.logger.info(f'Realm creation in Transaction {hash_to_hex_str(tx_hash)} @ Input Index: {input_idx:,d}. Minting at Output Index: {input_idx:,d}, realm_id={location_id_bytes_to_compact(realm_id)}, value={txout.value}') 
@@ -610,6 +611,8 @@ class BlockProcessor:
             'metadata': metadata
         }
         self.put_general_data(b'ri', realm_id, pickle.dumps(mint_info))
+        # Track the realm number for the newly minted realm
+        put_general_data(b'nr' + realm_count_numb, realm_id)
         # realm_id is the initial location
         self.put_general_data(b'rl', realm_id, realm_id)
         # realm prefix information, the root has no prefix
@@ -636,12 +639,12 @@ class BlockProcessor:
                     atomical_ids_minted.append(atomical_id)
         return atomical_ids_minted, atomical_num
 
-    def create_realms(self, operations_found_at_inputs, header, height, tx, tx_hash):
+    def create_realms(self, operations_found_at_inputs, header, height, realm_num, tx, tx_hash):
         realm_ids_minted = []
         realm_op = operations_found_at_inputs.get('r', None)
         if realm_op != None:
             for input_idx, payload_data in realm_op.items():
-                realm_id = self.create_realm_from_definition(header, height, tx, tx_hash, input_idx, payload_data)
+                realm_id = self.create_realm_from_definition(header, height, realm_num, tx, tx_hash, input_idx, payload_data)
                 realm_ids_minted.append(realm_id)
         return realm_ids_minted
 
@@ -838,7 +841,7 @@ class BlockProcessor:
                 self.logger.info(double_sha256(atomical_id).hex())
                 append_hashX(double_sha256(atomical_id))
 
-            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, tx, tx_hash)
+            realm_ids_minted = self.create_realms(operations_found_at_inputs, header, height, realm_num, tx, tx_hash)
             realm_num += len(realm_ids_minted)
             if realm_spent != None:
                 self.color_realm_outputs(operations_found_at_inputs, realm_spent, tx, tx_hash)
@@ -1019,6 +1022,10 @@ class BlockProcessor:
                     realm_id = location
                     self.db_deletes.append(b'rd' + realm_id)
                     self.db_deletes.append(b'ri' + realm_id)
+                    # Make sure to remove the atomical number
+                    realm_numb = pack_be_uint64(realm_num) 
+                    self.db_deletes.append(b'nr' + realm_numb)
+                    realm_num -= 1
                     realms_minted += 1
 
             # Restore the inputs
