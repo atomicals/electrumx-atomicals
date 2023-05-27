@@ -239,7 +239,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                                 atomical_operation_type_map[operation_type] = {} 
                             break
                         # rollo / realm
-                        elif "0573707233" == script[n : n + 6].hex():
+                        elif "05726f6c6c6f" == script[n : n + 6].hex():
                             found_operation_definition = True
                             # Parse to ensure it is in the right format
                             operation_type, parsed_data = parse_atomicals_operation_from_script(script, n + 6)
