@@ -256,7 +256,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
 def parse_protocols_operations_from_witness_array(tx):
     '''Detect and parse all operations of atomicals across the witness input arrays from a tx'''
     if not hasattr(tx, 'witness'):
-        return {}
+        return {}, {}
     atomicals_operation_datas_by_input = {}
     realms_operation_datas_by_input = {}
     txin_idx = 0
@@ -289,7 +289,7 @@ def parse_protocols_operations_from_witness_array(tx):
                 realms_operation_datas_by_input["r"][txin_idx] = realms_operation_data["r"]
         txin_idx = txin_idx + 1
 
-    return { 'atom': operation_datas_by_input, 'realm': realms_operation_data }
+    return atomicals_operation_datas_by_input, realms_operation_datas_by_input
 
 def check_unpack_mint_data(db_mint_value):
     try:
