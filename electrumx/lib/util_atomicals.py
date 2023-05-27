@@ -210,7 +210,8 @@ def parse_atomicals_operation_from_script(script, n):
 
 def parse_protocols_operations_from_witness_for_input(txinwitness):
     '''Detect and parse all operations across the witness input arrays from a tx'''
-    operation_type_map = {}
+    atomical_operation_type_map = {}
+    realm_operation_type_map = {}
     for script in txinwitness:
         n = 0
         script_entry_len = len(script)
@@ -233,9 +234,9 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                             # Parse to ensure it is in the right format
                             operation_type, parsed_data = parse_atomicals_operation_from_script(script, n + 5)
                             if operation_type != None and parsed_data != None:
-                                operation_type_map[operation_type] = parsed_data
+                                atomical_operation_type_map[operation_type] = parsed_data
                             else: 
-                                operation_type_map[operation_type] = {} 
+                                atomical_operation_type_map[operation_type] = {} 
                             break
                         # rollo / realm
                         elif "0573707233" == script[n : n + 6].hex():
@@ -243,15 +244,15 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                             # Parse to ensure it is in the right format
                             operation_type, parsed_data = parse_atomicals_operation_from_script(script, n + 6)
                             if operation_type != None and parsed_data != None:
-                                operation_type_map[operation_type] = parsed_data
+                                realm_operation_type_map[operation_type] = parsed_data
                             else: 
-                                operation_type_map[operation_type] = {} 
+                                realm_operation_type_map[operation_type] = {} 
                             break
                 if found_operation_definition:
                     break
             else:
                 break
-    return operation_type_map
+    return atomical_operation_type_map, realm_operation_type_map
 
 def parse_protocols_operations_from_witness_array(tx):
     '''Detect and parse all operations of atomicals across the witness input arrays from a tx'''
