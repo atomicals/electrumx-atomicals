@@ -1215,7 +1215,7 @@ class ElectrumX(SessionBase):
                 for utxo in utxos
                 if (utxo.tx_hash, utxo.tx_pos) not in spends]
 
-    async def hashX_listscripthash_atomicals(self, hashX):
+    async def hashX_listscripthash_atomicals(self, hashX, Verbose=False):
         utxos = await self.db.all_utxos(hashX)
         utxos = sorted(utxos)
         # Comment out the utxos for now and add it in later
@@ -1227,7 +1227,7 @@ class ElectrumX(SessionBase):
             if (utxo.tx_hash, utxo.tx_pos) in spends:
                 continue
             atomicals = self.db.get_atomicals_by_utxo(utxo)
-            if len(atomicals) > 0:
+            if Verbose or len(atomicals) > 0:
                 returned_utxos.append({'txid': hash_to_hex_str(utxo.tx_hash),
                 'index': utxo.tx_pos,
                 'vout': utxo.tx_pos,
@@ -1492,10 +1492,10 @@ class ElectrumX(SessionBase):
                 for tx_hash, height in history]
         return conf + await self.unconfirmed_history(hashX)
     
-    async def atomicals_listscripthash(self, scripthash):
+    async def atomicals_listscripthash(self, scripthash, Verbose=False):
         '''Return the list of Atomical UTXOs for an address'''
         hashX = scripthash_to_hashX(scripthash)
-        return await self.hashX_listscripthash_atomicals(hashX)
+        return await self.hashX_listscripthash_atomicals(hashX, Verbose)
 
     async def atomicals_list(self, offset, limit, asc):
         '''Return the list of atomicals order by reverse atomical number'''
