@@ -352,6 +352,7 @@ class MemPool:
             deserializer = self.coin.DESERIALIZER
             txs = {}
             atomicals_updates_map = {}
+            realms_updates_map = {}
 
             def create_atomical_from_definition(mint_type, tx, tx_hash, input_idx, payload_data, atomicals_updates_map):
                 self.logger.info(f'Atomicals mint {mint_type} found in mempool {hash_to_hex_str(tx_hash)} at input #{input_idx:,d} ') 
