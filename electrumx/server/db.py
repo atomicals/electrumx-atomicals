@@ -1263,9 +1263,11 @@ class DB:
             txnum_padding = bytes(8-TXNUM_LEN)
             tx_numb = crt_atomical_id_key[3 + ATOMICAL_ID_LEN : 3 + ATOMICAL_ID_LEN + TXNUM_LEN]
             tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
+            crt_tx_hash, crt_height = self.fs_tx_hash(tx_num_padded)
             height_le = crt_atomical_id_key[-4:]
             height, = unpack_le_uint32(height_le)
             obj = {
+                'txid': hash_to_hex_str(crt_tx_hash),
                 'atomical_id': atomical_id,
                 'tx_num': tx_num,
                 'height': height,
@@ -1276,6 +1278,8 @@ class DB:
         crts.sort(key=lambda x: x.height, reverse=True)
         return crts
 
+    # Get all of the atomicals that passed through the location
+    # Never deleted, kept for historical purposes.
     def get_atomicals_by_location(self, location): 
         # Get any other atomicals at the same location
         atomicals_at_location = []
@@ -1284,10 +1288,12 @@ class DB:
             atomicals_at_location.append(location_id_bytes_to_compact(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]))
         return atomicals_at_location
 
+    # Get the atomicals at a specific utxo
     def get_atomicals_by_utxo(self, utxo):
         location = utxo.tx_hash + pack_le_uint32(utxo.tx_pos)
         return self.get_atomicals_by_location(location)
 
+    # Get the atomical details
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
         '''Return all UTXOs for an address sorted in no particular order.'''
 
@@ -1360,23 +1366,24 @@ class DB:
                 state_history.append(state_entry)
 
             prefix = b'evt' + atomical_id
-            rpc_fields = {}
-            msg_history = []
-            for db_rpc_key, db_rpc_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
+            evt_history = []
+            for db_evt_key, db_evt_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
                 # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
-                tx_numb = db_rpc_value[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + TXNUM_LEN]
+                tx_numb = db_evt_value[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + TXNUM_LEN]
                 # Now lookup from the file system and add the padding
                 txnum_padding = bytes(8-TXNUM_LEN)
                 tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
-                rpc_tx_hash, rpc_height = self.fs_tx_hash(tx_num_padded)
-                out_idx_packed = db_rpc_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
+                evt_tx_hash, evt_height = self.fs_tx_hash(tx_num_padded)
+                out_idx_packed = db_evt_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
                 out_idx = unpack_le_uint32(out_idx_packed)
-                rpc_entry = {'tx_num': tx_num_padded, 'height': rpc_height, 'txid': hash_to_hex_str(rpc_tx_hash), 'index': out_idx}
+                evt_entry = {'tx_num': tx_num_padded, 'height': evt_height, 'txid': hash_to_hex_str(evt_tx_hash), 'index': out_idx}
                 state_data = {}
                 FIELD_START_IDX = 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1
-                field_name = db_rpc_key[FIELD_START_IDX : ]
-                rpc_entry['data'] = db_rpc_value
-                state_history.append(rpc_entry)
+                field_name = db_evt_key[FIELD_START_IDX : ]
+                evt_entry['data'] = db_evt_value
+                state_history.append(evt_entry)
+
+            crt_history = self.get_contract_interface_history(atomical_id)
 
             # Get Atomical number and check match
             atomical_number = mint_info['number']
@@ -1411,8 +1418,11 @@ class DB:
                 'state': {
                     'history': state_history
                 },
-                'evt': {
-                    'history': msg_history
+                'event': {
+                    'history': evt_history
+                },
+                'contract': {
+                    'history': crt_history
                 }
             }
 

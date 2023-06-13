@@ -1313,12 +1313,20 @@ class ElectrumX(SessionBase):
                 'fields': atomical['mint_info']['fields']
             }}
         realm = atomical['mint_info'].get('$realm', None)
+        subrealm = atomical['mint_info'].get('$subrealm', None)
         ticker = atomical['mint_info'].get('$ticker', None)
         collection = atomical['mint_info'].get('$container', None)
 
         if realm: 
             status_info['mint_info']['$realm'] = realm
             status_info['$realm'] = realm
+        if subrealm: 
+            status_info['mint_info']['$subrealm'] = subrealm
+            status_info['$subrealm'] = subrealm
+            parent_realm_id = atomical['mint_info'].get('$parent_realm_id', None)
+            parent_realm_id_compact = atomical['mint_info'].get('$parent_realm_id_compact', None)
+            status_info['$parent_realm_id'] = parent_realm_id
+            status_info['$parent_realm_id_compact'] = parent_realm_id_compact
         elif ticker: 
             status_info['mint_info']['$ticker'] = ticker
             status_info['$ticker'] = ticker
@@ -1349,7 +1357,7 @@ class ElectrumX(SessionBase):
 
         return status_info
 
-    async def atomical_id_get_msg(self, compact_atomical_id):
+    async def atomical_id_get_event(self, compact_atomical_id):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.db.get_by_atomical_id(atomical_id)
         confirmed = 0
@@ -1364,11 +1372,32 @@ class ElectrumX(SessionBase):
         else:
             confirmed = 1    
 
-        rpc_info = {'atomical_id': compact_atomical_id,
+        info = {'atomical_id': compact_atomical_id,
             'atomical_number': atomical['atomical_number'],
-            'rpc_info': atomical['rpc_info']}
+            'event': atomical['event']}
 
-        return rpc_info
+        return info
+    
+    async def atomical_id_get_contract(self, compact_atomical_id):
+        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
+        atomical = await self.db.get_by_atomical_id(atomical_id)
+        confirmed = 0
+        if atomical == None:
+            # Check mempool
+            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
+            if atomical_in_mempool == None: 
+                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
+            
+            atomical = atomical_in_mempool
+            atomical.pop('mint_info', None)
+        else:
+            confirmed = 1    
+
+        info = {'atomical_id': compact_atomical_id,
+            'atomical_number': atomical['atomical_number'],
+            'contract': atomical['contract']}
+
+        return info
 
     async def atomical_id_get_history(self, compact_atomical_id):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
@@ -1560,13 +1589,13 @@ class ElectrumX(SessionBase):
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id)} 
 
-    async def atomicals_get_msg(self, compact_atomical_id_or_atomical_number):
+    async def atomicals_get_event(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
         if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
             assert_atomical_id(compact_atomical_id)
         else:
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_msg(compact_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event(compact_atomical_id)} 
     
     async def atomicals_get_history(self, compact_atomical_id_or_atomical_number):
         '''Return the history of an Atomical```
@@ -1932,7 +1961,8 @@ class ElectrumX(SessionBase):
             'blockchain.atomical.get_location': self.atomicals_get_location,
             'blockchain.atomical.get': self.atomicals_get,
             'blockchain.atomical.get_state': self.atomicals_get_state,
-            'blockchain.atomical.get_msg': self.atomicals_get_msg,
+            'blockchain.atomical.get_event': self.atomicals_get_event,
+            'blockchain.atomical.get_contract': self.atomicals_get_contract,
             'blockchain.atomical.get_history': self.atomicals_get_history,
             'blockchain.atomical.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomical.get_by_subrealm': self.atomicals_get_by_subrealm,

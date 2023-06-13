@@ -1397,6 +1397,7 @@ class BlockProcessor:
         atomical_was_created = False
         # If it was an NFT
         if valid_create_op_type == 'NFT':
+            self.logger.info(f'delete_atomical_mint_data_with_realms_container - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
             was_mint_found = True
             # If realm or container was specificed then it was only minted if the realm/container was created for the atomical
             realm = mint_info.get('$realm', None)
@@ -1412,6 +1413,7 @@ class BlockProcessor:
                 was_container_type = True
         # If it was an FT
         elif valid_create_op_type == 'FT': 
+            self.logger.info(f'delete_atomical_mint_data_with_realms_container FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
             was_mint_found = True
             # Only consider it a mint if the ticker was successfully deleted for the CURRENT atomical_id
             if self.delete_ticker_data(atomical_id, mint_info['$ticker']):
@@ -1422,7 +1424,6 @@ class BlockProcessor:
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
-            # self.logger.info(f'delete_atomical_mint_data_with_realms_container was_mint_found True atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
             self.delete_atomical_mint_data(atomical_id, atomical_num)
 
         self.logger.info(f'delete_atomical_mint_data_with_realms_container return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}, was_realm_type={was_realm_type}, was_subrealm_type={was_subrealm_type}, was_container_type={was_container_type}, was_fungible_type={was_fungible_type}')
@@ -1447,14 +1448,17 @@ class BlockProcessor:
             # Found a valid crt entry
             # Get the `realm/reg` path for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
             if not crt_item['payload'] or not isinstance(crt_item['payload'], dict):
+                self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
             # It is at least a dictionary
             realm_namespace = crt_item['payload'].get('realm', None)
             if not realm_namespace or not realm_namespace.get('r', None):
+                self.logger.info(f'get_subrealm_regex_price_list_from_height realm.r value not found atomical_id={atomical_id.hex()}')
                 continue
             # There is a path realm/r that exists
             regexes = realm_namespace['r']
             if not isinstance(regexes, list):
+                self.logger.info(f'get_subrealm_regex_price_list_from_height realm.r value not a list atomical_id={atomical_id.hex()}')
                 continue
             # The realm/r is an array/list type
             # Now populate the regex price list
@@ -1470,11 +1474,13 @@ class BlockProcessor:
                 if regex_pattern != None and satoshis != None and output != None:
                     # Check that value is greater than 0
                     if satoshis <= 0:
+                        self.logger.info(f'get_subrealm_regex_price_list_from_height invalid satoshis atomical_id={atomical_id.hex()}')
                         continue
                     # Check that regex is a valid regex pattern
                     try:
                         valid_pattern = re.compile(rf"{regex_pattern}")
                         if not isinstance(output, (bytes, bytearray)):
+                            self.logger.info(f'get_subrealm_regex_price_list_from_height output o value is not a byte sequence atomical_id={atomical_id.hex()}')
                             continue
                         # After all we have finally validated this is a valid price point for minting subrealm...
                         price_point = {
@@ -1487,6 +1493,9 @@ class BlockProcessor:
                         self.logger.info(f'Regex or byte output error for {atomical_id}')
                         self.logger.info(f'Exception {e}')
                         continue
+                else: 
+                    self.logger.info(f'get_subrealm_regex_price_list_from_height realm.r list element does not contain r, v, or o fields atomical_id={atomical_id.hex()}')
+            self.logger.info(f'get_subrealm_regex_price_list_from_height found valid entry for regex price list atomical_id={atomical_id.hex()}')
             return regex_price_list
         return []
 
@@ -1497,8 +1506,10 @@ class BlockProcessor:
         regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height)
         # Ensure there is a list of regex price list that is available for the atomical
         if not regex_price_point_list or len(regex_price_point_list) <= 0:
+            self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
             return None 
         for regex_price_point in regex_price_point_list:
+            self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height regex_price_point={regex_price_point} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
             # Perform some sanity checks just in case
             regex_pattern = regex_price_point.get('regex', None)
             # satoshi value is the price that must be paid to mint a subrealm
@@ -1506,17 +1517,37 @@ class BlockProcessor:
             # Output is the output script that must be paid to mint the subrealm
             output = regex_price_point.get('output', None)
             # Make sure the variables are defined
-            if not regex_pattern or not satoshis or not output or satoshis <= 0:
+            if not regex_pattern:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height null regex_pattern parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
                 continue 
-            # Ensure the output is a valid bytes-like object
-            if not isinstance(output, (bytes, bytearray)):
-                continue
+            if not satoshis:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+
+            if not output or not isinstance(output, (bytes, bytearray)):
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid output parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+
+            if not isinstance(satoshis, int) or satoshis <= 0:
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                continue 
+
             try:
                 # Compile the regular expression
                 valid_pattern = re.compile(rf"{regex_pattern}")
                 # Match the pattern to the proposed subrealm_name, the payment of the expect value and the output script
-                if valid_pattern.match(proposed_subrealm_name) and txout.value >= satoshis and txout.pk_script == output: 
-                    return regex_price_point
+                if not valid_pattern.match(proposed_subrealm_name):
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height not match pattern valid_pattern={valid_pattern} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+                if txout.value < satoshis:
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.value < satoshis txout.value={txout.value}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+                if txout.pk_script != output: 
+                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.pk_script != output txout.pk_script={txout.pk_script}, txout.output={txout.output}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                    continue
+
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height successfully matched regex price point, parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                return regex_price_point
             except Exception as e: 
                 # If it failed, then try the next matches if any
                 pass
