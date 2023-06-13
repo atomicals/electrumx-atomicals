@@ -22,7 +22,7 @@ from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 from electrumx.lib.tx import SkipTxDeserialize
 from electrumx.lib.util import class_logger, chunks, OldTaskGroup, pack_le_uint32, unpack_le_uint32
 from electrumx.server.db import UTXO
-from electrumx.lib.util_atomicals import check_unpack_mint_data, parse_protocols_operations_from_witness_array, location_id_bytes_to_compact
+from electrumx.lib.util_atomicals import check_unpack_field_data, parse_protocols_operations_from_witness_array, location_id_bytes_to_compact
 
 from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 
@@ -374,7 +374,7 @@ class MemPool:
                     'state': {},
                     'history': {}
                 }
-                atomicals_updates_map[atomical_id]['mint_info']['fields'] = check_unpack_mint_data(operation_found_at_inputs['payload_bytes'])
+                atomicals_updates_map[atomical_id]['mint_info']['fields'] = check_unpack_field_data(operation_found_at_inputs['payload_bytes'])
  
             for hash, raw_tx in zip(hashes, raw_txs):
                 # The daemon may have evicted the tx from its

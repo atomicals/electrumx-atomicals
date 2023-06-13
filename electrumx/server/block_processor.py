@@ -462,7 +462,7 @@ class BlockProcessor:
             self.atomicals_id_cache[atomical_id] = result
         return result 
     # Get basic atomical information in a format that can be attached to utxos 
-    def get_atomicals_id_mint_info_basic_struct_for_rpc(self, atomical_id):
+    def get_atomicals_id_mint_info_basic_struct_for_evt(self, atomical_id):
         result = None
         try:
             result = self.atomicals_id_cache[atomical_id]

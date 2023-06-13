@@ -37,42 +37,49 @@ import pickle
 from cbor2 import dumps, loads, CBORDecodeError
 from collections.abc import Mapping
 
+# Atomical NFT/FT mint information is stored in the b'mi' index and is pickle encoded dictionary
 def unpack_mint_info(mint_info_value):
     if not mint_info_value:
         raise IndexError(f'unpack_mint_info mint_info_value is null. Index error.')
     return pickle.loads(mint_info_value)
  
+# Get the expected output index of an Atomical NFT
+# The 'x' extract operation allows a UTXO, which has multiple Atomicals imprinted on it, to be split (or extracted) apart
 def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomicals_operations_found):
     assert(mint_info['type'] == 'NFT')  # Sanity check
-
     if len(mint_info['input_indexes'] > 1):
         raise IndexError(f'get_expected_output_index_of_atomical_nft len is greater than 1. Critical developer or index error. AtomicalId={atomical_id.hex()}')
-        
+    # The expected output index is equal to the input index...
     expected_output_index = mint_info['input_indexes'][0]
+    # ... unless the 'x' extract operation is used to reassign the Atomical from the 1'st output to the 0'th output.
     # Allow the extract operation only from the 1'st input because it will place the atomical to the 0'th output
-    extract_atomical = atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 1 and atomicals_operations_found['payload'].get(atomical_id, None)
-    # Never allow an NFT atomical to be burned accidentally by having insufficient number of outputs
+    # There should be a key in the dictionary with the key value being the Atomical id to move
+    extract_atomical = atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 1 and atomicals_operations_found['payload'].get(atomical_id)
+    # Never allow an NFT atomical to be burned accidentally by having insufficient number of outputs either
+    # The expected output index will become the 0'th index if the 'x' extract operation was specified or there are insufficient outputs
     if expected_output_index >= len(tx.outputs) or extract_atomical:
         expected_output_index = 0
     return expected_output_index
 
+# Get the expected output indexes of an Atomical FT
 def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomicals_operations_found):
     assert(mint_info['type'] == 'FT') # Sanity check
     expected_output_indexes = []
     remaining_value = mint_info['value']
-    # The FT type has the 'skip' (s) method to skip the first output in the assignment of the value of the token
+    # The FT type has the 'skip' (y) method to skip the first output in the assignment of the value of the token
     # Essentially this makes it possible to "split" out multiple FT's located at the same input
     # If any of the inputs has the skip operation, then it will apply for the atomical token generally across all inputs and the first output will be skipped
     skip_first_output = False
-    if atomicals_operations_found.get('op', None) == 'y' and atomicals_operations_found.get('input_index', None) == 0 and atomicals_operations_found.get('payload', None) and atomicals_operations_found.get('payload', None).get(atomical_id, None):
+    if atomicals_operations_found.get('op') == 'y' and atomicals_operations_found.get('input_index') == 0 and atomicals_operations_found.get('payload') and atomicals_operations_found.get('payload').get(atomical_id):
         skip_first_output = True 
 
-    is_skipped = False
+    is_skipped = False  # Used to track if we skipped the first output
     for out_idx, txout in enumerate(tx.outputs): 
+        # If the first output should be skipped and we have not yet done so, then skip/ignore it
         if skip_first_output and not is_skipped:
             is_skipped = True
             continue 
-        # For all remaining outputs attach colors as long as there is a whole remaining_value 
+        # For all remaining outputs attach colors as long as there is adequate remaining_value left to cover the entire output value
         if txout.value <= remaining_value:
             expected_output_indexes.append(out_idx)
             remaining_value -= txout.value
@@ -80,7 +87,8 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
             # Since one of the inputs was not less than or equal to the remaining value, then stop assigning outputs. The remaining coins are burned. RIP.
             break
     return expected_output_indexes
- 
+
+# Check whether the value is a 36 byte hex string
 def is_atomical_id_long_form_string(value):
     try:
         int(value, 16) # Throws ValueError if it cannot be validated as hex string
@@ -89,6 +97,7 @@ def is_atomical_id_long_form_string(value):
         pass
     return False
 
+# Check whether the value is a 36 byte sequence
 def is_atomical_id_long_form_bytes(value):
     try:
         raw_hash = hex_str_to_hash(value)
@@ -98,6 +107,7 @@ def is_atomical_id_long_form_bytes(value):
         pass
     return False
 
+# Check whether the value is a compact form location/atomical id 
 def is_compact_atomical_id(value):
     '''Whether this is a compact atomical id or not
     '''
@@ -113,6 +123,7 @@ def is_compact_atomical_id(value):
         return True
     return False
 
+# Convert the compact string form to the expanded 36 byte sequence
 def compact_to_location_id_bytes(value):
     '''Convert the 36 byte atomical_id to the compact form with the "i" at the end
     '''
@@ -133,14 +144,17 @@ def compact_to_location_id_bytes(value):
 
     return raw_hash + pack_le_uint32(num)
  
+# Convert 36 byte sequence to compact form string
 def location_id_bytes_to_compact(atomical_id):
     digit, = unpack_le_uint32_from(atomical_id[32:])
     return f'{hash_to_hex_str(atomical_id[:32])}i{digit}'
  
+# Get the tx hash from the location/atomical id
 def get_tx_hash_index_from_location_id(atomical_id): 
     output_index, = unpack_le_uint32_from(atomical_id[ 32 : 36])
     return atomical_id[ : 32], output_index 
-    
+
+# Check if the operation is a valid distributed mint (dmint) type
 def is_valid_dmt_op_format(tx_hash, dmt_op):
     if not dmt_op or dmt_op['op'] != 'dmt' or dmt_op['input_index'] != 0:
         return False, {}
@@ -151,7 +165,7 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
     args = payload_data.get('args', {})
     if not isinstance(params, dict):
         return False, {}
-    ticker = params.get('ticker', None)
+    ticker = params.get('tick', None)
     if is_valid_ticker_string(ticker):
         return True, {
             'payload': payload_data,
@@ -161,8 +175,10 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
         }
     return False, {}
 
+# Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
-    def build_mint_info(tx_hash, tx):
+    # Builds the base mint information that's common to all minted Atomicals
+    def build_base_mint_info(tx_hash, tx):
         # The first output is always imprinted
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
@@ -175,16 +191,20 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
             # Establish the atomical_id from the initial location
             'id': location,
             'txid': hash_to_hex_str(tx_hash),
-            # 'number': atomical_num,   # Added at different level
             'index': expected_output_index,
             'scripthash': scripthash,
             'value': txout.value,
             'script': txout.pk_script,
-            # 'header': header,         # Added at different level
-            # 'height': height,         # Added at different level
-            # 'tx_num': tx_num,         # Added at different level
+            # The following fields will be added at a different level of processing
+            # 'number': atomical_num,  
+            # 'header': header, 
+            # 'height': height, 
+            # 'tx_num': tx_num
         }
     
+    # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
+    # Enforces that both of these must be empty or a valid dictionary
+    # This prevents a user from minting a big data blob into one of the fields
     def populate_args_meta(mint_info, op_found_payload):
         metadata = op_found_payload.get('meta', {})
         if not isinstance(metadata, dict):
@@ -197,7 +217,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
         return True
 
     # Create the base mint information structure
-    mint_info = build_mint_info(tx_hash, tx)
+    mint_info = build_base_mint_info(tx_hash, tx)
     if not populate_args_meta(mint_info, op_found_struct['payload']):
         return None, None
     ############################################
@@ -235,6 +255,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
         if not is_valid_realm_string(subrealm):
             return None, None
 
+        # The parent realm id is in a compact form string to make it easier for users and developers
         parent_realm_id = mint_info['args'].get('pid', None)
         if not isinstance(parent_realm_id, str):
             return None, None
@@ -245,6 +266,8 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
         # Save in the compact form to make it easier to understand for developers and users
         # It requires an extra step to convert, but it makes it easier to understand the format
         mint_info['$parent_realm_id_compact'] = parent_realm_id
+        # Decode the compact form and make it available in the mint info
+        mint_info['$parent_realm_id'] = compact_to_location_id_bytes(parent_realm_id)
     ############################################
     #
     # Fungible Token (FT) Mint Operations
@@ -253,28 +276,28 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
     elif op_found_struct['op'] == 'ft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'base'
-        ticker = mint_info['args'].get('ticker', None)
+        ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
         mint_info['$ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
-        mint_info['subtype'] = 'distrubted'
-        ticker = mint_info['args'].get('ticker', None)
+        mint_info['subtype'] = 'distributed'
+        ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
         mint_info['$ticker'] = ticker
-        mint_height = mint_info['args'].get('mint_height', None)
+        mint_height = mint_info['args'].get('h', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
-            print(f'DFT mint has invalid mint_height {tx_hash}, {mint_height}. Skipping...')
+            print(f'DFT mint has invalid mint_height h {tx_hash}, {mint_height}. Skipping...')
             return None, None
-        mint_amount = mint_info['args'].get('mint_amount', None)
+        mint_amount = mint_info['args'].get('amt', None)
         if not isinstance(mint_amount, int) or mint_amount <= 0 or mint_amount > 10000000000:
-            print(f'DFT mint has invalid mint_amount {tx_hash}, {mint_amount}. Skipping...')
+            print(f'DFT mint has invalid mint_amount amt {tx_hash}, {mint_amount}. Skipping...')
             return None, None
-        max_mints = mint_info['args'].get('max_mints', None)
+        max_mints = mint_info['args'].get('cnt', None)
         if not isinstance(max_mints, int) or max_mints <= 0 or max_mints > 1000000:
-            print(f'DFT mint has invalid max_mints {tx_hash}, {max_mints}. Skipping...')
+            print(f'DFT mint has invalid max_mints cnt {tx_hash}, {max_mints}. Skipping...')
             return None, None
         # Do not mint because at least one is a zero
         if mint_amount <= 0 or max_mints <= 0:
@@ -289,6 +312,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
  
     return mint_info['type'], mint_info
     
+# A valid ticker string must be at least 3 characters and max 28 with a-z0-9
 def is_valid_ticker_string(ticker):
     if not ticker:
         return None 
@@ -298,16 +322,19 @@ def is_valid_ticker_string(ticker):
         return True
     return False 
     
+# A valid realm string must begin with a-z and have up to 63 characters after it 
+# Including a-z0-9 and hypohen's "-"
 def is_valid_realm_string_name(realm_name):
     if not realm_name:
         return None 
     tolower = realm_name.lower()
     # Realm names must start with an alphabetical character
-    m = re.compile(r'^[a-z][a-z0-9\-]{1,63}$')
+    m = re.compile(r'^[a-z][a-z0-9\-]{0,63}$')
     if m.match(tolower):
         return True
     return False 
 
+# Collections must be at least 1 letter and max 64 with a-z0-9 and hypohen's "-"
 def is_valid_container_string_name(container_name):
     if not container_name:
         return None 
@@ -318,6 +345,7 @@ def is_valid_container_string_name(container_name):
         return True
     return False 
 
+# Parses the push datas from a bitcoin script byte sequence
 def parse_push_data(op, n, script):
     data = b''
     if op <= OpCodes.OP_PUSHDATA4:
@@ -338,6 +366,8 @@ def parse_push_data(op, n, script):
         data = script[n : n + dlen]
     return data, n + dlen, dlen
 
+# Parses all of the push datas in a script and then concats/accumulates the bytes together
+# It allows the encoding of a multi-push binary data across many pushes
 def parse_atomicals_data_definition_operation(script, n):
     '''Extract the payload definitions'''
     accumulated_encoded_bytes = b''
@@ -356,6 +386,7 @@ def parse_atomicals_data_definition_operation(script, n):
     except Exception as e:
         raise ScriptError(f'parse_atomicals_data_definition_operation script error {e}') from None
 
+# Parses the valid operations in an Atomicals script
 def parse_operation_from_script(script, n):
     '''Parse an operation'''
     # Check for each protocol operation
@@ -414,6 +445,8 @@ def parse_operation_from_script(script, n):
     print(f'Invalid Atomicals Operation Code. Skipping... "{script[n : n + 4].hex()}"')
     return None, None
 
+# Parses and detects valid Atomicals protocol operations in a witness script
+# Stops when it finds the first operation in the first input
 def parse_protocols_operations_from_witness_for_input(txinwitness):
     '''Detect and parse all operations across the witness input arrays from a tx'''
     atomical_operation_type_map = {}
@@ -449,6 +482,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                 break
     return None, None
 
+# Parses and detects the witness script array and detects the Atomicals operations
 def parse_protocols_operations_from_witness_array(tx):
     '''Detect and parse all operations of atomicals across the witness input arrays (inputs 0 and 1) from a tx'''
     if not hasattr(tx, 'witness'):
@@ -474,6 +508,9 @@ def parse_protocols_operations_from_witness_array(tx):
             # Return immediately at the first successful parse of the payload
             # It doesn't mean that it will be valid when processed, because most operations require the txin_idx=0 
             # Nonetheless we return it here and it can be checked uptstream
+
+            # Special care must be taken that someone does not maliciously create an invalid CBOR/payload and then allows it to 'fall through'
+            # This is the reason that most mint operations require input_index=0
             return {
                 'op': op_name,
                 'payload': decoded_object,
@@ -483,7 +520,9 @@ def parse_protocols_operations_from_witness_array(tx):
         txin_idx = txin_idx + 1
     return None
 
-def check_unpack_mint_data(db_mint_value):
+# Check and unpack field data to see if it should be JSON/object encoded or there is a $ct and $d sub elements
+# which provide the encoding and content type hint to successfully decode the field
+def check_unpack_field_data(db_mint_value):
     try:
         fieldset = {}
         loaded_data = loads(db_mint_value)
@@ -507,6 +546,6 @@ def check_unpack_mint_data(db_mint_value):
                     fieldset[key] = {}
             return fieldset
     except Exception as e:
-        print(f'check_unpack_mint_data exception encountered, ignoring and continuing... {e}')
+        print(f'check_unpack_field_data exception encountered, ignoring and continuing... {e}')
         pass
     return None

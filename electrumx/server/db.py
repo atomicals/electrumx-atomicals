@@ -27,7 +27,7 @@ from electrumx.lib.util import (
     formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
     unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
-from electrumx.lib.util_atomicals import get_tx_hash_index_from_location_id, location_id_bytes_to_compact, check_unpack_mint_data
+from electrumx.lib.util_atomicals import get_tx_hash_index_from_location_id, location_id_bytes_to_compact, check_unpack_field_data
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
 from electrumx.lib.script import SCRIPTHASH_LEN
@@ -1427,7 +1427,7 @@ class DB:
                 atomical['$mint_amount'] = mint_info['$mint_amount']
                 atomical['$max_mints'] = mint_info['$max_mints']
 
-            unpacked_data_summary = check_unpack_mint_data(db_mint_value)
+            unpacked_data_summary = check_unpack_field_data(db_mint_value)
             if unpacked_data_summary != None:
                 atomical['mint_info']['fields'] = unpacked_data_summary
             else: 
