@@ -859,10 +859,17 @@ class BlockProcessor:
                 # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
                 return False, None, None
         elif subrealm:
-            realm_parent_atomical_id_compact = mint_info.get('$parent_realm_id_compact', None)
+            realm_parent_atomical_id_compact = mint_info.get('$parent_realm_id_compact')
             if not realm_parent_atomical_id_compact or not is_compact_atomical_id(realm_parent_atomical_id):
                 return False, None, None
 
+            realm_parent_atomical_id_long = mint_info.get('$parent_realm_id')
+            if not realm_parent_atomical_id_long:
+                return False, None, None
+            
+            if compact_to_location_id_bytes(realm_parent_atomical_id_compact) != realm_parent_atomical_id_long:
+                raise IndexError(f'validate_and_create_nft realm_parent_atomical_id_compact and realm_parent_atomical_id_long not equal. Index or Developer Error')
+             
             # Convert to the 36 byte normalized form of tx_hash + index
             realm_parent_atomical_id_long = compact_to_location_id_bytes(realm_parent_atomical_id_compact)
 
@@ -1302,6 +1309,7 @@ class BlockProcessor:
             self.db.atomical_counts.pop()
         self.logger.info(f'backed up to height {self.height:,d}')
 
+    # Rollback the spending of an atomical
     def rollback_spend_atomicals(self, tx_hash, tx, idx, tx_numb, height):
         output_index_packed = pack_le_uint32(idx)
         current_location = tx_hash + output_index_packed
@@ -1312,7 +1320,7 @@ class BlockProcessor:
             self.db_deletes.append(b'po' + current_location)
         hashXs = []
         for spent_atomical in spent_atomicals:
-            self.logger.info(f'Preparing to rollback {spent_atomical.hex()}')
+            self.logger.info(f'rollback_spend_atomicals, atomical_id={spent_atomical.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
             hashX = spent_atomical[ ATOMICAL_ID_LEN + ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN]
             hashXs.append(hashX)
             atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
@@ -1326,14 +1334,18 @@ class BlockProcessor:
             self.db_deletes.append(b'crt' + atomical_id + tx_numb + output_index_packed + height_packed)
         return hashXs 
 
+    # Rollback any distributed mints
     def rollback_distmint_data(self, tx_hash, operations_found_at_inputs):
         if not operations_found_at_inputs:
             return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, operations_found_at_inputs)
         if dmt_valid: 
+            ticker = dmt_return_struct['$ticker']
+            self.logger.info(f'rollback_distmint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
             # get the potential dmt (distributed mint) atomical_id from the ticker given
             potential_dmt_atomical_id = self.db.get_atomical_id_by_ticker(dmt_return_struct['$ticker'])
             if potential_dmt_atomical_id:
+                self.logger.info(f'rollback_distmint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
                 output_index_packed = pack_le_uint32(idx)
                 location = tx_hash + output_index_packed
                 self.delete_distmint_data(potential_dmt_atomical_id, location)
@@ -1342,7 +1354,9 @@ class BlockProcessor:
                 # remove the b'i' atomicals entry at the mint location
                 self.db_deletes.append(b'i' + location + potential_dmt_atomical_id)
     
+    # Rollback atomical mint data
     def delete_atomical_mint_data(self, atomical_id, atomical_num):
+        self.logger.info(f'delete_atomical_mint_data: atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
         self.db_deletes.append(b'md' + atomical_id)
         self.db_deletes.append(b'mi' + atomical_id)
         # Make sure to remove the atomical number
@@ -1353,6 +1367,7 @@ class BlockProcessor:
         # remove the b'i' atomicals entry at the mint location
         self.db_deletes.append(b'i' + atomical_id + atomical_id)
 
+    # Delete atomical mint data and any associated realms, subrealms, containers and tickers
     def delete_atomical_mint_data_with_realms_container(self, tx_hash, tx, atomical_num, operations_found_at_inputs):
         was_mint_found = False
         was_realm_type = False
@@ -1363,6 +1378,7 @@ class BlockProcessor:
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
         valid_create_op_type, mint_info = get_mint_info_op_factory(tx_hash, tx, operations_found_at_inputs)
         if not valid_create_op_type:
+            self.logger.info(f'delete_atomical_mint_data_with_realms_container not valid_create_op_type')
             return False, False, False, False 
         if not valid_create_op_type == 'NFT' or not valid_create_op_type == 'FT':
             raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
@@ -1370,12 +1386,12 @@ class BlockProcessor:
         atomical_was_created = False
         # If it was an NFT
         if valid_create_op_type == 'NFT':
-            # If realm or container was specificed then it was only minted if the realm/container was created for the atomical
-            realm = return_struct.get('$realm', None)
-            subrealm = return_struct.get('$subrealm', None)
-            container = return_struct.get('$container', None)
-            parent_realm_id = return_struct.get('$parent_realm_id', None)
             was_mint_found = True
+            # If realm or container was specificed then it was only minted if the realm/container was created for the atomical
+            realm = mint_info.get('$realm', None)
+            subrealm = mint_info.get('$subrealm', None)
+            container = mint_info.get('$container', None)
+            parent_realm_id = mint_info.get('$parent_realm_id', None)
             # Only consider it a mint if the realm was successfully deleted for the CURRENT atomical_id
             if realm and self.delete_realm_data(atomical_id, realm):
                 was_realm_type = True
@@ -1385,8 +1401,9 @@ class BlockProcessor:
                 was_container_type = True
         # If it was an FT
         elif valid_create_op_type == 'FT': 
+            was_mint_found = True
             # Only consider it a mint if the ticker was successfully deleted for the CURRENT atomical_id
-            if self.delete_ticker_data(atomical_id, return_struct['$ticker']):
+            if self.delete_ticker_data(atomical_id, mint_info['$ticker']):
                 was_fungible_type = True
             else: 
                 raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
@@ -1394,8 +1411,10 @@ class BlockProcessor:
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
+            # self.logger.info(f'delete_atomical_mint_data_with_realms_container was_mint_found True atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
             self.delete_atomical_mint_data(atomical_id, atomical_num)
 
+        self.logger.info(f'delete_atomical_mint_data_with_realms_container return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}, was_realm_type={was_realm_type}, was_subrealm_type={was_subrealm_type}, was_container_type={was_container_type}, was_fungible_type={was_fungible_type}')
         return was_mint_found, was_realm_type, was_subrealm_type, was_container_type, was_fungible_type       
 
     # Get the price regex list for a subrealm atomical
