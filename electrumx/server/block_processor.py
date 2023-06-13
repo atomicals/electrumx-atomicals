@@ -39,7 +39,7 @@ import regex
 TX_HASH_LEN = 32
 ATOMICAL_ID_LEN = 36
 LOCATION_ID_LEN = 36
-TX_OUPUT_IDX_LEN = 4
+TX_OUTPUT_IDX_LEN = 4
 
 class Prefetcher:
     '''Prefetches blocks (in the forward direction only).'''
@@ -189,13 +189,13 @@ class BlockProcessor:
         self.height = -1
         self.tip = None  # type: Optional[bytes]
         self.tip_advanced_event = asyncio.Event()
-        self.tx_count = 0
-        self.atomical_count = 0
-        self.ticker_count = 0
-        self.realm_count = 0
-        self.subrealm_count = 0
-        self.container_count = 0
-        self.distmint_count = 0
+        self.tx_count = 0 
+        self.atomical_count = 0     # Total number of Atomicals minted (Includes all NFT/FT types)
+        self.ticker_count = 0       # Number of tickers (for Atomical FTs) created. Effectively this counts the total unique FTs
+        self.realm_count = 0        # Number of realms (Atomical NFTs) created. Also called Top-Level-Realms (TLR)
+        self.subrealm_count = 0     # Number of subrealms (Atomical NFTs) created. Associated with a TLR or another sub-realm as the parent
+        self.container_count = 0    # Number of containers (Atomical NFTs) created. Can be used as a collection-type data structure.
+        self.distmint_count = 0     # Number of distributed mints (Atomical FTs) created. Counts the individual mints against the distributed FT (DFT) deploy.
         self._caught_up_event = None
 
         # Caches of unflushed items.
@@ -206,13 +206,13 @@ class BlockProcessor:
 
         # UTXO cache
         self.utxo_cache = {}
-        self.atomicals_utxo_cache = {}
-        self.general_data_cache = {}
-        self.ticker_data_cache = {}
-        self.realm_data_cache = {}
-        self.subrealm_data_cache = {}
-        self.container_data_cache = {}
-        self.distmint_data_cache = {}
+        self.atomicals_utxo_cache = {}  # The cache of atomicals UTXOs
+        self.general_data_cache = {}    # General data cache for atomicals related actions
+        self.ticker_data_cache = {}     # Caches the tickers created
+        self.realm_data_cache = {}      # Caches the realms created
+        self.subrealm_data_cache = {}   # Caches the subrealms created
+        self.container_data_cache = {}  # Caches the containers created
+        self.distmint_data_cache = {}   # Caches the distributed mints created
         self.db_deletes = []
 
         # If the lock is successfully acquired, in-memory chain state
@@ -461,7 +461,8 @@ class BlockProcessor:
                 result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
             self.atomicals_id_cache[atomical_id] = result
         return result 
-    # Get basic atomical information in a format that can be attached to utxos 
+    
+    # Get basic atomical information in a format that can be attached to utxos in an RPC call
     def get_atomicals_id_mint_info_basic_struct_for_evt(self, atomical_id):
         result = None
         try:
@@ -502,7 +503,7 @@ class BlockProcessor:
     # Save a ticker symbol to the cache that will be flushed to db
     def put_ticker_data(self, atomical_id, ticker): 
         if not is_valid_ticker_string(ticker):
-            raise IndexError(f'Ticker put_ticker_data invalid {ticker}')
+            raise IndexError(f'Ticker is_valid_ticker_string invalid {ticker}')
         ticker_enc = ticker.encode()
         if self.ticker_data_cache.get(ticker_enc, None) == None: 
             self.ticker_data_cache[ticker_enc] = atomical_id
@@ -510,7 +511,7 @@ class BlockProcessor:
     # Save realm name to the cache that will be flushed to the db 
     def put_realm_data(self, atomical_id, realm): 
         if not is_valid_realm_string_name(realm):
-            raise IndexError(f'Realm put_realm_data invalid {realm}')
+            raise IndexError(f'Realm is_valid_realm_string_name invalid {realm}')
         realm_enc = realm.encode()
         if self.realm_data_cache.get(realm_enc, None) == None: 
             self.realm_data_cache[realm_enc] = atomical_id
@@ -518,7 +519,7 @@ class BlockProcessor:
     # Save subrealm name to the cache that will be flushed to the db 
     def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id): 
         if not is_valid_realm_string_name(subrealm):
-            raise IndexError(f'Realm put_subrealm_data invalid {subrealm}')
+            raise IndexError(f'Subrealm is_valid_realm_string_name invalid {subrealm}')
         subrealm_enc = subrealm.encode()
         if self.subrealm_data_cache.get(parent_atomical_id + subrealm_enc, None) == None: 
             self.subrealm_data_cache[parent_atomical_id + subrealm_enc] = atomical_id
@@ -563,7 +564,13 @@ class BlockProcessor:
         for atomical_gi_db_key, atomical_gi_db_value in self.db.utxo_db.iterator(prefix=prefix):
             db_count += 1
         # The number minted is equal to the cache and db
-        return cache_count + db_count
+        total_mints = cache_count + db_count
+        # Some sanity checks to make sure no developer error 
+        assert(cache_count >= 0)
+        assert(db_count >= 0)
+        assert(total_mints >= 0)
+        assert(isinstance(total_mints, int))
+        return total_mints
 
     # Spend all of the atomicals at a location
     def spend_atomicals_utxo(self, tx_hash: bytes, tx_idx: int) -> bytes:
@@ -606,6 +613,9 @@ class BlockProcessor:
             # Return all of the atomicals spent at the address
         return atomicals_data_list
 
+    # Remove the ticker only if it exists and if it was associated with atomical_id
+    # This is done because another malicious user could mint an invalid mint, and then on rollback result
+    # In deleting the legit ticker that was minted before. 
     def delete_ticker_data(self, atomical_id, ticker): 
         ticker_enc = ticker.encode()
         # Check if it's located in the cache first
@@ -622,6 +632,9 @@ class BlockProcessor:
         if ticker_data or ticker_data_from_db:
             return True
 
+    # Remove the realm only if it exists and if it was associated with atomical_id
+    # This is done because another malicious user could mint an invalid mint, and then on rollback result
+    # In deleting the legit ticker that was minted before.
     def delete_realm_data(self, expected_atomical_id, realm): 
         # Check if it's located in the cache first
         realm_data = self.realm_data_cache.get(realm, None)
@@ -637,6 +650,9 @@ class BlockProcessor:
         if realm_data or realm_data_from_db:
             return True
 
+    # Remove the subrealm only if it exists and if it was associated with atomical_id for the parent_atomical_id (subrealm/TLR)
+    # This is done because another malicious user could mint an invalid mint, and then on rollback result
+    # In deleting the legit ticker that was minted before.
     def delete_subrealm_data(self, parent_atomical_id, expected_atomical_id, subrealm): 
         # Check if it's located in the cache first
         subrealm_data = self.subrealm_data_cache.get(parent_atomical_id + subrealm, None)
@@ -652,6 +668,9 @@ class BlockProcessor:
         if subrealm_data or subrealm_data_from_db:
             return True
 
+    # Remove the container only if it exists and if it was associated with atomical_id
+    # This is done because another malicious user could mint an invalid mint, and then on rollback result
+    # In deleting the legit ticker that was minted before.
     def delete_container_data(self, atomical_id, collection): 
         # Check if it's located in the cache first
         collectiondata = self.container_data_cache.get(collection, None)
@@ -834,7 +853,7 @@ class BlockProcessor:
             self.put_ticker_data(mint_info['id'], can_assign_ticker)
         else: 
             # Fail the attempt to create NFT because the ticker cannot be assigned when it was requested
-            return False
+            return False, None
         tx_numb = to_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
