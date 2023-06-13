@@ -256,7 +256,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
             return None, None
 
         # The parent realm id is in a compact form string to make it easier for users and developers
-        parent_realm_id = mint_info['args'].get('pid', None)
+        parent_realm_id = mint_info['args'].get('pid')
         if not isinstance(parent_realm_id, str):
             return None, None
         if not is_compact_atomical_id(parent_realm_id):

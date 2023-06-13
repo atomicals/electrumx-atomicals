@@ -839,7 +839,7 @@ class BlockProcessor:
         return None
  
     # Validate the parameters for an NFT and validate realm/subrealm/container data
-    def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height):
+    def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
             return False, None, None 
 
@@ -849,6 +849,7 @@ class BlockProcessor:
 
         # Request includes realm to be minted to have successful create
         if realm:
+            self.logger.info(f'validate_and_create_nft: realm={realm}, tx_hash={hash_to_hex_str(tx_hash)}')
             # Is the realm taken or available?
             can_assign_realm = self.is_realm_acceptable_to_be_created(realm)
             # The realm can be assigned and therefore the NFT create can succeed
@@ -860,6 +861,7 @@ class BlockProcessor:
                 return False, None, None
         elif subrealm:
             realm_parent_atomical_id_compact = mint_info.get('$parent_realm_id_compact')
+            self.logger.info(f'validate_and_create_nft: subrealm={subrealm}, realm_parent_atomical_id_compact={realm_parent_atomical_id_compact}, tx_hash={hash_to_hex_str(tx_hash)}')
             if not realm_parent_atomical_id_compact or not is_compact_atomical_id(realm_parent_atomical_id):
                 return False, None, None
 
@@ -885,6 +887,7 @@ class BlockProcessor:
                 return False, None, None
         # Request includes container to be minted to have successful create
         elif container:
+            self.logger.info(f'validate_and_create_nft: container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
             # Is the container taken or available?
             can_assign_container = self.is_container_acceptable_to_be_created(container)
             # The container can be assigned and therefore the NFT create can succeed
@@ -901,15 +904,15 @@ class BlockProcessor:
         is_sealed = b'00'
         self.put_atomicals_utxo(mint_info['id'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
-        self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, subtype={subtype}, realm={realm}, subrealm={subrealm}, container={container}') 
+        self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, subtype={subtype}, realm={realm}, subrealm={subrealm}, container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
         return True, realm, container
     
     # Validate the parameters for a FT and ticker
-    def validate_and_create_ft(self, mint_info):
+    def validate_and_create_ft(self, mint_info, tx_hash):
         ticker = mint_info['$ticker']
         # Request includes realm to be minted to have successful create
         if not ticker:
-            raise IndexError(f'Fatal ticker not found for ft')
+            raise IndexError(f'Fatal error ticker not set when it shoudl have been. DeveloperError')
         # Is the ticker taken or available?
         can_assign_ticker = self.is_ticker_acceptable_to_be_created(ticker)
         # The ticker can be assigned and therefore the NFT create can succeed
@@ -919,13 +922,18 @@ class BlockProcessor:
         else: 
             # Fail the attempt to create NFT because the ticker cannot be assigned when it was requested
             return False, None
+        
+        self.logger.info(f'validate_and_create_ft: ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
+
         tx_numb = to_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
             self.put_atomicals_utxo(mint_info['id'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
-        self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, ticker={ticker}') 
+        
+        subtype = mint_info['subtype']
+        self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
         return True, mint_info['$ticker']
 
     # Check whether to create an atomical NFT/FT 
@@ -959,7 +967,7 @@ class BlockProcessor:
         container_created = None 
         ticker_created = None
         if valid_create_op_type == 'NFT':
-            is_created, realm, subrealm, container = self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height)
+            is_created, realm, subrealm, container = self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash)
             if not is_created:
                 self.logger.info(f'Atomicals Create NFT validate_and_create_nft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None, None, None, None, None
@@ -975,7 +983,7 @@ class BlockProcessor:
         elif valid_create_op_type == 'FT':
             # Validate and create the FT, and also adding the $ticker property if it was requested in the params
             # Adds $ticker symbol to mint_info always or fails
-            is_created, ticker = self.validate_and_create_ft(mint_info)
+            is_created, ticker = self.validate_and_create_ft(mint_info, tx_hash)
             if not is_created:
                 self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None, None, None, None, None
@@ -1037,10 +1045,13 @@ class BlockProcessor:
     def apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
         put_general_data = self.general_data_cache.__setitem__
         if operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'mod' and operations_found_at_inputs.get('input_index', None) == 0:
+            self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'st' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'evt' and operations_found_at_inputs.get('input_index', None) == 0:
+            self.logger.info(f'apply_state_like_updates op=moevtd, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'evt' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'crt' and operations_found_at_inputs.get('input_index', None) == 0:
+            self.logger.info(f'apply_state_like_updates op=crt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             height_packed = pack_le_uint32(height)
             put_general_data(b'crt' + atomical_id + tx_numb + output_idx_le + height_packed, pickle.dumps(operations_found_at_inputs['payload']))
 
@@ -1395,7 +1406,7 @@ class BlockProcessor:
             # Only consider it a mint if the realm was successfully deleted for the CURRENT atomical_id
             if realm and self.delete_realm_data(atomical_id, realm):
                 was_realm_type = True
-            elif subrealm and self.delete_subrealm_data(parent_realm_id, atomical_id, subrealm):
+            elif subrealm and parent_realm_id and self.delete_subrealm_data(parent_realm_id, atomical_id, subrealm):
                 was_subrealm_type = True
             elif container and self.delete_container_data(atomical_id, container):
                 was_container_type = True
@@ -1507,7 +1518,8 @@ class BlockProcessor:
                 if valid_pattern.match(proposed_subrealm_name) and txout.value >= satoshis and txout.pk_script == output: 
                     return regex_price_point
             except Exception as e: 
-                continue
+                # If it failed, then try the next matches if any
+                pass
         return None
 
     def backup_txs(
