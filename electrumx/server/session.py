@@ -1596,6 +1596,14 @@ class ElectrumX(SessionBase):
         else:
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event(compact_atomical_id)} 
+
+    async def atomicals_get_contract(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = compact_atomical_id_or_atomical_number
+        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
+            assert_atomical_id(compact_atomical_id)
+        else:
+            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_contract(compact_atomical_id)} 
     
     async def atomicals_get_history(self, compact_atomical_id_or_atomical_number):
         '''Return the history of an Atomical```
