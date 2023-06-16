@@ -1508,6 +1508,17 @@ class ElectrumX(SessionBase):
     async def atomicals_get_by_realm(self, name):
         found_atomical_id = await self.db.get_atomical_id_by_realm(name)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+    
+    async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
+        compact_atomical_id = parent_compact_atomical_id_or_atomical_number
+        if isinstance(parent_compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(parent_compact_atomical_id_or_atomical_number):
+            assert_atomical_id(compact_atomical_id)
+        else:
+            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(parent_compact_atomical_id_or_atomical_number))
+        
+        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
+        found_atomical_id = await self.db.get_atomical_id_by_subrealm(atomical_id, name)
+        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
         found_atomical_id = await self.db.get_atomical_id_by_ticker(ticker)

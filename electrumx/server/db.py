@@ -1450,6 +1450,10 @@ class DB:
         name_key = b'rlm' + name
         return self.utxo_db.get(name_key)
 
+    def get_atomical_id_by_subrealm(self, parent_atomical_id, name):
+        subname_key = b'srlm' + parent_atomical_id + name
+        return self.utxo_db.get(subname_key)
+
     def get_atomical_id_by_ticker(self, ticker):
         ticker_key = b'tick' + ticker
         return self.utxo_db.get(ticker_key)
