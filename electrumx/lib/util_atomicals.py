@@ -209,8 +209,8 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
     # Enforces that both of these must be empty or a valid dictionary
     # This prevents a user from minting a big data blob into one of the fields
     def populate_args_meta(mint_info, op_found_payload):
-        metadata = op_found_payload.get('meta', {})
-        if not isinstance(metadata, dict):
+        meta = op_found_payload.get('meta', {})
+        if not isinstance(meta, dict):
             return False
         args = op_found_payload.get('args', {})
         if not isinstance(args, dict):
