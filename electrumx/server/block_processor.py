@@ -898,7 +898,7 @@ class BlockProcessor:
                 # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
                 return False, None, None
 
-        tx_numb = to_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
@@ -925,7 +925,7 @@ class BlockProcessor:
         
         self.logger.info(f'validate_and_create_ft: ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
 
-        tx_numb = to_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
