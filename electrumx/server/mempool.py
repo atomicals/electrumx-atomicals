@@ -343,7 +343,7 @@ class MemPool:
             def create_atomical_from_definition(operation_found_at_inputs, tx, tx_hash, atomicals_updates_map):
                 if not operation_found_at_inputs:
                     return 
-                valid_create_op_type, mint_info = get_mint_info_op_factory(tx_hash, tx, operation_found_at_inputs)
+                valid_create_op_type, mint_info = get_mint_info_op_factory(script_hashX, tx_hash, tx, operation_found_at_inputs)
                 self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool {hash_to_hex_str(tx_hash)}') 
                 # Lookup the txout will be imprinted with the atomical
                 expected_output_index = 0
@@ -388,7 +388,6 @@ class MemPool:
                     tx, tx_size = deserializer(raw_tx).read_tx_and_vsize()
                     try:
                         operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
-                        # valid_create_op_type, mint_info = get_mint_info_op_factory(hash, tx, operations_found_at_inputs)
                         create_atomical_from_definition(operations_found_at_inputs, tx, hash, atomicals_updates_map)
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')

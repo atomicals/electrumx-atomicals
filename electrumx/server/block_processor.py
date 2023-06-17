@@ -948,7 +948,7 @@ class BlockProcessor:
 
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(tx_hash, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx_hash, tx, operations_found_at_inputs)
         if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
             return None, None, None, None, None
 
@@ -1387,7 +1387,7 @@ class BlockProcessor:
         was_fungible_type = False
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(tx_hash, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx_hash, tx, operations_found_at_inputs)
         if not valid_create_op_type:
             self.logger.info(f'delete_atomical_mint_data_with_realms_container not valid_create_op_type')
             return False, False, False, False 
