@@ -30,12 +30,13 @@
 from array import array
 from electrumx.lib.script import OpCodes, ScriptError, Script
 from electrumx.lib.util import unpack_le_uint16_from, unpack_le_uint64, unpack_le_uint32, unpack_le_uint32_from, pack_le_uint16, pack_le_uint32
-from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
+from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash, double_sha256
 import re
 import sys
 import pickle
 from cbor2 import dumps, loads, CBORDecodeError
 from collections.abc import Mapping
+ 
 
 # Atomical NFT/FT mint information is stored in the b'mi' index and is pickle encoded dictionary
 def unpack_mint_info(mint_info_value):
