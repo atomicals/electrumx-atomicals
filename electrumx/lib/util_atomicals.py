@@ -185,6 +185,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
+        hashX = self.coin.hashX_from_script(txout.pk_script),
         output_idx_le = pack_le_uint32(expected_output_index) 
         location = tx_hash + output_idx_le
         value_sats = pack_le_uint64(txout.value)
@@ -195,6 +196,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
             'txid': hash_to_hex_str(tx_hash),
             'index': expected_output_index,
             'scripthash': scripthash,
+            'hashX': hashX,
             'value': txout.value,
             'script': txout.pk_script,
             # The following fields will be added at a different level of processing
