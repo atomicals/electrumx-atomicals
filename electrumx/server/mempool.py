@@ -360,6 +360,7 @@ class MemPool:
                     'atomical_id': location_id_bytes_to_compact(atomical_id),
                     'atomical_number': -1,
                     'type': mint_type,
+                    'subtype': mint_info['subtype'],
                     'location_info': [{
                         'location': location_id_bytes_to_compact(location),
                         'txid': hash_to_hex_str(tx_hash),
@@ -372,6 +373,8 @@ class MemPool:
                     }],
                     'mint_info': mint_info,
                     'state': {},
+                    'contract': {},
+                    'event': {},
                     'history': {}
                 }
                 atomicals_updates_map[atomical_id]['mint_info']['fields'] = check_unpack_field_data(operation_found_at_inputs['payload_bytes'])
@@ -384,8 +387,9 @@ class MemPool:
                 try:
                     tx, tx_size = deserializer(raw_tx).read_tx_and_vsize()
                     try:
-                        operation_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
-                        create_atomical_from_definition(operation_found_at_inputs, tx, hash, atomicals_updates_map)
+                        operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
+                        # valid_create_op_type, mint_info = get_mint_info_op_factory(hash, tx, operations_found_at_inputs)
+                        create_atomical_from_definition(operations_found_at_inputs, tx, hash, atomicals_updates_map)
                     except Exception as ex:
                         self.logger.error(f'skipping atomicals parsing due to error in mempool {hash_to_hex_str(hash)}: {ex}')
       
