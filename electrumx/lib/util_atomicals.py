@@ -185,7 +185,7 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
-        hashX = script_hashX(txout.pk_script),
+        hashX = script_hashX(txout.pk_script)
         output_idx_le = pack_le_uint32(expected_output_index) 
         location = tx_hash + output_idx_le
         value_sats = pack_le_uint64(txout.value)
