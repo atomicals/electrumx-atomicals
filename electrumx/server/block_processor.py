@@ -1007,7 +1007,8 @@ class BlockProcessor:
         # Save mint info fields and metadata
         put_general_data(b'mi' + atomical_id, pickle.dumps(mint_info))
         # Track the atomical number for the newly minted atomical
-        put_general_data(b'no' + atomical_count_numb, atomical_id)
+        atomical_count_numb = pack_be_uint64(atomical_num)
+        put_general_data(b'n' + atomical_count_numb, atomical_id)
         # Save the output script of the atomical to lookup at a future point
         put_general_data(b'po' + atomical_id, txout.pk_script)
         return atomical_id, realm_created, subrealm_created, ticker_created, container_created
@@ -1374,7 +1375,7 @@ class BlockProcessor:
         self.db_deletes.append(b'mi' + atomical_id)
         # Make sure to remove the atomical number
         atomical_numb = pack_be_uint64(atomical_num) 
-        self.db_deletes.append(b'no' + atomical_numb)
+        self.db_deletes.append(b'n' + atomical_numb)
         # remove the b'a' atomicals entry at the mint location
         self.db_deletes.append(b'a' + atomical_id + atomical_id)
         # remove the b'i' atomicals entry at the mint location

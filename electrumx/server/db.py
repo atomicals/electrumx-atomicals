@@ -142,7 +142,7 @@ class DB:
         # Value: mint info serialized.
         # "maps atomical_id to mint information such as block info"
         # ---
-        # Key: b'no' + atomical_number (8 bytes integer)
+        # Key: b'n' + atomical_number (8 bytes integer)
         # Value: Atomical_id
         # "maps atomical number to an atomical_id"
         # ---
@@ -1213,7 +1213,7 @@ class DB:
  
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         def read_atomical_id():
-            atomical_num_key = b'no' + pack_be_uint64(int(atomical_number))
+            atomical_num_key = b'n' + pack_be_uint64(int(atomical_number))
             atomical_id_value = self.utxo_db.get(atomical_num_key)
             if not atomical_id_value:
                 self.logger.error(f'n{atomical_id_value} atomical id not found by atomical number')
@@ -1387,7 +1387,7 @@ class DB:
 
             # Get Atomical number and check match
             atomical_number = mint_info['number']
-            atomical_number_key = b'no' + pack_be_uint64(atomical_number)
+            atomical_number_key = b'n' + pack_be_uint64(atomical_number)
             atomical_number_value = self.utxo_db.get(atomical_number_key)
             if not atomical_number_value:
                 self.logger.error(f'n{atomical_number} atomical number not found. IndexError.')
@@ -1471,7 +1471,7 @@ class DB:
             search_starting_at_atomical_number = 0
             # If no offset provided, then assume we want to start from the highest
             if offset == None or offset == 0: 
-                prefix = b'no'
+                prefix = b'n'
                 for atomical_number_key, atomical_id_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
                     search_starting_at_atomical_number, = unpack_be_uint64(atomical_number_key[ 1 : 1 + 8])
                     break
@@ -1482,13 +1482,13 @@ class DB:
             list_of_keys = []
             for x in range(limit):
                 if asc:
-                    current_key = b'no' + pack_be_uint64(search_starting_at_atomical_number + x)
+                    current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number + x)
                     list_of_keys.append(current_key)
                 else:
                     # Do not go to 0 or below
                     if search_starting_at_atomical_number - x <= 0:
                         break 
-                    current_key = b'no' + pack_be_uint64(search_starting_at_atomical_number - x)
+                    current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number - x)
                     list_of_keys.append(current_key)
 
             # Get all of the atomicals in the order of the keys
