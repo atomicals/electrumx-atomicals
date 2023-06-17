@@ -411,6 +411,8 @@ def parse_operation_from_script(tx_hash, script, n):
     # check the 3 letter protocol operations
     if n + three_letter_op_len < script_len:
         atom_op = script[n : n + three_letter_op_len].hex()
+        print('atom op')
+        print(atom_op)
         if atom_op == "036e6674":
             atom_op_decoded = 'nft'  # nft - CreMintate non-fungible token
         elif atom_op == "03646674":  
@@ -427,6 +429,7 @@ def parse_operation_from_script(tx_hash, script, n):
             atom_op_decoded = 'rlm'  # rlm - Create Realm (top-level-realm TLR)
         elif atom_op == "03646d74": 
             atom_op_decoded = 'dmt'  # dmt - Mint tokens of distributed mint type (dft)
+        
         if atom_op_decoded:
             return atom_op_decoded, parse_atomicals_data_definition_operation(script, n + three_letter_op_len)
     
@@ -439,6 +442,7 @@ def parse_operation_from_script(tx_hash, script, n):
             atom_op_decoded = 'co'  # co - Container or collection type mint
         elif atom_op == "02736c":  
             atom_op_decoded = 'sl'  # sl - Seal an NFT and lock it from further changes forever
+        
         if atom_op_decoded:
             return atom_op_decoded, parse_atomicals_data_definition_operation(script, n + two_letter_op_len)
     
@@ -451,6 +455,7 @@ def parse_operation_from_script(tx_hash, script, n):
         # Skip operation (for FTs only)
         elif atom_op == "0179":
             atom_op_decoded = 'y'  # skip - skip first output for fungible token transfer
+        
         if atom_op_decoded:
             return atom_op_decoded, parse_atomicals_data_definition_operation(script, n + one_letter_op_len)
     
