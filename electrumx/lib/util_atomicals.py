@@ -410,7 +410,7 @@ def parse_operation_from_script(script, n):
 
     # check the 3 letter protocol operations
     if n + three_letter_op_len < script_len:
-        atom_op = script[n : n + three_letter_op_len].hex()
+        atom_op = script[n : three_letter_op_len].hex()
         print('atom op')
         print(atom_op)
         if atom_op == "036e6674":
@@ -435,7 +435,7 @@ def parse_operation_from_script(script, n):
     
     # check the 2 letter protocol operations
     if n + two_letter_op_len < script_len:
-        atom_op = script[n : n + two_letter_op_len].hex()
+        atom_op = script[n : two_letter_op_len].hex()
         if atom_op == "026674":
             atom_op_decoded = 'ft'  # ft - fungible token mint
         elif atom_op == "02636f":  
