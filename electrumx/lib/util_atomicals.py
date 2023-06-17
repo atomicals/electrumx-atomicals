@@ -399,7 +399,7 @@ def parse_atomicals_data_definition_operation(script, n):
         raise ScriptError(f'parse_atomicals_data_definition_operation script error {e}') from None
 
 # Parses the valid operations in an Atomicals script
-def parse_operation_from_script(tx_hash, script, n):
+def parse_operation_from_script(script, n):
     '''Parse an operation'''
     # Check for each protocol operation
     script_len = len(script)
