@@ -189,7 +189,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
         location = tx_hash + output_idx_le
         value_sats = pack_le_uint64(txout.value)
         # Create the general mint information
-        mint_info = {
+        return {
             # Establish the atomical_id from the initial location
             'id': location,
             'txid': hash_to_hex_str(tx_hash),
@@ -203,6 +203,7 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
             # 'height': height, 
             # 'tx_num': tx_num
         }
+       
     
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
     # Enforces that both of these must be empty or a valid dictionary
