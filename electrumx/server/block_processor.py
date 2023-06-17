@@ -24,7 +24,7 @@ from electrumx.lib.util import (
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
-from electrumx.lib.util_atomicals import is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
+from electrumx.lib.util_atomicals import is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -522,8 +522,8 @@ class BlockProcessor:
     # Save subrealm name to the cache that will be flushed to the db 
     def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id): 
         self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}')
-        if not is_valid_realm_string_name(subrealm):
-            raise IndexError(f'Subrealm is_valid_realm_string_name invalid {subrealm}')
+        if not is_valid_subrealm_string_name(subrealm):
+            raise IndexError(f'Subrealm is_valid_subrealm_string_name invalid {subrealm}')
         subrealm_enc = subrealm.encode()
         if self.subrealm_data_cache.get(parent_atomical_id + subrealm_enc, None) == None: 
             self.subrealm_data_cache[parent_atomical_id + subrealm_enc] = atomical_id
@@ -732,7 +732,7 @@ class BlockProcessor:
         if not subrealm:
             self.log_subrealm_request(method, 'empty', False, subrealm, parent_realm_atomical_id, height)
             return None 
-        if is_valid_realm_string_name(subrealm):
+        if is_valid_subrealm_string_name(subrealm):
             # first step is to validate that the subrealm name meets the requirements of the owner of the parent
             # as far as minting rules go. Recall that a subrealm can be minted by the parent manually OR
             # The parent can set the `realm/reg` key using the `crt` operation to specific what regex/price points

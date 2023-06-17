@@ -312,16 +312,16 @@ def get_mint_info_op_factory(tx_hash, tx, op_found_struct):
  
     return mint_info['type'], mint_info
     
-# A valid ticker string must be at least 3 characters and max 28 with a-z0-9
+# A valid ticker string must be at least 3 characters and max 10 with a-z0-9
 def is_valid_ticker_string(ticker):
     if not ticker:
         return None 
     tolower = ticker.lower()
-    m = re.compile(r'^[a-z0-9]{3,28}$')
+    m = re.compile(r'^[a-z0-9]{3,10}$')
     if m.match(tolower):
         return True
     return False 
-    
+
 # A valid realm string must begin with a-z and have up to 63 characters after it 
 # Including a-z0-9 and hypohen's "-"
 def is_valid_realm_string_name(realm_name):
@@ -330,6 +330,18 @@ def is_valid_realm_string_name(realm_name):
     tolower = realm_name.lower()
     # Realm names must start with an alphabetical character
     m = re.compile(r'^[a-z][a-z0-9\-]{0,63}$')
+    if m.match(tolower):
+        return True
+    return False 
+
+# A valid subrealm string must begin with a-z and have up to 63 characters after it 
+# Including a-z0-9 and hypohen's "-"
+def is_valid_subrealm_string_name(subrealm_name):
+    if not subrealm_name:
+        return None 
+    tolower = subrealm_name.lower()
+    # SubRealm names can start with a number also, unlike top-level-realms 
+    m = re.compile(r'^[a-z0-9]|[a-z0-9\-]{0,63}$')
     if m.match(tolower):
         return True
     return False 
