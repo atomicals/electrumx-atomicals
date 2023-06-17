@@ -464,7 +464,7 @@ def parse_operation_from_script(tx_hash, script, n):
 
 # Parses and detects valid Atomicals protocol operations in a witness script
 # Stops when it finds the first operation in the first input
-def parse_protocols_operations_from_witness_for_input(tx_hash, txinwitness):
+def parse_protocols_operations_from_witness_for_input(txinwitness):
     '''Detect and parse all operations across the witness input arrays from a tx'''
     atomical_operation_type_map = {}
     for script in txinwitness:
@@ -488,7 +488,7 @@ def parse_protocols_operations_from_witness_for_input(tx_hash, txinwitness):
                         if "0473707233" == script[n : n + 5].hex():
                             found_operation_definition = True
                             # Parse to ensure it is in the right format
-                            operation_type, payload = parse_operation_from_script(tx_hash, script, n + 5)
+                            operation_type, payload = parse_operation_from_script(script, n + 5)
                             if operation_type != None:
                                 print(f'Potential Atomicals Operation Code Found: {operation_type}')
                                 return operation_type, payload
@@ -505,11 +505,10 @@ def parse_protocols_operations_from_witness_array(tx):
     if not hasattr(tx, 'witness'):
         return {}
     txin_idx = 0
-    tx_hash = tx.hash
     for txinwitness in tx.witness:
         # All inputs are parsed but further upstream most operations will only function if placed in the 0'th input
         # The exception is the 'x' extract operation which will only function correctly if placed in the 1'st input
-        op_name, payload = parse_protocols_operations_from_witness_for_input(tx_hash, txinwitness)
+        op_name, payload = parse_protocols_operations_from_witness_for_input(txinwitness)
         if not op_name:
             continue 
         decoded_object = {}
