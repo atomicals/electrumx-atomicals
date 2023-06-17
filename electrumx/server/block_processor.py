@@ -902,6 +902,7 @@ class BlockProcessor:
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
+        self.logger.info(f'put_atomicals_utxo: mint_info={mint_info}')
         self.put_atomicals_utxo(mint_info['id'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
         self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, subtype={subtype}, realm={realm}, subrealm={subrealm}, container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
