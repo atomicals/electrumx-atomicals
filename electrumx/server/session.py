@@ -1582,7 +1582,7 @@ class ElectrumX(SessionBase):
         '''Return the Atomicals at a specific location id```
         '''
         atomical_basic_infos = []
-        atomicals_found_at_location = self.db.get_atomicals_by_location(compact_to_location_id_bytes(compact_location_id))
+        atomicals_found_at_location = self.db.get_atomicals_by_location_long_form(compact_to_location_id_bytes(compact_location_id))
         for atomical_id in atomicals_found_at_location:
             atomical_basic_info = self.session_mgr.bp.get_atomicals_id_mint_info_basic_struct_for_evt(atomical_id)
             atomical_basic_infos.append(atomical_basic_info)

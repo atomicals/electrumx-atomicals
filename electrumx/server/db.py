@@ -1281,11 +1281,20 @@ class DB:
     # Get all of the atomicals that passed through the location
     # Never deleted, kept for historical purposes.
     def get_atomicals_by_location(self, location): 
+        long_form_ids = self.get_atomicals_by_location_long_form(location)
+        atomicals_at_location = []
+        for long_form_id in long_form_ids:
+            atomicals_at_location.append(location_id_bytes_to_compact(long_form_id))
+        return atomicals_at_location
+
+    # Get all of the atomicals that passed through the location
+    # Never deleted, kept for historical purposes.
+    def get_atomicals_by_location_long_form(self, location): 
         # Get any other atomicals at the same location
         atomicals_at_location = []
         atomicals_at_location_prefix = b'i' + location
         for location_key, location_result_value in self.utxo_db.iterator(prefix=atomicals_at_location_prefix):
-            atomicals_at_location.append(location_id_bytes_to_compact(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]))
+            atomicals_at_location.append(location_key[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN])
         return atomicals_at_location
 
     # Get the atomicals at a specific utxo
