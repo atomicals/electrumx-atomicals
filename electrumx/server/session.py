@@ -1205,7 +1205,7 @@ class ElectrumX(SessionBase):
         else:
             confirmed = 1   
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'type': atomical['type'],
             'location_info': atomical['location_info']}
         return info
@@ -1245,8 +1245,9 @@ class ElectrumX(SessionBase):
         if atomical['mint_info'].get('height') != None:
             height = atomical['mint_info']['height']
 
+        self.logger.info(atomical)
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'type': atomical['type'],
             'subtype': atomical['subtype'],
             'mint_info': {
