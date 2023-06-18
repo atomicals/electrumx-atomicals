@@ -1439,7 +1439,7 @@ class DB:
                 }
             }
 
-            if atomical['type'] == 'NFT':
+            if atomical['type'] == 'FT':
                 mint_deferred = mint_info.get('$mint_deferred', False)
                 if mint_deferred:
                     atomical['$mint_deferred'] = True
