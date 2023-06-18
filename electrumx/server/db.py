@@ -1439,16 +1439,17 @@ class DB:
                 }
             }
 
-            mint_deferred = mint_info.get('$mint_deferred', False)
-            if mint_deferred:
-                atomical['$mint_deferred'] = True
-                atomical['$max_supply'] = mint_info['$max_supply']
-            else: 
-                atomical['$mint_deferred'] = False
-                atomical['$max_supply'] = mint_info['$max_supply']
-                atomical['$mint_height'] = mint_info['$mint_height']
-                atomical['$mint_amount'] = mint_info['$mint_amount']
-                atomical['$max_mints'] = mint_info['$max_mints']
+            if atomical['type'] == 'NFT':
+                mint_deferred = mint_info.get('$mint_deferred', False)
+                if mint_deferred:
+                    atomical['$mint_deferred'] = True
+                    atomical['$max_supply'] = mint_info['$max_supply']
+                    atomical['$mint_height'] = mint_info['$mint_height']
+                    atomical['$mint_amount'] = mint_info['$mint_amount']
+                    atomical['$max_mints'] = mint_info['$max_mints']
+                else: 
+                    atomical['$mint_deferred'] = False
+                    atomical['$max_supply'] = mint_info['$max_supply']
 
             unpacked_data_summary = check_unpack_field_data(db_mint_value)
             if unpacked_data_summary != None:
