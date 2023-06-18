@@ -1302,7 +1302,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'state': atomical['state']}
 
         return status_info
@@ -1323,7 +1323,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'event': atomical['event']}
 
         return info
@@ -1344,7 +1344,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'contract': atomical['contract']}
 
         return info
@@ -1366,7 +1366,7 @@ class ElectrumX(SessionBase):
 
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['number'],
+            'atomical_number': atomical['atomical_number'],
             'type': atomical['type'],
             'subtype': atomical['subtype'],
             'history': history}
