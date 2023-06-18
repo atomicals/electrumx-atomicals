@@ -652,7 +652,7 @@ class DB:
                 hashX = value[:HASHX_LEN]
                 scripthash = value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]
                 value_sats = value[HASHX_LEN + SCRIPTHASH_LEN: HASHX_LEN + SCRIPTHASH_LEN + 8]
-                is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8]
+                is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8 : ]
                 batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats + is_sealed)
                 # Add the active b'a' atomicals location if it was not deleted
                 if not value_with_tombstone.get('deleted', False):
