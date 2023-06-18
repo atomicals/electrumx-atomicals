@@ -1187,56 +1187,6 @@ class ElectrumX(SessionBase):
                 for utxo in utxos
                 if (utxo.tx_hash, utxo.tx_pos) not in spends]
 
-    async def hashX_listscripthash_atomicals(self, hashX, Verbose=False):
-        utxos = await self.db.all_utxos(hashX)
-        utxos = sorted(utxos)
-        # Comment out the utxos for now and add it in later
-        # utxos.extend(await self.mempool.unordered_UTXOs(hashX))
-        self.bump_cost(1.0 + len(utxos) / 50)
-        spends = [] # await self.mempool.potential_spends(hashX)
-        returned_utxos = []
-        for utxo in utxos:
-            if (utxo.tx_hash, utxo.tx_pos) in spends:
-                continue
-            
-            atomicals = self.db.get_atomicals_by_utxo(utxo)
-            atomicals_basic_infos = []
-            for atomical_id in atomicals: 
-                atomical_basic_info = self.bp.get_atomicals_id_mint_info_basic_struct_for_evt(atomical_id)
-                atomicals_basic_infos.append(atomical_basic_info)
-
-            if Verbose or len(atomicals) > 0:
-                returned_utxos.append({'txid': hash_to_hex_str(utxo.tx_hash),
-                'index': utxo.tx_pos,
-                'vout': utxo.tx_pos,
-                'height': utxo.height, 
-                'value': utxo.value,
-                'atomicals': atomicals_basic_infos})
- 
-        # Aggregate balances
-        return_struct = {
-            'atomicals': {},
-            'utxos': returned_utxos
-        }
-        for returned_utxo in returned_utxos: 
-            for atomical_id_basic_info in returned_utxo['atomicals']:
-                atomical_id_ref = atomical_id_basic_info['id']
-                if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
-                    return_struct['atomicals'][atomical_id_ref] = {
-                        'id': atomical_id_basic_info['id'],
-                        'number': atomical_id_basic_info['number'],
-                        'realm': atomical_id_basic_info.get('realm', None),
-                        'ticker': atomical_id_basic_info.get('ticker', None),
-                        'type': atomical_id_basic_info['type'],
-                        'confirmed': 0
-                    } 
-                if returned_utxo['height'] <= 0:
-                    return_struct['atomicals'][atomical_id_ref]['unconfirmed'] += returned_utxo['value']
-                else:
-                    return_struct['atomicals'][atomical_id_ref]['confirmed'] += returned_utxo['value']
-        
-        return return_struct 
-
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
@@ -1637,6 +1587,57 @@ class ElectrumX(SessionBase):
             atomical_basic_info = self.bp.get_atomicals_id_mint_info_basic_struct_for_evt(atomical_id)
             atomical_basic_infos.append(atomical_basic_info)
         return atomical_basic_infos
+
+    async def hashX_listscripthash_atomicals(self, hashX, Verbose=False):
+        utxos = await self.db.all_utxos(hashX)
+        utxos = sorted(utxos)
+        # Comment out the utxos for now and add it in later
+        # utxos.extend(await self.mempool.unordered_UTXOs(hashX))
+        self.bump_cost(1.0 + len(utxos) / 50)
+        spends = [] # await self.mempool.potential_spends(hashX)
+        returned_utxos = []
+        for utxo in utxos:
+            if (utxo.tx_hash, utxo.tx_pos) in spends:
+                continue
+            
+            atomicals = self.db.get_atomicals_by_utxo(utxo)
+            atomicals_basic_infos = []
+            for atomical_id in atomicals: 
+                atomical_basic_info = self.bp.get_atomicals_id_mint_info_basic_struct_for_evt(atomical_id)
+                atomicals_basic_infos.append(atomical_basic_info)
+
+            if Verbose or len(atomicals) > 0:
+                returned_utxos.append({'txid': hash_to_hex_str(utxo.tx_hash),
+                'index': utxo.tx_pos,
+                'vout': utxo.tx_pos,
+                'height': utxo.height, 
+                'value': utxo.value,
+                'atomicals': atomicals_basic_infos})
+ 
+        # Aggregate balances
+        return_struct = {
+            'atomicals': {},
+            'utxos': returned_utxos
+        }
+        for returned_utxo in returned_utxos: 
+            for atomical_id_basic_info in returned_utxo['atomicals']:
+                atomical_id_ref = atomical_id_basic_info['id']
+                if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
+                    return_struct['atomicals'][atomical_id_ref] = {
+                        'id': atomical_id_basic_info['id'],
+                        'number': atomical_id_basic_info['number'],
+                        'realm': atomical_id_basic_info.get('realm', None),
+                        'ticker': atomical_id_basic_info.get('ticker', None),
+                        'type': atomical_id_basic_info['type'],
+                        'confirmed': 0
+                    } 
+                if returned_utxo['height'] <= 0:
+                    return_struct['atomicals'][atomical_id_ref]['unconfirmed'] += returned_utxo['value']
+                else:
+                    return_struct['atomicals'][atomical_id_ref]['confirmed'] += returned_utxo['value']
+        
+        return return_struct 
+
 
     async def atomicals_get_tx(self, txids):
         return await self.atomical_get_tx(txids)
