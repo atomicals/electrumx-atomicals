@@ -466,6 +466,8 @@ class BlockProcessor:
     # Get basic atomical information in a format that can be attached to utxos in an RPC call
     def get_atomicals_id_mint_info_basic_struct_for_evt(self, atomical_id):
         result = None
+        self.logger.info('atomical_id')
+        self.logger.info(atomical_id)
         try:
             result = self.atomicals_id_cache[atomical_id]
         except KeyError:
