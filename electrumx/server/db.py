@@ -1302,9 +1302,9 @@ class DB:
     def get_atomicals_by_utxo(self, utxo, Longform_ids=False):
         location = utxo.tx_hash + pack_le_uint32(utxo.tx_pos)
         if Longform_ids:
-            return self.get_atomicals_by_location(location)
-        else:
             return self.get_atomicals_by_location_long_form(location)
+        else:
+            return self.get_atomicals_by_location(location)
 
     # Get the atomical details
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
