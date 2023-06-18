@@ -321,43 +321,56 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
 def is_valid_ticker_string(ticker):
     if not ticker:
         return None 
-    tolower = ticker.lower()
     m = re.compile(r'^[a-z0-9]{3,10}$')
-    if m.match(tolower):
+    if m.match(ticker):
         return True
     return False 
+
+# Check that the base requirement is satisfied
+def is_valid_realmbase_string_name(realm_or_subrealm_name):
+    if not realm_or_subrealm_name:
+        return False 
+
+    if not isinstance(realm_or_subrealm_name, str):
+        return False
+    
+    if len(realm_or_subrealm_name) > 64 or len(realm_or_subrealm_name) <= 0:
+        return False 
+    
+    if realm_or_subrealm_name[0] == '-':
+        return False 
+  
+    return True
 
 # A valid realm string must begin with a-z and have up to 63 characters after it 
 # Including a-z0-9 and hypohen's "-"
 def is_valid_realm_string_name(realm_name):
-    if not realm_name:
-        return None 
-    tolower = realm_name.lower()
+    if not is_valid_realmbase_string_name(realm_name):
+        return False
     # Realm names must start with an alphabetical character
     m = re.compile(r'^[a-z][a-z0-9\-]{0,63}$')
-    if m.match(tolower):
+    if m.match(realm_name):
         return True
     return False 
 
 # A valid subrealm string must begin with a-z and have up to 63 characters after it 
 # Including a-z0-9 and hypohen's "-"
 def is_valid_subrealm_string_name(subrealm_name):
-    if not subrealm_name:
-        return None 
-    tolower = subrealm_name.lower()
+    if not is_valid_realmbase_string_name(subrealm_name):
+        return False
     # SubRealm names can start with a number also, unlike top-level-realms 
     m = re.compile(r'^[a-z0-9]|[a-z0-9\-]{0,63}$')
-    if m.match(tolower):
+    if m.match(subrealm_name):
         return True
     return False 
 
-# Collections must be at least 1 letter and max 64 with a-z0-9 and hypohen's "-"
+# Collections must be at least 1 letter and max 64 with a-z0-9 and hyphen's "-"
 def is_valid_container_string_name(container_name):
     if not container_name:
-        return None 
+        return False 
     tolower = container_name.lower()
-    # Collection names can start with any type of character
-    m = re.compile(r'^[a-z0-9\-]{1,64}$')
+    # Collection names can start with any type of character except the hyphen "-"
+    m = re.compile(r'^[a-z0-9][a-z0-9\-]{0,63}$')
     if m.match(tolower):
         return True
     return False 
