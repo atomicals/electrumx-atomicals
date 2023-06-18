@@ -1205,7 +1205,7 @@ class ElectrumX(SessionBase):
         else:
             confirmed = 1   
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'type': atomical['type'],
             'location_info': atomical['location_info']}
         return info
@@ -1246,7 +1246,7 @@ class ElectrumX(SessionBase):
             height = atomical['mint_info']['height']
 
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'type': atomical['type'],
             'subtype': atomical['subtype'],
             'mint_info': {
@@ -1302,7 +1302,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'state': atomical['state']}
 
         return status_info
@@ -1323,7 +1323,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'event': atomical['event']}
 
         return info
@@ -1344,7 +1344,7 @@ class ElectrumX(SessionBase):
             confirmed = 1    
 
         info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'contract': atomical['contract']}
 
         return info
@@ -1366,7 +1366,7 @@ class ElectrumX(SessionBase):
 
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
+            'atomical_number': atomical['number'],
             'type': atomical['type'],
             'subtype': atomical['subtype'],
             'history': history}
@@ -1627,8 +1627,11 @@ class ElectrumX(SessionBase):
                         'id': atomical_id_basic_info['id'],
                         'number': atomical_id_basic_info['number'],
                         'realm': atomical_id_basic_info.get('realm', None),
+                        'subrealm': atomical_id_basic_info.get('subrealm', None),
+                        'container': atomical_id_basic_info.get('container', None),
                         'ticker': atomical_id_basic_info.get('ticker', None),
                         'type': atomical_id_basic_info['type'],
+                        'subtype': atomical_id_basic_info['subtype'],
                         'confirmed': 0
                     } 
                 if returned_utxo['height'] <= 0:
