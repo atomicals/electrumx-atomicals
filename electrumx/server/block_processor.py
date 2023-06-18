@@ -481,7 +481,7 @@ class BlockProcessor:
         
         if result: 
             basic_struct = {
-                'id': result['id'],
+                'id': location_id_bytes_to_compact(result['id']),
                 'number': result['number'],
                 'type': result['type'],
                 'subtype': result['subtype']
