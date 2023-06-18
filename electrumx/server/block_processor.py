@@ -489,6 +489,7 @@ class BlockProcessor:
             ticker = result.get('$ticker', None)
             realm = result.get('$realm', None)
             subrealm = result.get('$subrealm', None)
+            container = result.get('$container', None)
             parent_realm_id_compact = result.get('$parent_realm_id_compact', None)
             if ticker: 
                 basic_struct['ticker'] = ticker
