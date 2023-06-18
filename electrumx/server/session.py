@@ -1600,7 +1600,7 @@ class ElectrumX(SessionBase):
             if (utxo.tx_hash, utxo.tx_pos) in spends:
                 continue
             
-            atomicals = self.db.get_atomicals_by_utxo(utxo)
+            atomicals = self.db.get_atomicals_by_utxo(utxo, True)
             atomicals_basic_infos = []
             for atomical_id in atomicals: 
                 atomical_basic_info = self.session_mgr.bp.get_atomicals_id_mint_info_basic_struct_for_evt(atomical_id)

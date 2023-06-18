@@ -1298,9 +1298,13 @@ class DB:
         return atomicals_at_location
 
     # Get the atomicals at a specific utxo
-    def get_atomicals_by_utxo(self, utxo):
+    # Longform_ids indicates whether to use the long form atomical ids (36 bytes). By default returns the compact form with the 'i' 
+    def get_atomicals_by_utxo(self, utxo, Longform_ids=False):
         location = utxo.tx_hash + pack_le_uint32(utxo.tx_pos)
-        return self.get_atomicals_by_location(location)
+        if Longform_ids:
+            return self.get_atomicals_by_location(location)
+        else:
+            return self.get_atomicals_by_location_long_form(location)
 
     # Get the atomical details
     async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
