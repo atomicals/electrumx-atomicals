@@ -22,7 +22,7 @@ from electrumx.lib.hash import hash_to_hex_str, hex_str_to_hash
 from electrumx.lib.tx import SkipTxDeserialize
 from electrumx.lib.util import class_logger, chunks, OldTaskGroup, pack_le_uint32, unpack_le_uint32
 from electrumx.server.db import UTXO
-from electrumx.lib.util_atomicals import check_unpack_field_data, parse_protocols_operations_from_witness_array, location_id_bytes_to_compact
+from electrumx.lib.util_atomicals import get_mint_info_op_factory, check_unpack_field_data, parse_protocols_operations_from_witness_array, location_id_bytes_to_compact
 
 from electrumx.lib.hash import hash_to_hex_str, HASHX_LEN, double_sha256
 
