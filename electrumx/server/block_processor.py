@@ -844,7 +844,7 @@ class BlockProcessor:
     # Validate the parameters for an NFT and validate realm/subrealm/container data
     def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
-            return False, None, None 
+            return False, None, None, None
 
         realm = mint_info.get('$realm', None)
         subrealm = mint_info.get('$subrealm', None)
@@ -855,22 +855,23 @@ class BlockProcessor:
             self.logger.info(f'validate_and_create_nft: realm={realm}, tx_hash={hash_to_hex_str(tx_hash)}')
             # Is the realm taken or available?
             can_assign_realm = self.is_realm_acceptable_to_be_created(realm)
+            self.logger.info(f'can_assign_realm {can_assign_realm}')
             # The realm can be assigned and therefore the NFT create can succeed
             if can_assign_realm:
                 assert(can_assign_realm == realm)
                 self.put_realm_data(mint_info['id'], can_assign_realm)
             else: 
                 # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
-                return False, None, None
+                return False, None, None, None
         elif subrealm:
             realm_parent_atomical_id_compact = mint_info.get('$parent_realm_id_compact')
             self.logger.info(f'validate_and_create_nft: subrealm={subrealm}, realm_parent_atomical_id_compact={realm_parent_atomical_id_compact}, tx_hash={hash_to_hex_str(tx_hash)}')
             if not realm_parent_atomical_id_compact or not is_compact_atomical_id(realm_parent_atomical_id):
-                return False, None, None
+                return False, None, None, None
 
             realm_parent_atomical_id_long = mint_info.get('$parent_realm_id')
             if not realm_parent_atomical_id_long:
-                return False, None, None
+                return False, None, None, None
             
             if compact_to_location_id_bytes(realm_parent_atomical_id_compact) != realm_parent_atomical_id_long:
                 raise IndexError(f'validate_and_create_nft realm_parent_atomical_id_compact and realm_parent_atomical_id_long not equal. Index or Developer Error')
@@ -887,7 +888,7 @@ class BlockProcessor:
                 self.put_subrealm_data(mint_info['id'], can_assign_subrealm, realm_parent_atomical_id_long)
             else: 
                 # Fail the attempt to create NFT because the subrealm cannot be assigned when it was requested
-                return False, None, None
+                return False, None, None, None
         # Request includes container to be minted to have successful create
         elif container:
             self.logger.info(f'validate_and_create_nft: container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -899,7 +900,7 @@ class BlockProcessor:
                 self.put_container_data(mint_info['id'], can_assign_container)
             else: 
                 # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
-                return False, None, None
+                return False, None, None, None
 
         tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
