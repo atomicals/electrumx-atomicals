@@ -359,7 +359,7 @@ class MemPool:
                 atomicals_updates_map[atomical_id] = {
                     'atomical_id': location_id_bytes_to_compact(atomical_id),
                     'atomical_number': -1,
-                    'type': mint_type,
+                    'type': mint_info['type'],
                     'subtype': mint_info['subtype'],
                     'location_info': [{
                         'location': location_id_bytes_to_compact(location),
