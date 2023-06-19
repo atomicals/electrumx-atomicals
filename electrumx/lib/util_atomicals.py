@@ -248,7 +248,7 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
         realm = mint_info['args'].get('realm', None)
         if not isinstance(realm, str):
             return None, None
-        if not is_valid_realm_string(realm):
+        if not is_valid_realm_string_name(realm):
             return None, None
         mint_info['$realm'] = realm
     elif op_found_struct['op'] == 'sub' and op_found_struct['input_index'] == 0:
@@ -257,7 +257,7 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
         subrealm = mint_info['args'].get('subrealm', None)
         if not isinstance(subrealm, str):
             return None, None
-        if not is_valid_realm_string(subrealm):
+        if not is_valid_subrealm_string_name(subrealm):
             return None, None
 
         # The parent realm id is in a compact form string to make it easier for users and developers
