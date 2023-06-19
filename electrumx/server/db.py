@@ -1414,6 +1414,7 @@ class DB:
                 'atomical_id': atomical_id,
                 'atomical_number': atomical_number,
                 'type': mint_info['type'],
+                'subtype': mint_info['subtype'],
                 'location_info': location_info,
                 'mint_info': {
                     'txid':  hash_to_hex_str(mint_tx_hash),
