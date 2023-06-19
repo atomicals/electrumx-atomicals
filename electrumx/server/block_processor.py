@@ -776,7 +776,7 @@ class BlockProcessor:
         return None
     
     def log_can_be_created(self, method, msg, subject, validity, val):
-        self.log_subrealm_request(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
+        self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
 
     # Whether a realm by a given name is a valid realm string and if it's not already claimed
     def is_realm_acceptable_to_be_created(self, value):
