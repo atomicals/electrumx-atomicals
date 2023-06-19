@@ -1267,21 +1267,22 @@ class ElectrumX(SessionBase):
         ticker = atomical['mint_info'].get('$ticker', None)
         collection = atomical['mint_info'].get('$container', None)
 
+        self.logger.info(f'realm set {realm}')
         if realm: 
-            status_info['mint_info']['$realm'] = realm
+            # status_info['mint_info']['$realm'] = realm
             status_info['$realm'] = realm
         if subrealm: 
-            status_info['mint_info']['$subrealm'] = subrealm
+            # status_info['mint_info']['$subrealm'] = subrealm
             status_info['$subrealm'] = subrealm
             parent_realm_id = atomical['mint_info'].get('$parent_realm_id', None)
             parent_realm_id_compact = atomical['mint_info'].get('$parent_realm_id_compact', None)
             status_info['$parent_realm_id'] = parent_realm_id
             status_info['$parent_realm_id_compact'] = parent_realm_id_compact
         elif ticker: 
-            status_info['mint_info']['$ticker'] = ticker
+            # status_info['mint_info']['$ticker'] = ticker
             status_info['$ticker'] = ticker
         elif collection: 
-            status_info['mint_info']['$container'] = collection
+            # status_info['mint_info']['$container'] = collection
             status_info['$container'] = collection
 
         return status_info
