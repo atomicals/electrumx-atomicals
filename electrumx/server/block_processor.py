@@ -766,7 +766,7 @@ class BlockProcessor:
                 self.log_subrealm_request(method, 'cache_exists', False, subrealm, parent_realm_atomical_id, height)
                 return None 
             # Or it already exists in db and also cannot use
-            if self.db.get_subrealm(parent_realm_atomical_id, subrealm_enc, None) != None:
+            if self.db.get_subrealm(parent_realm_atomical_id, subrealm_enc) != None:
                 self.log_subrealm_request(method, 'db_exists', False, subrealm, parent_realm_atomical_id, height)
                 return None
             # Congratulations, we can create a subrealm now for the parent realm
@@ -790,7 +790,7 @@ class BlockProcessor:
             if self.realm_data_cache.get(value_enc, None) != None: 
                 self.log_can_be_created(method, 'cached', 'realm', False, value)
                 return None 
-            if self.db.get_realm(value_enc, None) != None:
+            if self.db.get_realm(value_enc) != None:
                 self.log_can_be_created(method, 'db', 'realm', False, value)
                 return None
             # Return the utf8 because it will be verified and converted elsewhere
