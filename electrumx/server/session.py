@@ -1252,7 +1252,6 @@ class ElectrumX(SessionBase):
             'subtype': atomical['subtype'],
             'mint_info': {
                 'txid': atomical['mint_info']['txid'],
-                'input_index': atomical['mint_info']['input_index'], 
                 'index': atomical['mint_info']['index'],
                 'blockheader': blockheader,
                 'blockhash': blockhash,
