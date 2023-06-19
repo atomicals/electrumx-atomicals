@@ -1267,6 +1267,7 @@ class ElectrumX(SessionBase):
         ticker = atomical['mint_info'].get('$ticker', None)
         collection = atomical['mint_info'].get('$container', None)
 
+        self.logger.info(f'realm mint atomical {atomical}')
         self.logger.info(f'realm set {realm}')
         if realm: 
             # status_info['mint_info']['$realm'] = realm
