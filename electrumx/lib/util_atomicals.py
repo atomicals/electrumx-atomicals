@@ -178,23 +178,26 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
     return False, {}
 
 # Get the mint information structure if it's a valid mint event type
-def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
+def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     # Builds the base mint information that's common to all minted Atomicals
-    def build_base_mint_info(tx_hash, tx):
+    def build_base_mint_info(mint_hash, mint_index, first_location_hash, first_location_index):
         # The first output is always imprinted
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
         output_idx_le = pack_le_uint32(expected_output_index) 
-        location = tx_hash + output_idx_le
+        atomical_id = mint_hash + pack_le_uint32(mint_index)
+        location = first_location_hash + pack_le_uint32(first_location_index)
         value_sats = pack_le_uint64(txout.value)
         # Create the general mint information
         return {
-            # Establish the atomical_id from the initial location
-            'id': location,
-            'txid': hash_to_hex_str(tx_hash),
-            'index': expected_output_index,
+            'id': atomical_id,
+            'mint_txid': hash_to_hex_str(mint_hash),
+            'mint_index': mint_index,
+            'first_location_txid': hash_to_hex_str(first_location_hash),
+            'first_location_index': first_location_index,
+            'first_location': location,
             'scripthash': scripthash,
             'hashX': hashX,
             'value': txout.value,
@@ -220,9 +223,18 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
         mint_info['args'] = args 
         mint_info['meta'] = meta 
         return True
+    
+    op = op_found_struct['op']
+    payload = op_found_struct['payload']
+    payload_bytes = op_found_struct['payload_bytes']
+    input_index = op_found_struct['input_index']
+    mint_hash = op_found_struct['mint_hash']
+    mint_index = op_found_struct['mint_index']
+    first_location_hash = op_found_struct['first_location_hash']
+    first_location_index = op_found_struct['first_location_index']
 
     # Create the base mint information structure
-    mint_info = build_base_mint_info(tx_hash, tx)
+    mint_info = build_base_mint_info(mint_hash, mint_index, first_location_hash, first_location_index)
     if not populate_args_meta(mint_info, op_found_struct['payload']):
         return None, None
     ############################################
@@ -294,19 +306,19 @@ def get_mint_info_op_factory(script_hashX, tx_hash, tx, op_found_struct):
         mint_info['$ticker'] = ticker
         mint_height = mint_info['args'].get('h', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
-            print(f'DFT mint has invalid mint_height h {tx_hash}, {mint_height}. Skipping...')
+            print(f'DFT mint has invalid mint_height h {first_location_hash}, {mint_height}. Skipping...')
             return None, None
         mint_amount = mint_info['args'].get('amt', None)
         if not isinstance(mint_amount, int) or mint_amount <= 0 or mint_amount > 10000000000:
-            print(f'DFT mint has invalid mint_amount amt {tx_hash}, {mint_amount}. Skipping...')
+            print(f'DFT mint has invalid mint_amount amt {first_location_hash}, {mint_amount}. Skipping...')
             return None, None
         max_mints = mint_info['args'].get('cnt', None)
         if not isinstance(max_mints, int) or max_mints <= 0 or max_mints > 1000000:
-            print(f'DFT mint has invalid max_mints cnt {tx_hash}, {max_mints}. Skipping...')
+            print(f'DFT mint has invalid max_mints cnt {first_location_hash}, {max_mints}. Skipping...')
             return None, None
         # Do not mint because at least one is a zero
         if mint_amount <= 0 or max_mints <= 0:
-            self.logger.info(f'FT mint has zero quantities {tx_hash}, {mint_amount}. Skipping...')
+            self.logger.info(f'FT mint has zero quantities {first_location_hash}, {mint_amount}. Skipping...')
             return None, None
         mint_info['$mint_height'] = mint_height
         mint_info['$mint_amount'] = mint_amount
@@ -546,11 +558,21 @@ def parse_protocols_operations_from_witness_array(tx):
 
             # Special care must be taken that someone does not maliciously create an invalid CBOR/payload and then allows it to 'fall through'
             # This is the reason that most mint operations require input_index=0
+            
+            associated_txin = tx.inputs[txin_idx]
+            prev_tx_hash = associated_txin.prev_hash
+            prev_idx = associated_txin.prev_idx
+
             return {
                 'op': op_name,
                 'payload': decoded_object,
                 'payload_bytes': payload,
-                'input_index': txin_idx
+                'input_index': txin_idx,
+                'mint_hash': prev_tx_hash,
+                'mint_index': prev_idx,
+                'first_location_hash': tx.hash,
+                'first_location_index': 0 # Always assume the first output is the first location
+
             }
         txin_idx = txin_idx + 1
     return None

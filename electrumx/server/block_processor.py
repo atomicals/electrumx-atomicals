@@ -908,7 +908,7 @@ class BlockProcessor:
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
         self.logger.info(f'put_atomicals_utxo: mint_info={mint_info}')
-        self.put_atomicals_utxo(mint_info['id'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+        self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, subtype={subtype}, realm={realm}, subrealm={subrealm}, container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -937,7 +937,7 @@ class BlockProcessor:
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
-            self.put_atomicals_utxo(mint_info['id'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+            self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
         
         subtype = mint_info['subtype']
         self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -955,7 +955,7 @@ class BlockProcessor:
 
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx_hash, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
         if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
             return None, None, None, None, None
 
@@ -968,7 +968,7 @@ class BlockProcessor:
         mint_info['tx_num'] = tx_num 
 
         # Establish the Atomical id from the tx hash and the 0'th output index (since Atomicals can only be minted at the 0'th output)
-        atomical_id = tx_hash + pack_le_uint32(0)
+        atomical_id = mint_info['id']
         realm_created = None
         subrealm_created = None
         container_created = None 
@@ -1225,7 +1225,9 @@ class BlockProcessor:
                 size_payload = sys.getsizeof(atomicals_operations_found_at_inputs['payload_bytes'])
                 operation_found = atomicals_operations_found_at_inputs['op']
                 operation_input_index = atomicals_operations_found_at_inputs['input_index']
-                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}')
+                mint_hash = atomicals_operations_found_at_inputs['mint_hash']
+                mint_index = atomicals_operations_found_at_inputs['mint_index']
+                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, mint_hash={hash_to_hex_str(mint_hash)}, mint_index={mint_index}')
 
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
@@ -1395,13 +1397,13 @@ class BlockProcessor:
         was_fungible_type = False
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx_hash, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
         if not valid_create_op_type:
             self.logger.info(f'delete_atomical_mint_data_with_realms_container not valid_create_op_type')
             return False, False, False, False 
         if not valid_create_op_type == 'NFT' or not valid_create_op_type == 'FT':
             raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
-        atomical_id = tx_hash + pack_le_uint32(0)
+        atomical_id = mint_info['id']
         # If it was an NFT
         if valid_create_op_type == 'NFT':
             self.logger.info(f'delete_atomical_mint_data_with_realms_container - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
