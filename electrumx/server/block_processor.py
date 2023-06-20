@@ -788,14 +788,15 @@ class BlockProcessor:
             value_enc = value.encode()
             # It already exists in cache, therefore cannot assign
             if self.realm_data_cache.get(value_enc, None) != None: 
-                self.log_can_be_created(method, 'cached', 'realm', False, value)
+                self.log_can_be_created(method, 'realm_taken_found_in_cache', 'realm', False, value)
                 return None 
             if self.db.get_realm(value_enc) != None:
-                self.log_can_be_created(method, 'db', 'realm', False, value)
+                self.log_can_be_created(method, 'realm_taken_found_in_db', 'realm', False, value)
                 return None
             # Return the utf8 because it will be verified and converted elsewhere
             self.log_can_be_created(method, 'success', 'realm', True, value)
             return value
+        
         self.log_can_be_created(method, 'is_valid_realm_string_name', 'realm', False, value)
         return None
  

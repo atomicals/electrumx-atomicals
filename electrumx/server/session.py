@@ -1190,7 +1190,6 @@ class ElectrumX(SessionBase):
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
-    
     async def atomical_id_get_location(self, compact_atomical_id):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.db.get_by_atomical_id(atomical_id)
@@ -1438,15 +1437,48 @@ class ElectrumX(SessionBase):
         return await self.atomicals_list_get(offset, limit, asc)
 
     async def atomicals_get_location(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
+ 
+    async def atomicals_get(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id)} 
+
+    async def atomicals_get_by_realm(self, name):
+        found_atomical_id = await self.db.get_atomical_id_by_realm(name)
+        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+    
+    async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
+        compact_atomical_id = await self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
+        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
+        found_atomical_id = await self.db.get_atomical_id_by_subrealm(atomical_id, name)
+        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+
+    async def atomicals_get_state(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id)} 
+
+    async def atomicals_get_event(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event(compact_atomical_id)} 
+
+    async def atomicals_get_contract(self, compact_atomical_id_or_atomical_number):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_contract(compact_atomical_id)} 
+    
+    async def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
         if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
             assert_atomical_id(compact_atomical_id)
         else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
- 
-    async def atomicals_get(self, compact_atomical_id_or_atomical_number):
-        '''Return the status of an Atomical```
+            found_atomical_id = await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number)
+            if not found_atomical_id:
+                raise RPCError(BAD_REQUEST, f'not found atomical: {compact_atomical_id_or_atomical_number}')
+            compact_atomical_id = location_id_bytes_to_compact(found_atomical_id)
+        return compact_atomical_id
+
+    async def atomicals_get_history(self, compact_atomical_id_or_atomical_number):
+        '''Return the history of an Atomical```
         atomical_id: the mint transaction hash + 'i'<index> of the atomical id
         verbose: to determine whether to print extended information
         '''
@@ -1455,22 +1487,7 @@ class ElectrumX(SessionBase):
             assert_atomical_id(compact_atomical_id)
         else:
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id)} 
-
-    async def atomicals_get_by_realm(self, name):
-        found_atomical_id = await self.db.get_atomical_id_by_realm(name)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
-    
-    async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
-        compact_atomical_id = parent_compact_atomical_id_or_atomical_number
-        if isinstance(parent_compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(parent_compact_atomical_id_or_atomical_number):
-            assert_atomical_id(compact_atomical_id)
-        else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(parent_compact_atomical_id_or_atomical_number))
-        
-        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        found_atomical_id = await self.db.get_atomical_id_by_subrealm(atomical_id, name)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_history(compact_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
         found_atomical_id = await self.db.get_atomical_id_by_ticker(ticker)
@@ -1489,6 +1506,7 @@ class ElectrumX(SessionBase):
             'atomical_id': location_id_bytes_to_compact(atomical_id),
             'mint_info': mint_info
         }
+
         if response_struct['subtype'] == 'distributed':
             mint_count = self.dp.get_distmints_count_by_atomical_id(atomical_id)
             response_struct['$mint_height'] = mint_info['$mint_height']
@@ -1500,7 +1518,7 @@ class ElectrumX(SessionBase):
             # The base token is all minted up front
             response_struct['$max_supply'] = mint_info['value']
             response_struct['$minted_supply'] = mint_info['value']
-        
+
         prefix = b'a' + atomical_id
         accum_value = 0
         unique_address_map = {}
@@ -1539,46 +1557,6 @@ class ElectrumX(SessionBase):
                         raise RPCError(BAD_REQUEST, f'minted supply does not match gi entry for ticker {ticker}')
 
         return {'result': response_struct} 
-
-    async def atomicals_get_state(self, compact_atomical_id_or_atomical_number):
-        '''Return the status of an Atomical```
-        atomical_id: the mint transaction hash + 'i'<index> of the atomical id
-        verbose: to determine whether to print extended information
-        '''
-        compact_atomical_id = compact_atomical_id_or_atomical_number
-        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
-            assert_atomical_id(compact_atomical_id)
-        else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id)} 
-
-    async def atomicals_get_event(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = compact_atomical_id_or_atomical_number
-        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
-            assert_atomical_id(compact_atomical_id)
-        else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event(compact_atomical_id)} 
-
-    async def atomicals_get_contract(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = compact_atomical_id_or_atomical_number
-        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
-            assert_atomical_id(compact_atomical_id)
-        else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_contract(compact_atomical_id)} 
-    
-    async def atomicals_get_history(self, compact_atomical_id_or_atomical_number):
-        '''Return the history of an Atomical```
-        atomical_id: the mint transaction hash + 'i'<index> of the atomical id
-        verbose: to determine whether to print extended information
-        '''
-        compact_atomical_id = compact_atomical_id_or_atomical_number
-        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
-            assert_atomical_id(compact_atomical_id)
-        else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_history(compact_atomical_id)} 
 
     async def atomicals_at_location(self, compact_location_id):
         '''Return the Atomicals at a specific location id```
