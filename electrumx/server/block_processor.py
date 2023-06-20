@@ -1402,11 +1402,9 @@ class BlockProcessor:
         if not valid_create_op_type == 'NFT' or not valid_create_op_type == 'FT':
             raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
         atomical_id = tx_hash + pack_le_uint32(0)
-        atomical_was_created = False
         # If it was an NFT
         if valid_create_op_type == 'NFT':
             self.logger.info(f'delete_atomical_mint_data_with_realms_container - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            was_mint_found = True
             # If realm or container was specificed then it was only minted if the realm/container was created for the atomical
             realm = mint_info.get('$realm', None)
             subrealm = mint_info.get('$subrealm', None)
@@ -1415,17 +1413,20 @@ class BlockProcessor:
             # Only consider it a mint if the realm was successfully deleted for the CURRENT atomical_id
             if realm and self.delete_realm_data(atomical_id, realm):
                 was_realm_type = True
+                was_mint_found = True
             elif subrealm and parent_realm_id and self.delete_subrealm_data(parent_realm_id, atomical_id, subrealm):
                 was_subrealm_type = True
+                was_mint_found = True
             elif container and self.delete_container_data(atomical_id, container):
                 was_container_type = True
+                was_mint_found = True
         # If it was an FT
         elif valid_create_op_type == 'FT': 
             self.logger.info(f'delete_atomical_mint_data_with_realms_container FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            was_mint_found = True
             # Only consider it a mint if the ticker was successfully deleted for the CURRENT atomical_id
             if self.delete_ticker_data(atomical_id, mint_info['$ticker']):
                 was_fungible_type = True
+                was_mint_found = True
             else: 
                 raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
         else: 
