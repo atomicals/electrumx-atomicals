@@ -1210,7 +1210,7 @@ class BlockProcessor:
                 txin_index = txin_index + 1
             
             # Save the tx number for the current tx
-            self.put_tx_hash_num(tx_hash, tx_num)
+            put_general_data(b'tx' + tx_hash, tx_num)
 
             # Detect all protocol operations in the transaction witness inputs
             atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
@@ -1634,7 +1634,7 @@ class BlockProcessor:
                     touched.add(hashX_spent)
 
              # Delete the tx hash number
-            self.delete_tx_hash_num(tx_hash)
+            self.db_deletes.append(b'tx' + tx_hash)
 
             # Backup any Atomicals NFT, FT, or FTD mints
             operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
