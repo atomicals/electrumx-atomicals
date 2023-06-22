@@ -451,12 +451,8 @@ def parse_operation_from_script(script, n):
             atom_op_decoded = 'crt'  # crt - Define contract state
         elif atom_op == "036d6f64":  
             atom_op_decoded = 'mod'  # mod - Modify general state
-        elif atom_op == "03737562":  
-            atom_op_decoded = 'sub'  # sub - Create Sub-Realm
         elif atom_op == "03657674": 
             atom_op_decoded = 'evt'  # evt - Message response/reply
-        elif atom_op == "03726c6d": 
-            atom_op_decoded = 'rlm'  # rlm - Create Realm (top-level-realm TLR)
         elif atom_op == "03646d74": 
             atom_op_decoded = 'dmt'  # dmt - Mint tokens of distributed mint type (dft)
         
@@ -468,8 +464,6 @@ def parse_operation_from_script(script, n):
         atom_op = script[n : n + two_letter_op_len].hex()
         if atom_op == "026674":
             atom_op_decoded = 'ft'  # ft - fungible token mint
-        elif atom_op == "02636f":  
-            atom_op_decoded = 'co'  # co - Container or collection type mint
         elif atom_op == "02736c":  
             atom_op_decoded = 'sl'  # sl - Seal an NFT and lock it from further changes forever
         

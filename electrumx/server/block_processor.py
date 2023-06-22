@@ -192,11 +192,6 @@ class BlockProcessor:
         self.tip_advanced_event = asyncio.Event()
         self.tx_count = 0 
         self.atomical_count = 0     # Total number of Atomicals minted (Includes all NFT/FT types)
-        self.ticker_count = 0       # Number of tickers (for Atomical FTs) created. Effectively this counts the total unique FTs
-        self.realm_count = 0        # Number of realms (Atomical NFTs) created. Also called Top-Level-Realms (TLR)
-        self.subrealm_count = 0     # Number of subrealms (Atomical NFTs) created. Associated with a TLR or another sub-realm as the parent
-        self.container_count = 0    # Number of containers (Atomical NFTs) created. Can be used as a collection-type data structure.
-        self.distmint_count = 0     # Number of distributed mints (Atomical FTs) created. Counts the individual mints against the distributed FT (DFT) deploy.
         self._caught_up_event = None
 
         # Caches of unflushed items.
@@ -375,7 +370,7 @@ class BlockProcessor:
         return FlushData(self.height, self.tx_count, self.headers,
                          self.tx_hashes, self.undo_infos, self.utxo_cache,
                          self.db_deletes, self.tip,
-                         self.atomical_count, self.ticker_count, self.realm_count, self.subrealm_count, self.container_count, self.distmint_count,
+                         self.atomical_count,
                          self.atomicals_undo_infos, self.atomicals_utxo_cache, self.general_data_cache, self.ticker_data_cache, 
                          self.realm_data_cache, self.subrealm_data_cache, self.container_data_cache, self.distmint_data_cache)
 
@@ -514,7 +509,7 @@ class BlockProcessor:
             self.ticker_data_cache[ticker_enc] = atomical_id
         
     # Save realm name to the cache that will be flushed to the db 
-    def put_realm_data(self, atomical_id, realm): 
+    def put_realm_data(self, atomical_id, realm, tx_num): 
         self.logger.info(f'put_realm_data: atomical_id={atomical_id.hex()}, realm={realm}')
         if not is_valid_realm_string_name(realm):
             raise IndexError(f'Realm is_valid_realm_string_name invalid {realm}')
@@ -778,7 +773,7 @@ class BlockProcessor:
     def log_can_be_created(self, method, msg, subject, validity, val):
         self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
 
-    # Whether a realm by a given name is a valid realm string and if it's not already claimed
+    # Whether a realm by a given name is a valid realm string
     def is_realm_acceptable_to_be_created(self, value):
         method = 'is_realm_acceptable_to_be_created'
         if not value:
@@ -919,7 +914,7 @@ class BlockProcessor:
         ticker = mint_info['$ticker']
         # Request includes realm to be minted to have successful create
         if not ticker:
-            raise IndexError(f'Fatal error ticker not set when it shoudl have been. DeveloperError')
+            raise IndexError(f'Fatal error ticker not set when it should have been. DeveloperError')
         # Is the ticker taken or available?
         can_assign_ticker = self.is_ticker_acceptable_to_be_created(ticker)
         # The ticker can be assigned and therefore the NFT create can succeed
@@ -1056,7 +1051,7 @@ class BlockProcessor:
             self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'st' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'evt' and operations_found_at_inputs.get('input_index', None) == 0:
-            self.logger.info(f'apply_state_like_updates op=moevtd, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
+            self.logger.info(f'apply_state_like_updates op=evt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'evt' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'crt' and operations_found_at_inputs.get('input_index', None) == 0:
             self.logger.info(f'apply_state_like_updates op=crt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
@@ -1177,11 +1172,6 @@ class BlockProcessor:
         atomicals_undo_info = []
         tx_num = self.tx_count
         atomical_num = self.atomical_count
-        ticker_num = self.ticker_count
-        realm_num = self.realm_count
-        subrealm_num = self.subrealm_count
-        container_num = self.container_count
-        distmint_num = self.distmint_count
         script_hashX = self.coin.hashX_from_script
         put_utxo = self.utxo_cache.__setitem__
         put_general_data = self.general_data_cache.__setitem__
@@ -1219,6 +1209,9 @@ class BlockProcessor:
                 atomicals_undo_info_extend(atomicals_transferred_list)
                 txin_index = txin_index + 1
             
+            # Save the tx number for the current tx
+            self.put_tx_hash_num(tx_hash, tx_num)
+
             # Detect all protocol operations in the transaction witness inputs
             atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
             if atomicals_operations_found_at_inputs:
@@ -1283,21 +1276,6 @@ class BlockProcessor:
         
         self.atomical_count = atomical_num
         self.db.atomical_counts.append(atomical_num)
-        
-        self.ticker_count = ticker_num
-        self.db.ticker_counts.append(ticker_num)
-       
-        self.realm_count = realm_num
-        self.db.realm_counts.append(realm_num)
-        
-        self.subrealm_count = subrealm_num
-        self.db.subrealm_counts.append(subrealm_num)
-        
-        self.container_count = container_num
-        self.db.container_counts.append(container_num)
-
-        self.distmint_count = distmint_num
-        self.db.distmint_counts.append(distmint_num)
         
         return undo_info, atomicals_undo_info
 
@@ -1637,17 +1615,7 @@ class BlockProcessor:
         tx_num = self.tx_count
         tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
         atomical_num = self.atomical_count
-        ticker_num = self.ticker_count
-        realm_num = self.realm_count
-        subrealm_num = self.subrealm_count
-        container_num = self.container_count
-        distmint_num = self.distmint_count
         atomicals_minted = 0
-        tickers_minted = 0
-        realms_minted = 0
-        subrealms_minted = 0
-        containers_minted = 0
-        distmints_minted = 0
 
         for tx, tx_hash in reversed(txs):
             for idx, txout in enumerate(tx.outputs):
@@ -1664,6 +1632,9 @@ class BlockProcessor:
                 hashXs_spent = self.rollback_spend_atomicals(tx_hash, idx, tx, tx_numb)
                 for hashX_spent in hashXs_spent:
                     touched.add(hashX_spent)
+
+             # Delete the tx hash number
+            self.delete_tx_hash_num(tx_hash)
 
             # Backup any Atomicals NFT, FT, or FTD mints
             operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
@@ -1714,18 +1685,8 @@ class BlockProcessor:
 
         self.tx_count -= len(txs)
         self.atomical_count -= atomicals_minted
-        self.ticker_count -= tickers_minted
-        self.realm_count -= realms_minted
-        self.subrealm_count -= subrealms_minted
-        self.container_count -= containers_minted
-        self.distmint_count -= distmints_minted
         # Sanity checks...
         assert(atomical_num == atomical_count)
-        assert(ticker_num == ticker_count)
-        assert(realm_num == realm_count)
-        assert(subrealm_num == subrealm_count)
-        assert(container_num == container_count)
-        assert(distmint_num == distmint_count)
 
     '''An in-memory UTXO cache, representing all changes to UTXO state
     since the last DB flush.
@@ -1860,11 +1821,6 @@ class BlockProcessor:
         self.tip = self.db.db_tip
         self.tx_count = self.db.db_tx_count
         self.atomical_count = self.db.db_atomical_count
-        self.ticker_count = self.db.db_ticker_count
-        self.realm_count = self.db.db_realm_count
-        self.subrealm_count = self.db.db_subrealm_count
-        self.container_count = self.db.db_container_count
-        self.distmint_count = self.db.db_distmint_count
 
     # --- External API
 

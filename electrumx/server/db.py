@@ -62,11 +62,6 @@ class FlushData:
     deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and Atomicals and related keys
     tip = attr.ib()
     atomical_count = attr.ib()
-    ticker_count = attr.ib() 
-    realm_count = attr.ib() 
-    subrealm_count = attr.ib() 
-    container_count = attr.ib() 
-    distmint_count = attr.ib() 
     atomicals_undo_infos = attr.ib()  # type: List[Tuple[Sequence[bytes], int]]
     atomicals_adds = attr.ib()  # type: Dict[bytes, bytes]  # b'a' + atomical_id(txid+out_idx) + location(txid+out_idx) -> hashX + scripthash + value_sats
     general_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
@@ -177,39 +172,24 @@ class DB:
         # Key: b'gi' + atomical_id + location_id
         # Value: satoshis at the output 
         # "maps generated atomical mint and location to a value"
+        # ---
+        # Key: b'tx' + tx_hash
+        # Value: tx_num
+        # "maps tx_hash to the tx number as counted from the genesis block"
         self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
         self.fs_tx_count = 0
         self.fs_atomical_count = 0
-        self.fs_ticker_count = 0
-        self.fs_realm_count = 0
-        self.fs_subrealm_count = 0
-        self.fs_container_count = 0
-        self.fs_distmint_count = 0
         self.db_height = -1
         self.db_tx_count = 0
         self.db_atomical_count = 0
-        self.db_ticker_count = 0
-        self.db_realm_count = 0
-        self.db_container_count = 0
-        self.db_distmint_count = 0
         self.db_tip = None  # type: Optional[bytes]
         self.tx_counts = None
         self.atomical_counts = None
-        self.ticker_counts = None
-        self.realm_counts = None
-        self.subrealm_counts = None
-        self.container_counts = None
-        self.distmint_counts = None
         self.last_flush = time.time()
         self.last_flush_tx_count = 0
         self.last_flush_atomical_count = 0
-        self.last_flush_ticker_count = 0
-        self.last_flush_realm_count = 0
-        self.last_flush_subrealm_count = 0
-        self.last_flush_container_count = 0
-        self.last_flush_distmint_count = 0
         self.wall_time = 0
         self.first_sync = True
         self.db_version = -1
@@ -225,16 +205,6 @@ class DB:
         self.tx_counts_file = util.LogicalFile('meta/txcounts', 2, 2000000)
         # on-disk: cumulative number of atomicals counts at the end of height N
         self.atomical_counts_file = util.LogicalFile('meta/atomicalscounts', 2, 2000000)
-        # on-disk: cumulative number of ticker counts at the end of height N
-        self.ticker_counts_file = util.LogicalFile('meta/tickercounts', 2, 2000000)
-        # on-disk: cumulative number of realm names counts at the end of height N
-        self.realm_counts_file = util.LogicalFile('meta/realmcounts', 2, 2000000)
-        # on-disk: cumulative number of sub realm names counts at the end of height N
-        self.subrealm_counts_file = util.LogicalFile('meta/subrealmcounts', 2, 2000000)
-        # on-disk: cumulative number of collection counts at the end of height N
-        self.container_counts_file = util.LogicalFile('meta/collectioncounts', 2, 2000000)
-        # on-disk: cumulative number of distmint counts at the end of height N
-        self.distmint_counts_file = util.LogicalFile('meta/distmintcounts', 2, 2000000)
         # on-disk: 32 byte txids in chain order, allows (tx_num -> txid) map
         self.hashes_file = util.LogicalFile('meta/hashes', 4, 16000000)
         if not self.coin.STATIC_BLOCK_HEADERS:
@@ -269,76 +239,6 @@ class DB:
         else:
             assert self.db_atomical_count == 0
 
-    async def _read_ticker_counts(self):
-        if self.ticker_counts is not None:
-            return
-        # tx_counts[N] has the cumulative number of txs at the end of
-        # height N.  So tx_counts[0] is 1 - the genesis coinbase
-        size = (self.db_height + 1) * 8
-        ticker_counts = self.ticker_counts_file.read(0, size)
-        assert len(ticker_counts) == size
-        self.ticker_counts = array('Q', ticker_counts)
-        if self.ticker_counts:
-            assert self.db_ticker_count == self.ticker_counts[-1]
-        else:
-            assert self.db_ticker_count == 0
-
-    async def _read_container_counts(self):
-        if self.container_counts is not None:
-            return
-        # tx_counts[N] has the cumulative number of txs at the end of
-        # height N.  So tx_counts[0] is 1 - the genesis coinbase
-        size = (self.db_height + 1) * 8
-        container_counts = self.container_counts_file.read(0, size)
-        assert len(container_counts) == size
-        self.container_counts = array('Q', container_counts)
-        if self.container_counts:
-            assert self.db_container_count == self.container_counts[-1]
-        else:
-            assert self.db_container_count == 0
-
-    async def _read_distmint_counts(self):
-        if self.distmint_counts is not None:
-            return
-        # tx_counts[N] has the cumulative number of txs at the end of
-        # height N.  So tx_counts[0] is 1 - the genesis coinbase
-        size = (self.db_height + 1) * 8
-        distmint_counts = self.distmint_counts_file.read(0, size)
-        assert len(distmint_counts) == size
-        self.distmint_counts = array('Q', distmint_counts)
-        if self.distmint_counts:
-            assert self.db_distmint_count == self.distmint_counts[-1]
-        else:
-            assert self.db_distmint_count == 0
-
-    async def _read_realm_counts(self):
-        if self.realm_counts is not None:
-            return
-        # tx_counts[N] has the cumulative number of txs at the end of
-        # height N.  So tx_counts[0] is 1 - the genesis coinbase
-        size = (self.db_height + 1) * 8
-        realm_counts = self.realm_counts_file.read(0, size)
-        assert len(realm_counts) == size
-        self.realm_counts = array('Q', realm_counts)
-        if self.realm_counts:
-            assert self.db_realm_count == self.realm_counts[-1]
-        else:
-            assert self.db_realm_count == 0
-
-    async def _read_subrealm_counts(self):
-        if self.subrealm_counts is not None:
-            return
-        # tx_counts[N] has the cumulative number of txs at the end of
-        # height N.  So tx_counts[0] is 1 - the genesis coinbase
-        size = (self.db_height + 1) * 8
-        subrealm_counts = self.subrealm_counts_file.read(0, size)
-        assert len(subrealm_counts) == size
-        self.subrealm_counts = array('Q', subrealm_counts)
-        if self.subrealm_counts:
-            assert self.db_subrealm_count == self.subrealm_counts[-1]
-        else:
-            assert self.db_subrealm_count == 0
-
     async def _open_dbs(self, for_sync: bool, compacting: bool):
         assert self.utxo_db is None
 
@@ -370,21 +270,6 @@ class DB:
 
         # Read Atomicals number counts (requires meta directory)
         await self._read_atomical_counts()
-
-        # Read ticker number counts (requires meta directory)
-        await self._read_ticker_counts()
-
-        # Read realm name number counts (requires meta directory)
-        await self._read_realm_counts()
-
-        # Read sub realm name number counts (requires meta directory)
-        await self._read_subrealm_counts()
-
-        # Read collection number counts (requires meta directory)
-        await self._read_container_counts()
-
-        # Read distmint number counts (requires meta directory)
-        await self._read_distmint_counts()
 
     async def open_for_compacting(self):
         await self._open_dbs(True, True)
@@ -427,11 +312,6 @@ class DB:
         '''Asserts state is fully flushed.'''
         assert flush_data.tx_count == self.fs_tx_count == self.db_tx_count
         assert flush_data.atomical_count == self.fs_atomical_count == self.db_atomical_count
-        assert flush_data.ticker_count == self.fs_ticker_count == self.db_ticker_count
-        assert flush_data.realm_count == self.fs_realm_count == self.db_realm_count
-        assert flush_data.subrealm_count == self.fs_subrealm_count == self.db_subrealm_count
-        assert flush_data.container_count == self.fs_container_count == self.db_container_count
-        assert flush_data.distmint_count == self.fs_distmint_count == self.db_distmint_count
         assert flush_data.height == self.fs_height == self.db_height
         assert flush_data.tip == self.db_tip
         assert not flush_data.headers
@@ -460,11 +340,6 @@ class DB:
         prior_flush = self.last_flush
         tx_delta = flush_data.tx_count - self.last_flush_tx_count
         atomical_delta = flush_data.atomical_count - self.last_flush_atomical_count
-        ticker_delta = flush_data.ticker_count - self.last_flush_ticker_count
-        realm_delta = flush_data.realm_count - self.last_flush_realm_count
-        subrealm_delta = flush_data.subrealm_count - self.last_flush_subrealm_count
-        container_delta = flush_data.container_count - self.last_flush_container_count
-        distmint_delta = flush_data.distmint_count - self.last_flush_distmint_count
 
         # Flush to file system
         self.flush_fs(flush_data)
@@ -486,12 +361,7 @@ class DB:
         self.logger.info(f'flush #{self.history.flush_count:,d} took '
                          f'{elapsed:.1f}s.  Height {flush_data.height:,d} '
                          f'txs: {flush_data.tx_count:,d} ({tx_delta:+,d}) '
-                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d}) '
-                         f'Realms: {flush_data.realm_count:,d} ({realm_delta:+,d}) '
-                         f'Sub-Realms: {flush_data.subrealm_count:,d} ({subrealm_delta:+,d}) '
-                         f'Tickers: {flush_data.ticker_count:,d} ({ticker_delta:+,d}) '
-                         f'Containers: {flush_data.container_count:,d} ({container_delta:+,d}) '
-                         f'Distributed Mints: {flush_data.distmint_count:,d} ({distmint_delta:+,d})')
+                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d})')
 
         # Catch-up stats
         if self.utxo_db.for_sync:
@@ -539,32 +409,12 @@ class DB:
         self.atomical_counts_file.write(atomical_offset,
                                   self.atomical_counts[height_start:].tobytes())
 
-        ticker_offset = height_start * self.ticker_counts.itemsize
-        self.ticker_counts_file.write(ticker_offset, self.ticker_counts[height_start:].tobytes())
-
-        realm_offset = height_start * self.realm_counts.itemsize
-        self.realm_counts_file.write(realm_offset, self.realm_counts[height_start:].tobytes())
-
-        subrealm_offset = height_start * self.subrealm_counts.itemsize
-        self.subrealm_counts_file.write(subrealm_offset, self.subrealm_counts[height_start:].tobytes())
-
-        container_offset = height_start * self.container_counts.itemsize
-        self.container_counts_file.write(container_offset, self.container_counts[height_start:].tobytes())
-
-        distmint_offset = height_start * self.distmint_counts.itemsize
-        self.distmint_counts_file.write(distmint_offset, self.distmint_counts[height_start:].tobytes())
-
         offset = prior_tx_count * 32
         self.hashes_file.write(offset, hashes)
 
         self.fs_height = flush_data.height
         self.fs_tx_count = flush_data.tx_count
         self.fs_atomical_count = flush_data.atomical_count
-        self.fs_ticker_count = flush_data.ticker_count
-        self.fs_realm_count = flush_data.realm_count
-        self.fs_subrealm_count = flush_data.subrealm_count
-        self.fs_container_count = flush_data.container_count
-        self.fs_distmint_count = flush_data.distmint_count
 
         if self.utxo_db.for_sync:
             elapsed = time.monotonic() - start_time
@@ -679,20 +529,10 @@ class DB:
             block_count = flush_data.height - self.db_height
             tx_count = flush_data.tx_count - self.db_tx_count
             atomical_count = flush_data.atomical_count - self.db_atomical_count
-            ticker_count = flush_data.ticker_count - self.db_ticker_count
-            realm_count = flush_data.realm_count - self.db_realm_count
-            subrealm_count = flush_data.subrealm_count - self.db_subrealm_count
-            container_count = flush_data.container_count - self.db_container_count
-            distmint_count = flush_data.distmint_count - self.db_distmint_count
             elapsed = time.monotonic() - start_time
             self.logger.info(f'flushed {block_count:,d} blocks with '
                              f'{tx_count:,d} txs, {add_count:,d} UTXO adds, '
                              f'{atomical_count:,d} Atomical txs, {atomical_add_count:,d} Atomical UTXO adds, '
-                             f'{ticker_count:,d} Tickers, '
-                             f'{realm_count:,d} Realms, '
-                             f'{subrealm_count:,d} Sub-Realms, '
-                             f'{container_count:,d} Containers, '
-                             f'{distmint_count:,d} Distributed Mints, '
                              f'{spend_count:,d} spends in '
                              f'{elapsed:.1f}s, committing...')
 
@@ -700,11 +540,6 @@ class DB:
         self.db_height = flush_data.height
         self.db_tx_count = flush_data.tx_count
         self.db_atomical_count = flush_data.atomical_count
-        self.db_ticker_count = flush_data.ticker_count
-        self.db_realm_count = flush_data.realm_count
-        self.db_subrealm_count = flush_data.subrealm_count
-        self.db_container_count = flush_data.container_count
-        self.db_distmint_count = flush_data.distmint_count
         self.db_tip = flush_data.tip
 
     def flush_state(self, batch):
@@ -714,11 +549,6 @@ class DB:
         self.last_flush = now
         self.last_flush_tx_count = self.fs_tx_count
         self.last_flush_atomical_count = self.fs_atomical_count
-        self.last_flush_ticker_count = self.fs_ticker_count
-        self.last_flush_realm_count = self.fs_realm_count
-        self.last_flush_subrealm_count = self.fs_subrealm_count
-        self.last_flush_container_count = self.fs_container_count
-        self.last_flush_distmint_count = self.fs_distmint_count
         self.write_utxo_state(batch)
 
     def flush_backup(self, flush_data, touched):
@@ -731,13 +561,8 @@ class DB:
         start_time = time.time()
         tx_delta = flush_data.tx_count - self.last_flush_tx_count
         atomical_delta = flush_data.atomical_count - self.last_flush_atomical_count
-        ticker_delta = flush_data.ticker_count - self.last_flush_ticker_count
-        realm_delta = flush_data.realm_count - self.last_flush_realm_count
-        subrealm_delta = flush_data.subrealm_count - self.last_flush_subrealm_count
-        container_delta = flush_data.container_count - self.last_flush_container_count
-        distmint_delta = flush_data.distmint_count - self.last_flush_distmint_count
 
-        self.backup_fs(flush_data.height, flush_data.tx_count, flush_data.atomical_count, flush_data.ticker_count, flush_data.realm_count, flush_data.subrealm_count, flush_data.container_count, flush_data.distmint_count)
+        self.backup_fs(flush_data.height, flush_data.tx_count, flush_data.atomical_count)
         # Do not need to do anything with atomical_count for history.backup
         self.history.backup(touched, flush_data.tx_count)
         with self.utxo_db.write_batch() as batch:
@@ -749,12 +574,7 @@ class DB:
         self.logger.info(f'backup flush #{self.history.flush_count:,d} took '
                          f'{elapsed:.1f}s.  Height {flush_data.height:,d} '
                          f'txs: {flush_data.tx_count:,d}'  f'({tx_delta:+,d}) ' 
-                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d}) '
-                         f'Realms: {flush_data.realm_count:,d} ({realm_delta:+,d}) '
-                         f'Sub-Realms: {flush_data.subrealm_count:,d} ({subrealm_delta:+,d}) '
-                         f'Tickers: {flush_data.ticker_count:,d} ({ticker_delta:+,d}) '
-                         f'Containers: {flush_data.container_count:,d} ({container_delta:+,d}) '
-                         f'Distributed Mints: {flush_data.distmint_count:,d} ({distmint_delta:+,d})')
+                         f'Atomical txs: {flush_data.atomical_count:,d} ({atomical_delta:+,d})')
 
     def fs_update_header_offsets(self, offset_start, height_start, headers):
         if self.coin.STATIC_BLOCK_HEADERS:
@@ -778,16 +598,11 @@ class DB:
         return self.dynamic_header_offset(height + 1)\
                - self.dynamic_header_offset(height)
 
-    def backup_fs(self, height, tx_count, atomical_count, ticker_count, realm_count, subrealm_count, container_count, distmint_count):
+    def backup_fs(self, height, tx_count, atomical_count):
         '''Back up during a reorg.  This just updates our pointers.'''
         self.fs_height = height
         self.fs_tx_count = tx_count
         self.fs_atomical_count = atomical_count
-        self.fs_ticker_count = ticker_count
-        self.fs_realm_count = realm_count
-        self.fs_subrealm_count = subrealm_count
-        self.fs_container_count = container_count
-        self.fs_distmint_count = distmint_count
         # Truncate header_mc: header count is 1 more than the height.
         self.header_mc.truncate(height + 1)
 
@@ -1013,11 +828,6 @@ class DB:
             self.db_height = -1
             self.db_tx_count = 0
             self.db_atomical_count = 0
-            self.db_ticker_count = 0
-            self.db_realm_count = 0
-            self.db_subrealm_count = 0
-            self.db_container_count = 0
-            self.db_distmint_count = 0
             self.db_tip = b'\0' * 32
             self.db_version = max(self.DB_VERSIONS)
             self.utxo_flush_count = 0
@@ -1042,11 +852,6 @@ class DB:
             self.db_height = state['height']
             self.db_tx_count = state['tx_count']
             self.db_atomical_count = state['atomical_count']
-            self.db_ticker_count = state['ticker_count']
-            self.db_realm_count = state['realm_count']
-            self.db_subrealm_count = state['subrealm_count']
-            self.db_container_count = state['container_count']
-            self.db_distmint_count = state['distmint_count']
            
             self.db_tip = state['tip']
             self.utxo_flush_count = state['utxo_flush_count']
@@ -1057,19 +862,9 @@ class DB:
         self.fs_height = self.db_height
         self.fs_tx_count = self.db_tx_count
         self.fs_atomical_count = self.db_atomical_count
-        self.fs_ticker_count = self.db_ticker_count
-        self.fs_realm_count = self.db_realm_count
-        self.fs_subrealm_count = self.db_subrealm_count
-        self.fs_container_count = self.db_container_count
-        self.fs_distmint_count = self.db_distmint_count 
 
         self.last_flush_tx_count = self.fs_tx_count
         self.last_flush_atomical_count = self.fs_atomical_count
-        self.last_flush_ticker_count = self.fs_ticker_count
-        self.last_flush_realm_count = self.fs_realm_count
-        self.last_flush_subrealm_count = self.fs_subrealm_count
-        self.last_flush_container_count = self.fs_container_count
-        self.last_flush_distmint_count = self.fs_distmint_count
 
         # Upgrade DB
         if self.db_version != max(self.DB_VERSIONS):
@@ -1083,11 +878,6 @@ class DB:
         self.logger.info(f'tip: {hash_to_hex_str(self.db_tip)}')
         self.logger.info(f'tx count: {self.db_tx_count:,d}')
         self.logger.info(f'atomical count: {self.db_atomical_count:,d}')
-        self.logger.info(f'ticker count: {self.db_ticker_count:,d}')
-        self.logger.info(f'realm count: {self.db_realm_count:,d}')
-        self.logger.info(f'subrealm count: {self.db_subrealm_count:,d}')
-        self.logger.info(f'container count: {self.db_container_count:,d}')
-        self.logger.info(f'distmint count: {self.db_distmint_count:,d}')
 
         if self.utxo_db.for_sync:
             self.logger.info(f'flushing DB cache at {self.env.cache_MB:,d} MB')
@@ -1187,11 +977,6 @@ class DB:
             'height': self.db_height,
             'tx_count': self.db_tx_count,
             'atomical_count': self.db_atomical_count,
-            'ticker_count': self.db_ticker_count,
-            'realm_count': self.db_realm_count,
-            'subrealm_count': self.db_subrealm_count,
-            'container_count': self.db_container_count,
-            'distmint_count': self.db_distmint_count,
             'tip': self.db_tip,
             'utxo_flush_count': self.utxo_flush_count,
             'wall_time': self.wall_time,
