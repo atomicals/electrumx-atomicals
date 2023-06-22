@@ -1210,7 +1210,7 @@ class BlockProcessor:
                 txin_index = txin_index + 1
             
             # Save the tx number for the current tx
-            put_general_data(b'tx' + tx_hash, tx_num)
+            put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num))
 
             # Detect all protocol operations in the transaction witness inputs
             atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
