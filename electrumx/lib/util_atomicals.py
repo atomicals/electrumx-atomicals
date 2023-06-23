@@ -38,6 +38,20 @@ import pickle
 from cbor2 import dumps, loads, CBORDecodeError
 from collections.abc import Mapping
  
+# The maximum height difference between the commit and reveal transactions of any of the sub(realm) mints
+# This is needed to prevent front-running of realms
+MINT_REALM_COMMIT_REVEAL_DELAY_BLOCKS = 6
+# The maximum height difference between the reveal transaction of the winning subrealm claim and the blocks to pay the necessary fee to the parent realm
+# It is intentionally made longer since it may take some time for the purchaser to get the funds together
+MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS = 10
+# The crt history is when the value was set at height
+# The conention is that the data in b'crt' only becomes valid exactly 6 blocks after the height
+# The reason for this is that a price list cannot be changed with active transactions.
+# This prevents the owner of the atomical from rapidly changing prices and defrauding users 
+# For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
+# And update their price list before the block is mined, and then cheat out the person from getting their subrealm
+# This is sufficient notice (about 1 hour) for apps to notice that the price list changed, and act accordingly.
+MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 10 # Magic number that requires a grace period of 6 blocks 
 
 # Atomical NFT/FT mint information is stored in the b'mi' index and is pickle encoded dictionary
 def unpack_mint_info(mint_info_value):

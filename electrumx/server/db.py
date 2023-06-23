@@ -162,7 +162,7 @@ class DB:
         # "maps name to atomical id (NFT)"
         # ---
         # Key: b'srlm' + parent_realm(atomical_id) + name + tx_num
-        # Value: atomical_id bytes
+        # Value: atomical_id bytes + payment_tx_hash (added only if payment is made)
         # "maps parent realm atomical id and sub-name to the atomical_id (NFT)"
         # ---
         # Key: b'tick' + tick bytes + tx_num
@@ -1015,32 +1015,74 @@ class DB:
             return unpacked_value
         return None
 
-    def get_realm(self, realm):
-        realm_key = b'rlm' + realm
-        realm_value = self.utxo_db.get(realm_key)
-        if realm_value:
-            return realm_value
+    # Returns the valid realm and atomical by the earliest valid registration
+    def get_effective_realm(self, realm):
+        realm_key_prefix = b'rlm' + realm
+        entries = []
+        for realm_key, realm_value in self.utxo_db.iterator(prefix=realm_key_prefix):
+            tx_numb = realm_key[:-8]
+            atomical_id = realm_value
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id']
         return None
-    
-    def get_subrealm(self, parent_atomical_id, subrealm):
-        subrealm_key = b'srlm' + parent_atomical_id + subrealm
-        subrealm_value = self.utxo_db.get(subrealm_key)
-        if subrealm_value:
-            return subrealm_value
+ 
+    # Returns the valid subrealm and atomical by the earliest valid registration
+    def get_effective_subrealm(self, parent_atomical_id, subrealm):
+        subrealm_key_prefix = b'srlm' + parent_atomical_id + subrealm
+        entries = []
+        for subrealm_key, subrealm_value in self.utxo_db.iterator(prefix=subrealm_key_prefix):
+            tx_numb = subrealm_key[:-8]
+            atomical_id = subrealm_value[: ATOMICAL_ID_LEN]
+            payment_tx_hash = subrealm_value[ATOMICAL_ID_LEN : ]
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num,
+                'payment_tx_hash': payment_tx_hash
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id']
         return None
 
-    def get_container(self, container):
-        container_key = b'co' + container
-        container_value = self.utxo_db.get(container_key)
-        if container_value:
-            return container_value
+    # Returns the valid container and atomical by the earliest valid registration
+    def get_effective_container(self, container):
+        container_key_prefix = b'co' + container
+        entries = []
+        for container_key, container_value in self.utxo_db.iterator(prefix=container_key_prefix):
+            tx_numb = container_key[:-8]
+            atomical_id = container_value
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id']
         return None
 
-    def get_ticker(self, ticker):
-        ticker_key = b'tick' + ticker
-        ticker_value = self.utxo_db.get(ticker_key)
-        if ticker_value:
-            return ticker_value
+    # Returns the valid ticker and atomical by the earliest valid registration
+    def get_effective_ticker(self, ticker):
+        ticker_key_prefix = b'tick' + ticker
+        entries = []
+        for ticker_key, ticker_value in self.utxo_db.iterator(prefix=ticker_key_prefix):
+            tx_numb = ticker_key[:-8]
+            atomical_id = ticker_value
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id']
         return None
 
     # Query all the contract crt properties and return them sorted descending by height
@@ -1253,22 +1295,6 @@ class DB:
             return atomical
         atomical = await run_in_thread(read_atomical)
         return atomical
-
-    def get_atomical_id_by_realm(self, name):
-        name_key = b'rlm' + name
-        return self.utxo_db.get(name_key)
-
-    def get_atomical_id_by_subrealm(self, parent_atomical_id, name):
-        subname_key = b'srlm' + parent_atomical_id + name
-        return self.utxo_db.get(subname_key)
-
-    def get_atomical_id_by_ticker(self, ticker):
-        ticker_key = b'tick' + ticker
-        return self.utxo_db.get(ticker_key)
- 
-    def get_atomical_id_by_container(self, container):
-        container_key = b'co' + container
-        return self.utxo_db.get(container_key) 
 
     async def get_atomicals_list(self, limit, offset, asc = False):
         if limit > 50:

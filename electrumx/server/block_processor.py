@@ -24,7 +24,7 @@ from electrumx.lib.util import (
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
-from electrumx.lib.util_atomicals import is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
+from electrumx.lib.util_atomicals import MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -478,24 +478,11 @@ class BlockProcessor:
             basic_struct = {
                 'atomical_id': location_id_bytes_to_compact(result['id']),
                 'atomical_number': result['number'],
-                'type': result['type'],
-                'subtype': result['subtype']
+                'type': result['type']
             }
-            ticker = result.get('$ticker', None)
-            realm = result.get('$realm', None)
-            subrealm = result.get('$subrealm', None)
-            container = result.get('$container', None)
-            parent_realm_id_compact = result.get('$parent_realm_id_compact', None)
-            if ticker: 
-                basic_struct['tickers'] = ticker
-            if realm: 
-                basic_struct['realm'] = realm
-            if subrealm: 
-                basic_struct['subrealm'] = subrealm
-            if subrealm: 
-                basic_struct['parent_realm_id'] = parent_realm_id_compact
-            if container: 
-                basic_struct['container'] = container
+
+            # Todo fetch any containers, realms, subrealms or tickers for the utxo here...
+
             return basic_struct
         return result 
 
@@ -520,8 +507,9 @@ class BlockProcessor:
         self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}, mint_tx_num={mint_tx_num}')
         if not is_valid_subrealm_string_name(subrealm):
             raise IndexError(f'Subrealm is_valid_subrealm_string_name invalid {subrealm}')
+        # Add on 32 null bytes to be the placeholder for the payment eventually
         subrealm_key_enc = subrealm.encode() + pack_le_uint64(mint_tx_num)
-        self.subrealm_data_cache[parent_atomical_id + subrealm_key_enc] = atomical_id
+        self.subrealm_data_cache[parent_atomical_id + subrealm_key_enc] = atomical_id + b'0000000000000000000000000000000000000000000000000000000000000000'
 
     # Save container name to cache that will be flushed to db
     def put_container_data(self, atomical_id, container, mint_tx_num): 
@@ -677,7 +665,7 @@ class BlockProcessor:
             # Intentionally fall through to catch it in the db as well just in case
         
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        subrealm_data_from_db = self.db.get_subrealm(parent_atomical_id + subrealm_enc, None)
+        subrealm_data_from_db = self.db.get_subrealm(parent_atomical_id + subrealm_enc)
         if subrealm_data_from_db:
             if subrealm_data_from_db != expected_atomical_id:
                 raise IndexerError(f'IndexerError: delete_subrealm_data db subrealm data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {subrealm} {subrealm_data_from_db}')
@@ -700,7 +688,7 @@ class BlockProcessor:
             # Intentionally fall through to catch it in the db as well just in case
         
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        container_data_from_db = self.db.get_container(container_key_enc, None)
+        container_data_from_db = self.db.get_container(container_key_enc)
         if container_data_from_db:
             if container_data_from_db == atomical_id: 
                 raise IndexerError(f'IndexerError: delete_container_data db container data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {container} {container_data_from_db}')
@@ -808,13 +796,16 @@ class BlockProcessor:
         return self.db.get_tx_num_from_tx_hash(tx_hash)
 
     def create_realm_entry_if_requested(self, mint_info):
-        if is_valid_realm_string_name(mint_info.get('$requested_realm')):
-            self.put_realm_data(mint_info['id'], mint_info.get('$requested_realm'), mint_info['mint_tx_num'])
-    
+        # Enforce that the reveal tx is not greater than 10 confirmations in the future
+        if mint_info['mint_height'] >= mint_info['height'] - MINT_REALM_COMMIT_REVEAL_DELAY_BLOCKS:
+            if is_valid_realm_string_name(mint_info.get('$requested_realm')):
+                self.put_realm_data(mint_info['id'], mint_info.get('$requested_realm'), mint_info['mint_tx_num'])
+
     def create_subrealm_entry_if_requested(self, mint_info): 
-        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$requested_subrealm')):
-            parent_realm_id = mint_info['$parent_realm_id']
-            self.put_subrealm_data(mint_info['id'], mint_info.get('$requested_subrealm'), parent_realm_id, mint_info['mint_tx_num'])
+        if mint_info['mint_height'] >= mint_info['height'] - MINT_REALM_COMMIT_REVEAL_DELAY_BLOCKS:
+            if self.is_subrealm_acceptable_to_be_created(mint_info.get('$requested_subrealm')):
+                parent_realm_id = mint_info['$parent_realm_id']
+                self.put_subrealm_data(mint_info['id'], mint_info.get('$requested_subrealm'), parent_realm_id, mint_info['mint_tx_num'])
 
     def create_container_entry_if_requested(self, mint_info):
         if is_valid_container_string_name(mint_info.get('$requested_container')):
@@ -870,12 +861,13 @@ class BlockProcessor:
         if not mint_tx_num:
             raise IndexError(f'Indexer error retrieved null mint_tx_num')
 
-        from_fs_tx_hash, _height = self.db.fs_tx_hash(mint_tx_num)
+        from_fs_tx_hash, mint_commit_height = self.db.fs_tx_hash(mint_tx_num)
         if mint['mint_hash'] != from_fs_tx_hash:
             raise IndexError(f'Indexer error retrieved fs tx_hash not same as mint_hash')
         
         # The mint tx num is used to determine precedence for names like tickers, realms, containers
         mint_info['mint_tx_num'] = mint_tx_num 
+        mint_info['mint_height'] = mint_commit_height 
 
         # Establish the Atomical id from the tx hash and the 0'th output index (since Atomicals can only be minted at the 0'th output)
         atomical_id = mint_info['id']
@@ -1302,9 +1294,8 @@ class BlockProcessor:
         # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
         # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
         # This is sufficient notice (about 1 hour) for apps to notice that the price list changed, and act accordingly.
-        MIN_BLOCKS_AFTER = 6 # Magic number that requires a grace period of 6 blocks 
         for crt_item in crt_history:
-            crt_valid_from = crt_item['history'] + MIN_BLOCKS_AFTER
+            crt_valid_from = crt_item['history'] + MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
             if height < crt_valid_from:
                 continue
             # Found a valid crt entry
