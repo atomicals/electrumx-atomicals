@@ -941,7 +941,7 @@ class BlockProcessor:
         put_general_data = self.general_data_cache.__setitem__
         if operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'mod' and operations_found_at_inputs.get('input_index', None) == 0:
             self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
-            put_general_data(b'st' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
+            put_general_data(b'mod' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op', None) == 'evt' and operations_found_at_inputs.get('input_index', None) == 0:
             self.logger.info(f'apply_state_like_updates op=evt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'evt' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
@@ -1208,7 +1208,7 @@ class BlockProcessor:
             atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
             location = spent_atomical[ : ATOMICAL_ID_LEN]
             # Just delete any potential state updates indiscriminately
-            self.db_deletes.append(b'st' + atomical_id + tx_numb + output_index_packed)
+            self.db_deletes.append(b'mod' + atomical_id + tx_numb + output_index_packed)
             # Just delete any potential message event messages indiscriminately
             self.db_deletes.append(b'evt' + atomical_id + tx_numb + output_index_packed)
             # Just delete any potential contract crt updates indiscriminately

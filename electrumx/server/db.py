@@ -141,7 +141,7 @@ class DB:
         # Value: Atomical_id
         # "maps atomical number to an atomical_id"
         # ---
-        # Key: b'st' + atomical_id + tx_num + out_idx
+        # Key: b'mod' + atomical_id + tx_num + out_idx
         # Value: maps the atomical, transaction number and output that took the state
         # "maps the atomical, transaction number and output for the general state"
         # ---
@@ -1194,7 +1194,7 @@ class DB:
                     'script': location_script.hex(),
                     'atomicals_at_location': atomicals_at_location
                 })
-            prefix = b'st' + atomical_id
+            prefix = b'mod' + atomical_id
             state_fields = {}
             state_history = []
             for db_state_key, db_state_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
