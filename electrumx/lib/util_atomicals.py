@@ -195,9 +195,9 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             'id': atomical_id,
             'mint_txid': hash_to_hex_str(mint_hash),
             'mint_index': mint_index,
-            'first_location_txid': hash_to_hex_str(first_location_hash),
-            'first_location_index': first_location_index,
-            'first_location': location,
+            'location_txid': hash_to_hex_str(first_location_hash),
+            'location_index': first_location_index,
+            'location': location,
             'scripthash': scripthash,
             'hashX': hashX,
             'value': txout.value,
@@ -209,7 +209,6 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             # 'tx_num': tx_num
         }
        
-    
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
     # Enforces that both of these must be empty or a valid dictionary
     # This prevents a user from minting a big data blob into one of the fields
@@ -244,42 +243,34 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     ############################################
     if op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        mint_info['subtype'] = 'base'
-    elif op_found_struct['op'] == 'co' and op_found_struct['input_index'] == 0:
-        mint_info['type'] = 'NFT'
-        mint_info['subtype'] = 'container'
-        container = mint_info['args'].get('container', None)
+        container = mint_info['args'].get('container')
         if not isinstance(container, str):
             return None, None
         if not is_valid_container_string_name(container):
             return None, None
-        mint_info['$container'] = container
-    elif op_found_struct['op'] == 'rlm' and op_found_struct['input_index'] == 0:
+        mint_info['$requested_container'] = container
+    elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        mint_info['subtype'] = 'realm'
-        realm = mint_info['args'].get('realm', None)
+        realm = mint_info['args'].get('realm')
         if not isinstance(realm, str):
             return None, None
         if not is_valid_realm_string_name(realm):
             return None, None
-        mint_info['$realm'] = realm
-    elif op_found_struct['op'] == 'sub' and op_found_struct['input_index'] == 0:
+        mint_info['$requested_realm'] = realm
+    elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        mint_info['subtype'] = 'subrealm'
-        subrealm = mint_info['args'].get('subrealm', None)
+        subrealm = mint_info['args'].get('subrealm')
         if not isinstance(subrealm, str):
             return None, None
         if not is_valid_subrealm_string_name(subrealm):
             return None, None
-
         # The parent realm id is in a compact form string to make it easier for users and developers
         parent_realm_id = mint_info['args'].get('pid')
         if not isinstance(parent_realm_id, str):
             return None, None
         if not is_compact_atomical_id(parent_realm_id):
             return None, None
-
-        mint_info['$subrealm'] = subrealm
+        mint_info['$requested_subrealm'] = subrealm
         # Save in the compact form to make it easier to understand for developers and users
         # It requires an extra step to convert, but it makes it easier to understand the format
         mint_info['$parent_realm_id_compact'] = parent_realm_id
@@ -303,22 +294,22 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
-        mint_info['$ticker'] = ticker
-        mint_height = mint_info['args'].get('h', None)
+        mint_info['$requested_ticker'] = ticker
+        mint_height = mint_info['args'].get('height', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
-            print(f'DFT mint has invalid mint_height h {first_location_hash}, {mint_height}. Skipping...')
+            print(f'DFT mint has invalid mint_height height {tx.hash}, {mint_height}. Skipping...')
             return None, None
-        mint_amount = mint_info['args'].get('amt', None)
+        mint_amount = mint_info['args'].get('amount', None)
         if not isinstance(mint_amount, int) or mint_amount <= 0 or mint_amount > 10000000000:
-            print(f'DFT mint has invalid mint_amount amt {first_location_hash}, {mint_amount}. Skipping...')
+            print(f'DFT mint has invalid mint_amount amount {tx.hash}, {mint_amount}. Skipping...')
             return None, None
-        max_mints = mint_info['args'].get('cnt', None)
+        max_mints = mint_info['args'].get('count', None)
         if not isinstance(max_mints, int) or max_mints <= 0 or max_mints > 1000000:
-            print(f'DFT mint has invalid max_mints cnt {first_location_hash}, {max_mints}. Skipping...')
+            print(f'DFT mint has invalid max_mints count {tx.hash}, {max_mints}. Skipping...')
             return None, None
         # Do not mint because at least one is a zero
         if mint_amount <= 0 or max_mints <= 0:
-            self.logger.info(f'FT mint has zero quantities {first_location_hash}, {mint_amount}. Skipping...')
+            self.logger.info(f'FT mint has zero quantities {tx.hash}, {mint_amount}. Skipping...')
             return None, None
         mint_info['$mint_height'] = mint_height
         mint_info['$mint_amount'] = mint_amount
@@ -441,12 +432,13 @@ def parse_operation_from_script(script, n):
     # check the 3 letter protocol operations
     if n + three_letter_op_len < script_len:
         atom_op = script[n : n + three_letter_op_len].hex()
-        print('atom op')
-        print(atom_op)
+        print(f'Atomicals op script found: {atom_op}')
         if atom_op == "036e6674":
-            atom_op_decoded = 'nft'  # nft - CreMintate non-fungible token
+            atom_op_decoded = 'nft'  # nft - Mint non-fungible token
         elif atom_op == "03646674":  
             atom_op_decoded = 'dft'  # dft - Deploy distributed mint fungible token starting point
+        elif atom_op == "03737562":  
+            atom_op_decoded = 'sub'  # sub - Issue subrealm
         elif atom_op == "03637274":  
             atom_op_decoded = 'crt'  # crt - Define contract state
         elif atom_op == "036d6f64":  
@@ -463,7 +455,7 @@ def parse_operation_from_script(script, n):
     if n + two_letter_op_len < script_len:
         atom_op = script[n : n + two_letter_op_len].hex()
         if atom_op == "026674":
-            atom_op_decoded = 'ft'  # ft - fungible token mint
+            atom_op_decoded = 'ft'  # ft - Mint fungible token with direct fixed supply
         elif atom_op == "02736c":  
             atom_op_decoded = 'sl'  # sl - Seal an NFT and lock it from further changes forever
         

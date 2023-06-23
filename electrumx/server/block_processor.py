@@ -500,40 +500,36 @@ class BlockProcessor:
         return result 
 
     # Save a ticker symbol to the cache that will be flushed to db
-    def put_ticker_data(self, atomical_id, ticker): 
-        self.logger.info(f'put_ticker_data: atomical_id={atomical_id.hex()}, ticker={ticker}')
+    def put_ticker_data(self, atomical_id, ticker, mint_tx_num): 
+        self.logger.info(f'put_ticker_data: atomical_id={atomical_id.hex()}, ticker={ticker}, mint_tx_num={mint_tx_num}')
         if not is_valid_ticker_string(ticker):
             raise IndexError(f'Ticker is_valid_ticker_string invalid {ticker}')
-        ticker_enc = ticker.encode()
-        if self.ticker_data_cache.get(ticker_enc, None) == None: 
-            self.ticker_data_cache[ticker_enc] = atomical_id
+        ticker_key_enc = ticker.encode() + pack_le_uint64(mint_tx_num)
+        self.ticker_data_cache[ticker_key_enc] = atomical_id
         
     # Save realm name to the cache that will be flushed to the db 
-    def put_realm_data(self, atomical_id, realm, tx_num): 
-        self.logger.info(f'put_realm_data: atomical_id={atomical_id.hex()}, realm={realm}')
+    def put_realm_data(self, atomical_id, realm, mint_tx_num): 
+        self.logger.info(f'put_realm_data: atomical_id={atomical_id.hex()}, realm={realm}, mint_tx_num={mint_tx_num}')
         if not is_valid_realm_string_name(realm):
             raise IndexError(f'Realm is_valid_realm_string_name invalid {realm}')
-        realm_enc = realm.encode()
-        if self.realm_data_cache.get(realm_enc, None) == None: 
-            self.realm_data_cache[realm_enc] = atomical_id
-    
+        realm_key_enc = realm.encode() + pack_le_uint64(mint_tx_num)
+        self.realm_data_cache[realm_key_enc] = atomical_id
+       
     # Save subrealm name to the cache that will be flushed to the db 
-    def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id): 
-        self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}')
+    def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id, mint_tx_num): 
+        self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}, mint_tx_num={mint_tx_num}')
         if not is_valid_subrealm_string_name(subrealm):
             raise IndexError(f'Subrealm is_valid_subrealm_string_name invalid {subrealm}')
-        subrealm_enc = subrealm.encode()
-        if self.subrealm_data_cache.get(parent_atomical_id + subrealm_enc, None) == None: 
-            self.subrealm_data_cache[parent_atomical_id + subrealm_enc] = atomical_id
+        subrealm_key_enc = subrealm.encode() + pack_le_uint64(mint_tx_num)
+        self.subrealm_data_cache[parent_atomical_id + subrealm_key_enc] = atomical_id
 
     # Save container name to cache that will be flushed to db
-    def put_container_data(self, atomical_id, container): 
-        self.logger.info(f'put_container_data: atomical_id={atomical_id.hex()}, container={container}')
+    def put_container_data(self, atomical_id, container, mint_tx_num): 
+        self.logger.info(f'put_container_data: atomical_id={atomical_id.hex()}, container={container}, mint_tx_num={mint_tx_num}')
         if not is_valid_container_string_name(container):
             raise IndexError(f'Container is_valid_container_string_name invalid {container}')
-        container_enc = container.encode()
-        if self.container_data_cache.get(container_enc, None) == None: 
-            self.container_data_cache[container_enc] = atomical_id
+        container_key_enc = container.encode() + pack_le_uint64(mint_tx_num)
+        self.container_data_cache[container_key_enc] = atomical_id
 
     # Save distributed mint infromation for the atomical
     # Mints are only stored if they are less than the max_mints amount
@@ -621,91 +617,96 @@ class BlockProcessor:
             # Return all of the atomicals spent at the address
         return atomicals_data_list
 
-    # Remove the ticker only if it exists and if it was associated with atomical_id
-    # This is done because another malicious user could mint an invalid mint, and then on rollback result
-    # In deleting the legit ticker that was minted before. 
-    def delete_ticker_data(self, expected_atomical_id, ticker): 
-        ticker_enc = ticker.encode()
+    # Remove the ticker request data and ensure it matches the expected atomical id as sanity
+    def delete_ticker_data(self, expected_atomical_id, ticker, mint_tx_num): 
+        ticker_key_enc = ticker.encode() + pack_le_uint64(mint_tx_num)
         # Check if it's located in the cache first
-        ticker_data = self.ticker_data_cache.get(ticker_enc, None)
-        if ticker_data and ticker_data == expected_atomical_id:
+        ticker_data = self.ticker_data_cache.get(ticker_key_enc, None)
+        if ticker_data:
+            if ticker_data != expected_atomical_id:
+                raise IndexerError(f'IndexerError: delete_ticker_data cache ticker data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {ticker} {ticker_data}')
             # remove from the cache
-            self.ticker_data_cache.pop(ticker_enc)
+            self.ticker_data_cache.pop(ticker_key_enc)
             self.logger.info(f'delete_ticker_data.ticker_data_cache: ticker={ticker}, expected_atomical_id={expected_atomical_id.hex()}')
             # Intentionally fall through to catch it in the db as well just in case
 
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        ticker_data_from_db = self.db.get_ticker(ticker_enc, None)
-        if ticker_data_from_db != None and ticker_data_from_db == expected_atomical_id: 
-            self.db_deletes.append(b'tick' + ticker_enc)
+        ticker_data_from_db = self.db.get_ticker(ticker_key_enc)
+        if ticker_data_from_db:
+            if ticker_data_from_db != expected_atomical_id: 
+                raise IndexerError(f'IndexerError: delete_ticker_data db ticker data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {ticker} {ticker_data_from_db}')
+            self.db_deletes.append(b'tick' + ticker_key_enc)
             self.logger.info(f'delete_ticker_data.db_deletes: ticker={ticker}, expected_atomical_id={expected_atomical_id.hex()}')
         if ticker_data or ticker_data_from_db:
-            self.logger.info(f'delete_ticker_data return True: ticker={ticker}, expected_atomical_id={expected_atomical_id.hex()}')
             return True
 
-    # Remove the realm only if it exists and if it was associated with atomical_id
-    # This is done because another malicious user could mint an invalid mint, and then on rollback result
-    # In deleting the legit ticker that was minted before.
-    def delete_realm_data(self, expected_atomical_id, realm): 
-        realm_enc = realm.encode()
+    # Remove the realm request data and ensure it matches the expected atomical id as sanity
+    def delete_realm_data(self, expected_atomical_id, realm, mint_tx_num): 
+        realm_key_enc = realm.encode() + pack_le_uint64(mint_tx_num)
         # Check if it's located in the cache first
-        realm_data = self.realm_data_cache.get(realm_enc, None)
-        if realm_data and realm_data == expected_atomical_id:
+        realm_data = self.realm_data_cache.get(realm_key_enc)
+        if realm_data:
+            if realm_data != expected_atomical_id:
+                raise IndexerError(f'IndexerError: delete_realm_data cache realm data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {realm} {realm_data}')
             # remove from the cache
-            self.realm_data_cache.pop(realm_enc)
+            self.realm_data_cache.pop(realm_key_enc)
             self.logger.info(f'delete_realm_data.realm_data_cache: {realm}, expected_atomical_id={expected_atomical_id.hex()}')
             # Intentionally fall through to catch it in the db as well just in case
         
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        realm_data_from_db = self.db.get_realm(realm_enc, None)
-        if realm_data_from_db != None and realm_data_from_db == expected_atomical_id: 
-            self.db_deletes.append(b'rlm' + realm_enc)
+        realm_data_from_db = self.db.get_realm(realm_key_enc)
+        if realm_data_from_db:
+            if realm_data_from_db != expected_atomical_id:
+                raise IndexerError(f'IndexerError: delete_realm_data db realm data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {realm} {realm_data_from_db}')
+            self.db_deletes.append(b'rlm' + realm_key_enc)
             self.logger.info(f'delete_realm_data.db_deletes: realm={realm}, expected_atomical_id={expected_atomical_id.hex()}')
         if realm_data or realm_data_from_db:
-            self.logger.info(f'delete_realm_data return True: realm={realm}, expected_atomical_id={expected_atomical_id.hex()}')
             return True
 
-    # Remove the subrealm only if it exists and if it was associated with atomical_id for the parent_atomical_id (subrealm/TLR)
-    # This is done because another malicious user could mint an invalid mint, and then on rollback result
-    # In deleting the legit ticker that was minted before.
-    def delete_subrealm_data(self, parent_atomical_id, expected_atomical_id, subrealm): 
-        subrealm_enc = subrealm.encode()
+    # Remove the subrealm request data and ensure it matches the expected atomical id as sanity
+    def delete_subrealm_data(self, expected_atomical_id, subrealm, parent_atomical_id, mint_tx_num): 
+        subrealm_key_enc = subrealm.encode() + pack_le_uint64(mint_tx_num)
         # Check if it's located in the cache first
-        subrealm_data = self.subrealm_data_cache.get(parent_atomical_id + subrealm_enc, None)
-        if subrealm_data and subrealm_data == expected_atomical_id:
+        subrealm_data = self.subrealm_data_cache.get(parent_atomical_id + subrealm_key_enc, None)
+        if subrealm_data:
+            if subrealm_data != expected_atomical_id:
+                raise IndexerError(f'IndexerError: delete_subrealm_data cache subrealm data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {subrealm} {subrealm_data}')
             # remove from the cache
-            self.subrealm_data_cache.pop(parent_atomical_id + subrealm_enc)
+            self.subrealm_data_cache.pop(parent_atomical_id + subrealm_key_enc)
             self.logger.info(f'delete_subrealm_data.subrealm_data_cache: subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()} atomical_id={atomical_id.hex()}')
             # Intentionally fall through to catch it in the db as well just in case
         
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
         subrealm_data_from_db = self.db.get_subrealm(parent_atomical_id + subrealm_enc, None)
-        if subrealm_data_from_db != None and subrealm_data_from_db == expected_atomical_id: 
+        if subrealm_data_from_db:
+            if subrealm_data_from_db != expected_atomical_id:
+                raise IndexerError(f'IndexerError: delete_subrealm_data db subrealm data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {subrealm} {subrealm_data_from_db}')
             self.db_deletes.append(b'srlm' + parent_atomical_id + subrealm_enc)
             self.logger.info(f'delete_subrealm_data.db_deletes: subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()} atomical_id={atomical_id.hex()}')
         if subrealm_data or subrealm_data_from_db:
-            self.logger.info(f'delete_subrealm_data return True: subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()} atomical_id={atomical_id.hex()}')
             return True
 
-    # Remove the container only if it exists and if it was associated with atomical_id
-    # This is done because another malicious user could mint an invalid mint, and then on rollback result
-    # In deleting the legit ticker that was minted before.
-    def delete_container_data(self, atomical_id, container): 
-        container_enc = container.encode()
+    # Remove the container request data and ensure it matches the expected atomical id as sanity
+    def delete_container_data(self, atomical_id, container, mint_tx_num): 
+        container_key_enc = container.encode() + pack_le_uint64(mint_tx_num)
         # Check if it's located in the cache first
-        container_data = self.container_data_cache.get(container_enc, None)
-        if container_data and container_data == atomical_id:
+        container_data = self.container_data_cache.get(container_key_enc, None)
+        if container_data:
+            if container_data != atomical_id:
+                raise IndexerError(f'IndexerError: delete_container_data cache container data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {container} {container_data}')
             # remove from the cache
-            self.container_data_cache.pop(container_enc)
+            self.container_data_cache.pop(container_key_enc)
             self.logger.info(f'delete_container_data.container_data_cache: {container}, atomical_id={atomical_id.hex()}')
             # Intentionally fall through to catch it in the db as well just in case
+        
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        container_data_from_db = self.db.get_container(container_enc, None)
-        if container_data_from_db != None and container_data_from_db == atomical_id: 
-            self.db_deletes.append(b'co' + container_enc)
+        container_data_from_db = self.db.get_container(container_key_enc, None)
+        if container_data_from_db:
+            if container_data_from_db == atomical_id: 
+                raise IndexerError(f'IndexerError: delete_container_data db container data does not match expected atomical id {mint_tx_num} {expected_atomical_id} {container} {container_data_from_db}')
+            self.db_deletes.append(b'co' + container_key_enc)
             self.logger.info(f'delete_container_data.db_deletes: container={container}, atomical_id={atomical_id.hex()}')
         if container_data or container_data_from_db:
-            self.logger.info(f'delete_container_data return True: container={container}, atomical_id={atomical_id.hex()}')
             return True
 
     # Delete the distributed mint data that is used to track how many mints were made
@@ -772,187 +773,89 @@ class BlockProcessor:
     
     def log_can_be_created(self, method, msg, subject, validity, val):
         self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
-
-    # Whether a realm by a given name is a valid realm string
-    def is_realm_acceptable_to_be_created(self, value):
-        method = 'is_realm_acceptable_to_be_created'
-        if not value:
-            self.log_can_be_created(method, 'empty', 'realm', False, value)
-            return None 
-        if is_valid_realm_string_name(value):
-            value_enc = value.encode()
-            # It already exists in cache, therefore cannot assign
-            if self.realm_data_cache.get(value_enc, None) != None: 
-                self.log_can_be_created(method, 'realm_taken_found_in_cache', 'realm', False, value)
-                return None 
-            if self.db.get_realm(value_enc) != None:
-                self.log_can_be_created(method, 'realm_taken_found_in_db', 'realm', False, value)
-                return None
-            # Return the utf8 because it will be verified and converted elsewhere
-            self.log_can_be_created(method, 'success', 'realm', True, value)
-            return value
-        
-        self.log_can_be_created(method, 'is_valid_realm_string_name', 'realm', False, value)
-        return None
- 
-    # Whether a container by a given name is a valid container string and if it's not already claimed
-    def is_container_acceptable_to_be_created(self, value):
-        method = 'is_container_acceptable_to_be_created'
-        if not value:
-            self.log_can_be_created(method, 'empty', 'container', False, value)
-            return None 
-        if is_valid_container_string_name(value):
-            value_enc = value.encode()
-            # It already exists in cache, therefore cannot assign
-            if self.container_data_cache.get(value_enc, None) != None: 
-                self.log_can_be_created(method, 'cached', 'container', False, value)
-                return None 
-            if self.db.get_container(value_enc, None) != None:
-                self.log_can_be_created(method, 'db', 'container', False, value)
-                return None
-            # Return the utf8 because it will be verified and converted elsewhere
-            self.log_can_be_created(method, 'success', 'container', True, value)
-            return value
-        self.log_can_be_created(method, 'is_valid_container_string_name', 'container', False, value)
-        return None
-
-    # Whether a ticker by a given name is a valid ticker string and if it's not already claimed
-    def is_ticker_acceptable_to_be_created(self, value):
-        method = 'is_ticker_acceptable_to_be_created'
-        if not value:
-            self.log_can_be_created(method, 'empty', 'ticker', False, value)
-            return None 
-        if is_valid_ticker_string(value):
-            value_enc = value.encode()
-            # It already exists in cache, therefore cannot assign
-            if self.ticker_data_cache.get(value_enc, None) != None: 
-                self.log_can_be_created(method, 'cached', 'ticker', False, value)
-                return None 
-            if self.db.get_ticker(value_enc, None) != None:
-                self.log_can_be_created(method, 'db', 'ticker', False, value)
-                return None
-            # Return the utf8 because it will be verified and converted elsewhere
-            self.log_can_be_created(method, 'success', 'ticker', True, value)
-            return value
-        self.log_can_be_created(method, 'is_valid_ticker_string', 'ticker', False, value)
-        return None
- 
+   
     # Validate the parameters for an NFT and validate realm/subrealm/container data
     def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
-            return False, None, None, None
-
-        realm = mint_info.get('$realm', None)
-        subrealm = mint_info.get('$subrealm', None)
-        container = mint_info.get('$container', None)
-
-        # Request includes realm to be minted to have successful create
-        if realm:
-            self.logger.info(f'validate_and_create_nft: realm={realm}, tx_hash={hash_to_hex_str(tx_hash)}')
-            # Is the realm taken or available?
-            can_assign_realm = self.is_realm_acceptable_to_be_created(realm)
-            self.logger.info(f'can_assign_realm {can_assign_realm}')
-            # The realm can be assigned and therefore the NFT create can succeed
-            if can_assign_realm:
-                assert(can_assign_realm == realm)
-                self.put_realm_data(mint_info['id'], can_assign_realm)
-            else: 
-                # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
-                return False, None, None, None
-        elif subrealm:
-            realm_parent_atomical_id_compact = mint_info.get('$parent_realm_id_compact')
-            self.logger.info(f'validate_and_create_nft: subrealm={subrealm}, realm_parent_atomical_id_compact={realm_parent_atomical_id_compact}, tx_hash={hash_to_hex_str(tx_hash)}')
-            if not realm_parent_atomical_id_compact or not is_compact_atomical_id(realm_parent_atomical_id):
-                return False, None, None, None
-
-            realm_parent_atomical_id_long = mint_info.get('$parent_realm_id')
-            if not realm_parent_atomical_id_long:
-                return False, None, None, None
-            
-            if compact_to_location_id_bytes(realm_parent_atomical_id_compact) != realm_parent_atomical_id_long:
-                raise IndexError(f'validate_and_create_nft realm_parent_atomical_id_compact and realm_parent_atomical_id_long not equal. Index or Developer Error')
-             
-            # Convert to the 36 byte normalized form of tx_hash + index
-            realm_parent_atomical_id_long = compact_to_location_id_bytes(realm_parent_atomical_id_compact)
-
-            # Is the subrealm taken or available for the parent atomical
-            can_assign_subrealm = self.is_subrealm_acceptable_to_be_created(operations_found_at_inputs, atomicals_spent_at_inputs, txout, realm_parent_atomical_id_long, subrealm, height)
-            
-            # The realm can be assigned and therefore the NFT create can succeed
-            if can_assign_subrealm:
-                assert(can_assign_subrealm == subrealm)
-                self.put_subrealm_data(mint_info['id'], can_assign_subrealm, realm_parent_atomical_id_long)
-            else: 
-                # Fail the attempt to create NFT because the subrealm cannot be assigned when it was requested
-                return False, None, None, None
-        # Request includes container to be minted to have successful create
-        elif container:
-            self.logger.info(f'validate_and_create_nft: container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
-            # Is the container taken or available?
-            can_assign_container = self.is_container_acceptable_to_be_created(container)
-            # The container can be assigned and therefore the NFT create can succeed
-            if can_assign_container:
-                assert(can_assign_container == container)
-                self.put_container_data(mint_info['id'], can_assign_container)
-            else: 
-                # Fail the attempt to create NFT because the realm cannot be assigned when it was requested
-                return False, None, None, None
-
+            return False
         tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
-        self.logger.info(f'put_atomicals_utxo: mint_info={mint_info}')
         self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
-        subtype = mint_info['subtype']
         atomical_id = mint_info['id']
-        self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, subtype={subtype}, realm={realm}, subrealm={subrealm}, container={container}, tx_hash={hash_to_hex_str(tx_hash)}')
-        return True, realm, subrealm, container
+        self.logger.info(f'Atomicals Create NFT in Transaction {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
+        return True
     
-    # Validate the parameters for a FT and ticker
+    # Validate the parameters for a FT
     def validate_and_create_ft(self, mint_info, tx_hash):
-        ticker = mint_info['$ticker']
-        # Request includes realm to be minted to have successful create
-        if not ticker:
-            raise IndexError(f'Fatal error ticker not set when it should have been. DeveloperError')
-        # Is the ticker taken or available?
-        can_assign_ticker = self.is_ticker_acceptable_to_be_created(ticker)
-        # The ticker can be assigned and therefore the NFT create can succeed
-        if can_assign_ticker:
-            assert(can_assign_ticker == ticker)
-            self.put_ticker_data(mint_info['id'], can_assign_ticker)
-        else: 
-            # Fail the attempt to create NFT because the ticker cannot be assigned when it was requested
-            return False, None
-        
-        self.logger.info(f'validate_and_create_ft: ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
-
+        self.logger.info(f'validate_and_create_ft: tx_hash={hash_to_hex_str(tx_hash)}')
         tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
             self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
-        
         subtype = mint_info['subtype']
-        self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, ticker={ticker}, tx_hash={hash_to_hex_str(tx_hash)}')
-        return True, mint_info['$ticker']
+        self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
+        return True
 
+    def get_tx_num_from_tx_hash(self, tx_hash):
+        tx_hash_num_val = self.general_data_cache.get(b'tx' + tx_hash)
+        if tx_hash_num_val:
+            unpacked_value, = unpack_le_uint64(tx_hash_num_val)
+            return unpacked_value
+        return self.db.get_tx_num_from_tx_hash(tx_hash)
+
+    def create_realm_entry_if_requested(self, mint_info):
+        if is_valid_realm_string_name(mint_info.get('$requested_realm')):
+            self.put_realm_data(mint_info['id'], mint_info.get('$requested_realm'), mint_info['mint_tx_num'])
+    
+    def create_subrealm_entry_if_requested(self, mint_info): 
+        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$requested_subrealm')):
+            parent_realm_id = mint_info['$parent_realm_id']
+            self.put_subrealm_data(mint_info['id'], mint_info.get('$requested_subrealm'), parent_realm_id, mint_info['mint_tx_num'])
+
+    def create_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$requested_container')):
+            self.put_container_data(mint_info['id'], mint_info.get('$requested_container'), mint_info['mint_tx_num'])
+    
+    def create_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string(mint_info.get('$requested_ticker')):
+            self.put_ticker_data(mint_info['id'], mint_info.get('$requested_ticker'), mint_info['mint_tx_num'])
+
+    def delete_realm_entry_if_requested(self, mint_info):
+        if is_valid_realm_string_name(mint_info.get('$requested_realm')):
+            self.delete_realm_data(mint_info['id'], mint_info.get('$requested_realm'), mint_info['mint_tx_num'])
+    
+    def delete_subrealm_entry_if_requested(self, mint_info):
+        if is_valid_subrealm_string_name(mint_info.get('$requested_subrealm')):
+            parent_realm_id = mint_info['$parent_realm_id']
+            self.delete_subrealm_data(mint_info['id'], mint_info.get('$requested_subrealm'), parent_realm_id, mint_info['mint_tx_num'])
+    
+    def delete_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string_name(mint_info.get('$requested_ticker')):
+            self.delete_ticker_data(mint_info['id'], mint_info.get('$requested_ticker'), mint_info['mint_tx_num'])
+
+    def delete_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$requested_container')):
+            self.delete_container_data(mint_info['id'], mint_info.get('$requested_container'), mint_info['mint_tx_num'])
+    
     # Check whether to create an atomical NFT/FT 
     # Validates the format of the detected input operation and then checks the correct extra data is valid
     # such as realm, container, ticker, etc. Only succeeds if the appropriate names can be assigned
     def create_atomical(self, operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash):
         if not operations_found_at_inputs:
-            return None, None, None, None, None
+            return None
         # Catch the strange case where there are no outputs
         if len(tx.outputs) == 0:
-            return None, None, None, None, None
+            return None
 
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
         valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
         if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
-            return None, None, None, None, None
+            return None
 
         # The atomical would always be created at the first output
         txout = tx.outputs[0]
@@ -962,42 +865,39 @@ class BlockProcessor:
         mint_info['height'] = height 
         mint_info['tx_num'] = tx_num 
 
+        # The prev tx number is the prev input being spent that creates the atomical
+        mint_tx_num = self.get_tx_num_from_tx_hash(mint['mint_hash'])
+        if not mint_tx_num:
+            raise IndexError(f'Indexer error retrieved null mint_tx_num')
+
+        from_fs_tx_hash, _height = self.db.fs_tx_hash(mint_tx_num)
+        if mint['mint_hash'] != from_fs_tx_hash:
+            raise IndexError(f'Indexer error retrieved fs tx_hash not same as mint_hash')
+        
+        # The mint tx num is used to determine precedence for names like tickers, realms, containers
+        mint_info['mint_tx_num'] = mint_tx_num 
+
         # Establish the Atomical id from the tx hash and the 0'th output index (since Atomicals can only be minted at the 0'th output)
         atomical_id = mint_info['id']
-        realm_created = None
-        subrealm_created = None
-        container_created = None 
-        ticker_created = None
         if valid_create_op_type == 'NFT':
-            is_created, realm, subrealm, container = self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash)
-            if not is_created:
+            if not self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
                 self.logger.info(f'Atomicals Create NFT validate_and_create_nft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
-                return None, None, None, None, None
-            if realm and mint_info['$realm'] != realm:
-                raise IndexError(f'Fatal logic error found invalid different $realm in mint')
-            if subrealm and mint_info['$subrealm'] != subrealm:
-                raise IndexError(f'Fatal logic error found invalid different $subrealm in mint')
-            if container and mint_info['$container'] != realm:
-                raise IndexError(f'Fatal logic error found invalid different $container in mint')
-            realm_created = realm
-            subrealm_created = subrealm
-            container_created = container
+                return None
+            self.create_realm_entry_if_requested(mint_info)
+            self.create_subrealm_entry_if_requested(mint_info)
+            self.create_container_entry_if_requested(mint_info)
         elif valid_create_op_type == 'FT':
             # Validate and create the FT, and also adding the $ticker property if it was requested in the params
             # Adds $ticker symbol to mint_info always or fails
-            is_created, ticker = self.validate_and_create_ft(mint_info, tx_hash)
-            if not is_created:
+            if not self.validate_and_create_ft(mint_info, tx_hash)
                 self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
-                return None, None, None, None, None
-            if not(ticker) or mint_info['$ticker'] != ticker:
-                raise IndexError(f'Fatal logic error found invalid $ticker in mint ft')
-            
+                return None
             # Add $max_supply informative property
             if mint_info['subtype'] == 'distributed':
                 mint_info['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints'] 
             else: 
                 mint_info['$max_supply'] = txout.value
-            ticker_created = ticker
+            self.create_ticker_entry_if_requested(mint_info)
         else: 
             raise IndexError(f'Fatal index error Create Invalid')
         
@@ -1011,7 +911,7 @@ class BlockProcessor:
         put_general_data(b'n' + atomical_count_numb, atomical_id)
         # Save the output script of the atomical to lookup at a future point
         put_general_data(b'po' + atomical_id, txout.pk_script)
-        return atomical_id, realm_created, subrealm_created, ticker_created, container_created
+        return atomical_id
 
     # Build a map of atomical id to the type, value, and input indexes
     # This information is used below to assess which inputs are of which type and therefore which outputs to color
@@ -1233,17 +1133,9 @@ class BlockProcessor:
                 put_utxo(tx_hash + to_le_uint32(idx), hashX + tx_numb + to_le_uint64(txout.value))
             
             # Create NFT/FT atomicals if it is defined in the tx
-            created_atomical_id, created_realm, created_subrealm, created_ticker, created_container = self.create_atomical(atomicals_operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash)
+            created_atomical_id = self.create_atomical(atomicals_operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash)
             if created_atomical_id:
                 atomical_num += 1
-                if created_ticker:
-                    ticker_num += 1
-                elif created_realm:
-                    realm_num += 1
-                elif created_subrealm:
-                    subrealm_num += 1
-                elif created_container:
-                    container_num += 1
                 # Double hash the created_atomical_id to add it to the history to leverage the existing history db for all operations involving the atomical
                 append_hashX(double_sha256(created_atomical_id))
                 self.logger.info(f'create_atomical:created_atomical_id - atomical_id={created_atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -1270,10 +1162,9 @@ class BlockProcessor:
             tx_num += 1
 
         self.db.history.add_unflushed(hashXs_by_tx, self.tx_count)
-        
+
         self.tx_count = tx_num
         self.db.tx_counts.append(tx_num)
-        
         self.atomical_count = atomical_num
         self.db.atomical_counts.append(atomical_num)
         
@@ -1367,56 +1258,38 @@ class BlockProcessor:
         self.db_deletes.append(b'i' + atomical_id + atomical_id)
 
     # Delete atomical mint data and any associated realms, subrealms, containers and tickers
-    def delete_atomical_mint_data_with_realms_container(self, tx_hash, tx, atomical_num, operations_found_at_inputs):
+    def delete_atomical_mint(self, tx_hash, tx, atomical_num, operations_found_at_inputs):
         was_mint_found = False
-        was_realm_type = False
-        was_subrealm_type = False
-        was_container_type = False 
-        was_fungible_type = False
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
         valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
         if not valid_create_op_type:
-            self.logger.info(f'delete_atomical_mint_data_with_realms_container not valid_create_op_type')
-            return False, False, False, False 
+            self.logger.info(f'delete_atomical_mint not valid_create_op_type')
+            return False
         if not valid_create_op_type == 'NFT' or not valid_create_op_type == 'FT':
             raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
+        
         atomical_id = mint_info['id']
+        
         # If it was an NFT
         if valid_create_op_type == 'NFT':
-            self.logger.info(f'delete_atomical_mint_data_with_realms_container - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            # If realm or container was specificed then it was only minted if the realm/container was created for the atomical
-            realm = mint_info.get('$realm', None)
-            subrealm = mint_info.get('$subrealm', None)
-            container = mint_info.get('$container', None)
-            parent_realm_id = mint_info.get('$parent_realm_id', None)
-            # Only consider it a mint if the realm was successfully deleted for the CURRENT atomical_id
-            if realm and self.delete_realm_data(atomical_id, realm):
-                was_realm_type = True
-                was_mint_found = True
-            elif subrealm and parent_realm_id and self.delete_subrealm_data(parent_realm_id, atomical_id, subrealm):
-                was_subrealm_type = True
-                was_mint_found = True
-            elif container and self.delete_container_data(atomical_id, container):
-                was_container_type = True
-                was_mint_found = True
+            self.logger.info(f'delete_atomical_mint - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            was_mint_found = True
+            self.delete_realm_entry_if_requested(mint_info)
+            self.delete_subrealm_entry_if_requested(mint_info)
+            self.delete_container_entry_if_requested(mint_info)
         # If it was an FT
         elif valid_create_op_type == 'FT': 
-            self.logger.info(f'delete_atomical_mint_data_with_realms_container FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            # Only consider it a mint if the ticker was successfully deleted for the CURRENT atomical_id
-            if self.delete_ticker_data(atomical_id, mint_info['$ticker']):
-                was_fungible_type = True
-                was_mint_found = True
-            else: 
-                raise IndexError(f'Could not delete ticker symbol, should never happen. Developer Error, IndexError {tx_hash}')
+            self.logger.info(f'delete_atomical_mint FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            self.delete_ticker_entry_if_requested(mint_info)
         else: 
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
             self.delete_atomical_mint_data(atomical_id, atomical_num)
 
-        self.logger.info(f'delete_atomical_mint_data_with_realms_container return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}, was_realm_type={was_realm_type}, was_subrealm_type={was_subrealm_type}, was_container_type={was_container_type}, was_fungible_type={was_fungible_type}')
-        return was_mint_found, was_realm_type, was_subrealm_type, was_container_type, was_fungible_type       
+        self.logger.info(f'delete_atomical_mint return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}')
+        return was_mint_found  
 
     # Get the price regex list for a subrealm atomical
     # Returns the most recent value sorted by height descending
@@ -1638,28 +1511,13 @@ class BlockProcessor:
 
             # Backup any Atomicals NFT, FT, or FTD mints
             operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
-            was_mint_found, was_realm_type, was_subrealm_type, was_container_type, was_fungible_type = self.delete_atomical_mint_data_with_realms_container(tx_hash, tx, atomical_num, operations_found_at_inputs)
+            was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, operations_found_at_inputs)
             if was_mint_found:
                 atomical_num -= 1
                 atomicals_minted += 1
-                if was_realm_type:
-                    realms_minted += 1
-                    realm_num -= 1
-                elif was_subrealm_type:
-                    subrealms_minted += 1
-                    subrealm_num -= 1
-                elif was_container_type:
-                    containers_minted += 1
-                    container_num -= 1
-                elif was_fungible_type:
-                    tickers_minted += 1
-                    ticker_num -= 1
-    
+               
             # If there were any distributed mint creation, then delete
-            dmint_create_found = self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
-            if dmint_create_found:
-                dmints_minted += 1
-                dmint_num -= 1
+            self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
 
             # Restore the inputs
             for txin in reversed(tx.inputs):

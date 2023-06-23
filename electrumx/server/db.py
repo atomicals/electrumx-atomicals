@@ -157,15 +157,15 @@ class DB:
         # Value: pk_script output
         # "maps arbitrary location to an output script. Useful for decoding what address/scripthash as the Atomicals"
         # ---
-        # Key: b'rlm' + name bytes
+        # Key: b'rlm' + name bytes + tx_num
         # Value: atomical_id bytes
         # "maps name to atomical id (NFT)"
         # ---
-        # Key: b'srlm' + parent_realm(atomical_id) + name
+        # Key: b'srlm' + parent_realm(atomical_id) + name + tx_num
         # Value: atomical_id bytes
         # "maps parent realm atomical id and sub-name to the atomical_id (NFT)"
         # ---
-        # Key: b'tick' + tick bytes
+        # Key: b'tick' + tick bytes + tx_num
         # Value: atomical_id bytes
         # "maps name to atomical id (FT)"
         # ---
@@ -1007,6 +1007,14 @@ class DB:
 
         return await run_in_thread(read_atomical_id)
  
+    def get_tx_num_from_tx_hash(self, tx_hash):
+        tx_hash_key = b'tx' + tx_hash
+        tx_hash_value = self.utxo_db.get(tx_hash_key)
+        if tx_hash_value:
+            unpacked_value, = unpack_le_uint64(tx_hash_value)
+            return unpacked_value
+        return None
+
     def get_realm(self, realm):
         realm_key = b'rlm' + realm
         realm_value = self.utxo_db.get(realm_key)
