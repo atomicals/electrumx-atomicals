@@ -881,7 +881,7 @@ class BlockProcessor:
         elif valid_create_op_type == 'FT':
             # Validate and create the FT, and also adding the $ticker property if it was requested in the params
             # Adds $ticker symbol to mint_info always or fails
-            if not self.validate_and_create_ft(mint_info, tx_hash)
+            if not self.validate_and_create_ft(mint_info, tx_hash):
                 self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None
             # Add $max_supply informative property
