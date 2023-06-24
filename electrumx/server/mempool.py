@@ -345,40 +345,15 @@ class MemPool:
                     return 
                 valid_create_op_type, mint_info = get_mint_info_op_factory(script_hashX, tx, operation_found_at_inputs)
                 self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool {hash_to_hex_str(tx_hash)}') 
-                # Lookup the txout will be imprinted with the atomical
-                expected_output_index = 0
-                txout = tx.outputs[expected_output_index]
-                scripthash = double_sha256(txout.pk_script)
-                hashX = script_hashX(txout.pk_script)
-                output_idx_le = pack_le_uint32(expected_output_index) 
-                input_idx_le = pack_le_uint32(0)
-                location = mint_info['first_location']
-                # Establish the atomical_id from the initial location
                 atomical_id = mint_info['id']
-                compact_atomical_id = location_id_bytes_to_compact(atomical_id)
                 atomicals_updates_map[atomical_id] = {
-                    'atomical_id': location_id_bytes_to_compact(atomical_id),
+                    'atomical_id':  atomical_id,
                     'atomical_number': -1,
                     'type': mint_info['type'],
                     'subtype': mint_info['subtype'],
-                    'location_info': [{
-                        'location': location_id_bytes_to_compact(location),
-                        'txid': hash_to_hex_str(tx_hash),
-                        'index': expected_output_index,
-                        'scripthash': hash_to_hex_str(scripthash),
-                        'scripthash_hex': scripthash.hex(),
-                        'value': txout.value,
-                        'script': txout.pk_script.hex(),
-                        'atomicals_at_location': [compact_atomical_id]
-                    }],
-                    'mint_info': mint_info,
-                    'state': {},
-                    'contract': {},
-                    'event': {},
-                    'history': {}
+                    'confirmed': False
                 }
-                atomicals_updates_map[atomical_id]['mint_info']['fields'] = check_unpack_field_data(operation_found_at_inputs['payload_bytes'])
- 
+
             for hash, raw_tx in zip(hashes, raw_txs):
                 # The daemon may have evicted the tx from its
                 # mempool or it may have gotten in a block

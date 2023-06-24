@@ -40,18 +40,18 @@ from collections.abc import Mapping
  
 # The maximum height difference between the commit and reveal transactions of any of the sub(realm) mints
 # This is needed to prevent front-running of realms. 
-MINT_REALM_COMMIT_REVEAL_DELAY_BLOCKS = 6 # ~1 hour
+MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS = 6 # ~1 hour
 # The maximum height difference between the reveal transaction of the winning subrealm claim and the blocks to pay the necessary fee to the parent realm
 # It is intentionally made longer since it may take some time for the purchaser to get the funds together
 MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS = 12 # ~2 hours
-# The crt history is when the value was set at height
-# The convention is that the data in b'modpath' only becomes valid exactly 24 blocks after the height
+
+# The convention is that the data in b'modpath' only becomes valid exactly 12 blocks after the height
 # The reason for this is that a price list cannot be changed with active transactions.
 # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
 # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
 # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
-# This is sufficient notice (about 4 hours) for apps to notice that the price list changed, and act accordingly.
-MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 24 # Magic number that requires a grace period of 24 blocks ~4 hours
+# This is sufficient notice (about 2 hours) for apps to notice that the price list changed, and act accordingly.
+MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 12 # Magic number that requires a grace period of 12 blocks ~2 hours
 
 def pad_bytes64(val):
     padlen = 64
@@ -79,10 +79,13 @@ def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomic
     # ... unless the 'x' extract operation is used to reassign the Atomical from the 1'st output to the 0'th output.
     # Allow the extract operation only from the 1'st input because it will place the atomical to the 0'th output
     # There should be a key in the dictionary with the key value being the Atomical id to move
-    extract_atomical = atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 1 and atomicals_operations_found['payload'].get(atomical_id)
+    extract_atomical = atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 0 and atomicals_operations_found['payload'].get(atomical_id)
+    # If it was an extract Atomical, then move it to the second position
+    if extract_atomical:
+        expected_output_index = 1
     # Never allow an NFT atomical to be burned accidentally by having insufficient number of outputs either
     # The expected output index will become the 0'th index if the 'x' extract operation was specified or there are insufficient outputs
-    if expected_output_index >= len(tx.outputs) or extract_atomical:
+    if expected_output_index >= len(tx.outputs):
         expected_output_index = 0
     return expected_output_index
 
@@ -203,22 +206,22 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
 # Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     # Builds the base mint information that's common to all minted Atomicals
-    def build_base_mint_info(mint_hash, mint_index, first_location_hash, first_location_index):
+    def build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index):
         # The first output is always imprinted
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
         output_idx_le = pack_le_uint32(expected_output_index) 
-        atomical_id = mint_hash + pack_le_uint32(mint_index)
-        location = first_location_hash + pack_le_uint32(first_location_index)
+        atomical_id = commit_txid + pack_le_uint32(mint_index)
+        location = first_location_txid + pack_le_uint32(first_location_index)
         value_sats = pack_le_uint64(txout.value)
         # Create the general mint information
         return {
             'id': atomical_id,
-            'mint_txid': hash_to_hex_str(mint_hash),
-            'mint_index': mint_index,
-            'location_txid': hash_to_hex_str(first_location_hash),
+            'commit_txid': hash_to_hex_str(commit_txid),
+            'commit_index': commit_index,
+            'location_txid': hash_to_hex_str(first_location_txid),
             'location_index': first_location_index,
             'location': location,
             'scripthash': scripthash,
@@ -250,13 +253,13 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     payload = op_found_struct['payload']
     payload_bytes = op_found_struct['payload_bytes']
     input_index = op_found_struct['input_index']
-    mint_hash = op_found_struct['mint_hash']
-    mint_index = op_found_struct['mint_index']
-    first_location_hash = op_found_struct['first_location_hash']
+    commit_txid = op_found_struct['commit_txid']
+    commit_index = op_found_struct['commit_index']
+    first_location_txid = op_found_struct['first_location_txid']
     first_location_index = op_found_struct['first_location_index']
 
     # Create the base mint information structure
-    mint_info = build_base_mint_info(mint_hash, mint_index, first_location_hash, first_location_index)
+    mint_info = build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index)
     if not populate_args_meta(mint_info, op_found_struct['payload']):
         return None, None
     ############################################
@@ -296,9 +299,9 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         mint_info['$requested_subrealm'] = subrealm
         # Save in the compact form to make it easier to understand for developers and users
         # It requires an extra step to convert, but it makes it easier to understand the format
-        mint_info['$parent_realm_id_compact'] = parent_realm_id
+        mint_info['$requested_parent_realm_id_compact'] = parent_realm_id
         # Decode the compact form and make it available in the mint info
-        mint_info['$parent_realm_id'] = compact_to_location_id_bytes(parent_realm_id)
+        mint_info['$requested_parent_realm_id'] = compact_to_location_id_bytes(parent_realm_id)
     ############################################
     #
     # Fungible Token (FT) Mint Operations
@@ -310,7 +313,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
-        mint_info['$ticker'] = ticker
+        mint_info['$requested_ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'distributed'
@@ -340,9 +343,18 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     
     if not mint_info:
         return None, None
- 
     return mint_info['type'], mint_info
     
+def convert_db_mint_info_to_rpc_mint_info_format(mint_info):
+    mint_info['atomical_id'] = location_id_bytes_to_compact(mint_info['atomical_id'])
+    mint_info['mint_info']['commit_txid'] = hash_to_hex_str(mint_info['mint_info']['commit_txid'])
+    mint_info['mint_info']['first_location_txid'] = hash_to_hex_str(mint_info['mint_info']['first_location_txid'])
+    mint_info['mint_info']['first_location_header'] = mint_info['mint_info']['first_location_header'].hex()
+    mint_info['mint_info']['first_location_blockhash'] = self.coin.header_hash(mint_info['first_location_header']).hex()
+    mint_info['mint_info']['scripthash'] = hash_to_hex_str(mint_info['mint_info']['scripthash'])
+    mint_info['mint_info']['script'] = mint_info['mint_info']['script'].hex()
+    return mint_info 
+
 # A valid ticker string must be at least 3 characters and max 10 with a-z0-9
 def is_valid_ticker_string(ticker):
     if not ticker:
@@ -460,15 +472,13 @@ def parse_operation_from_script(script, n):
             atom_op_decoded = 'nft'  # nft - Mint non-fungible token
         elif atom_op == "03646674":  
             atom_op_decoded = 'dft'  # dft - Deploy distributed mint fungible token starting point
-        elif atom_op == "03737562":  
-            atom_op_decoded = 'sub'  # sub - Issue subrealm
         elif atom_op == "036d6f64":  
             atom_op_decoded = 'mod'  # mod - Modify general state
         elif atom_op == "03657674": 
             atom_op_decoded = 'evt'  # evt - Message response/reply
         elif atom_op == "03646d74": 
             atom_op_decoded = 'dmt'  # dmt - Mint tokens of distributed mint type (dft)
-        
+    
         if atom_op_decoded:
             return atom_op_decoded, parse_atomicals_data_definition_operation(script, n + three_letter_op_len)
     
@@ -544,7 +554,6 @@ def parse_protocols_operations_from_witness_array(tx):
     txin_idx = 0
     for txinwitness in tx.witness:
         # All inputs are parsed but further upstream most operations will only function if placed in the 0'th input
-        # The exception is the 'x' extract operation which will only function correctly if placed in the 1'st input
         op_name, payload = parse_protocols_operations_from_witness_for_input(txinwitness)
         if not op_name:
             continue 
@@ -562,25 +571,22 @@ def parse_protocols_operations_from_witness_array(tx):
             # Return immediately at the first successful parse of the payload
             # It doesn't mean that it will be valid when processed, because most operations require the txin_idx=0 
             # Nonetheless we return it here and it can be checked uptstream
-
             # Special care must be taken that someone does not maliciously create an invalid CBOR/payload and then allows it to 'fall through'
-            # This is the reason that most mint operations require input_index=0
-            
+            # This is the reason that most mint operations require input_index=0 
             associated_txin = tx.inputs[txin_idx]
             prev_tx_hash = associated_txin.prev_hash
             prev_idx = associated_txin.prev_idx
-
             return {
                 'op': op_name,
                 'payload': decoded_object,
                 'payload_bytes': payload,
                 'input_index': txin_idx,
-                'mint_hash': prev_tx_hash,
-                'mint_index': prev_idx,
-                'first_location_hash': tx.hash,
+                'commit_txid': prev_tx_hash,
+                'commit_index': prev_idx,
+                'first_location_txid': tx.hash,
                 'first_location_index': 0 # Always assume the first output is the first location
-
             }
+
         txin_idx = txin_idx + 1
     return None
 

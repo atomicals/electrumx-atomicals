@@ -455,31 +455,35 @@ class DB:
         # ticker data adds
         batch_put = batch.put
         for key, v in flush_data.ticker_adds.items():
-            batch_put(b'tick' + key, v)
-          
+            for tx_num, atomical_id in v.items():
+                batch_put(b'tick' + key + pack_le_uint64(tx_num), atomical_id)
+
         flush_data.ticker_adds.clear()
 
-        # Realm data adds
+        # realm data adds
         batch_put = batch.put
         for key, v in flush_data.realm_adds.items():
-            batch_put(b'rlm' + key, v)
+            for tx_num, atomical_id in v.items():
+                batch_put(b'rlm' + key + pack_le_uint64(tx_num), atomical_id)
 
         flush_data.realm_adds.clear()
 
-        # Sub-Realm data adds
+        # container data adds
+        batch_put = batch.put
+        for key, v in flush_data.container_adds.items():
+            for tx_num, atomical_id in v.items():
+                batch_put(b'co' + key + pack_le_uint64(tx_num), atomical_id)
+
+        flush_data.container_adds.clear()
+
+        # sub-realm data adds
         # the key is the parent atomical id and the sub realm name
         batch_put = batch.put
         for key, v in flush_data.subrealm_adds.items():
-            batch_put(b'srlm' + key, v)
+            for tx_num, atomical_id_suffix in v.items():
+                batch_put(b'srlm' + key + pack_le_uint64(tx_num), atomical_id_suffix)
 
         flush_data.subrealm_adds.clear()
-
-        # Collection data adds
-        batch_put = batch.put
-        for key, v in flush_data.container_adds.items():
-            batch_put(b'co' + key, v)
-
-        flush_data.container_adds.clear()
 
         # New UTXOs
         batch_put = batch.put
@@ -1029,9 +1033,43 @@ class DB:
             })
         entries.sort(key=lambda x: x.tx_num)
         if len(entries) > 0:
-            return entries[0]['atomical_id']
-        return None
+            return entries[0]['atomical_id'], entries
+        return None, []
  
+    # Returns the valid container and atomical by the earliest valid registration
+    def get_effective_container(self, container):
+        container_key_prefix = b'co' + container
+        entries = []
+        for container_key, container_value in self.utxo_db.iterator(prefix=container_key_prefix):
+            tx_numb = container_key[:-8]
+            atomical_id = container_value
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id'], entries
+        return None, []
+
+    # Returns the valid ticker and atomical by the earliest valid registration
+    def get_effective_ticker(self, ticker):
+        ticker_key_prefix = b'tick' + ticker
+        entries = []
+        for ticker_key, ticker_value in self.utxo_db.iterator(prefix=ticker_key_prefix):
+            tx_numb = ticker_key[:-8]
+            atomical_id = ticker_value
+            tx_num, = unpack_le_uint64(tx_numb)
+            entries.append({
+                'atomical_id': atomical_id,
+                'tx_num': tx_num
+            })
+        entries.sort(key=lambda x: x.tx_num)
+        if len(entries) > 0:
+            return entries[0]['atomical_id'], entries
+        return None, []
+
     # Returns the valid subrealm and atomical by the earliest valid registration
     def get_effective_subrealm(self, parent_atomical_id, subrealm):
         subrealm_key_prefix = b'srlm' + parent_atomical_id + subrealm
@@ -1050,42 +1088,8 @@ class DB:
         if len(entries) > 0:
             for entry in entries:
                 if entry['payment_tx_hash'] != b'0000000000000000000000000000000000000000000000000000000000000000':
-                    return entry['atomical_id']
-        return None
-
-    # Returns the valid container and atomical by the earliest valid registration
-    def get_effective_container(self, container):
-        container_key_prefix = b'co' + container
-        entries = []
-        for container_key, container_value in self.utxo_db.iterator(prefix=container_key_prefix):
-            tx_numb = container_key[:-8]
-            atomical_id = container_value
-            tx_num, = unpack_le_uint64(tx_numb)
-            entries.append({
-                'atomical_id': atomical_id,
-                'tx_num': tx_num
-            })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            return entries[0]['atomical_id']
-        return None
-
-    # Returns the valid ticker and atomical by the earliest valid registration
-    def get_effective_ticker(self, ticker):
-        ticker_key_prefix = b'tick' + ticker
-        entries = []
-        for ticker_key, ticker_value in self.utxo_db.iterator(prefix=ticker_key_prefix):
-            tx_numb = ticker_key[:-8]
-            atomical_id = ticker_value
-            tx_num, = unpack_le_uint64(tx_numb)
-            entries.append({
-                'atomical_id': atomical_id,
-                'tx_num': tx_num
-            })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            return entries[0]['atomical_id']
-        return None
+                    return entry['atomical_id'], entries
+        return None, []
 
     # Query all the contract crt properties and return them sorted descending by height
     def get_modpath_history(self, atomical_id, path_string):
@@ -1145,43 +1149,164 @@ class DB:
         else:
             return self.get_atomicals_by_location(location)
 
-    # Get the atomical details
-    async def get_by_atomical_id(self, atomical_id, verbose_mint_data = False):
-        '''Return all UTXOs for an address sorted in no particular order.'''
+    # Get the atomical details base info
+    def get_base_mint_info_by_atomical_id(self, atomical_id):
+        # Get Mint general info
+        atomical_mint_info_key = b'mi' + atomical_id
+        atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
+        if not atomical_mint_info_value:
+            return None
 
+        init_mint_info = pickle.loads(atomical_mint_info_value)
+        assert(mint_output_index == init_mint_info['index'])
+
+        # Get Atomical number and check match
+        atomical_number = init_mint_info['number']
+        atomical_number_key = b'n' + pack_be_uint64(atomical_number)
+        atomical_number_value = self.utxo_db.get(atomical_number_key)
+        if not atomical_number_value:
+            raise IndexError(f'atomical number not found. IndexError. {atomical_number}')
+        
+        assert(atomical_number_value == atomical_id)
+        assert(atomical_number_value == mint_tx_hash + pack_le_uint32(mint_output_index))
+        assert(mint_tx_hash == init_mint_info['first_location_txid'])
+        assert(mint_output_index == init_mint_info['first_location_index'])
+        assert(init_mint_info['number'] == atomical_number)
+
+        subtype = init_mint_info.get('subtype')
+        atomical = {
+            'atomical_id': atomical_id,
+            'atomical_number': atomical_number,
+            'type': init_mint_info['type'],
+            'subtype': subtype,
+            'mint_info': {
+                'commit_txid': init_mint_info['commit_txid'],
+                'commit_index': init_mint_info['commit_index'],
+                'commit_tx_num': init_mint_info['commit_tx_num'],
+                'commit_height': init_mint_info['commit_height'],
+                'first_location_txid': init_mint_info['first_location_txid'],
+                'first_location_index': init_mint_info['first_location_index'],
+                'first_location_tx_num': init_mint_info['first_location_tx_num'],
+                'first_location_height': init_mint_info['first_location_height'],
+                'first_location_header': init_mint_info['first_location_header'],
+                'first_location_blockhash': self.coin.header_hash(init_mint_info['first_location_header']),
+                'scripthash': init_mint_info['scripthash'],
+                'script': init_mint_info['script'],
+                'value': init_mint_info['value'],
+                'args': init_mint_info['args'],
+                'meta': init_mint_info['meta']
+            }
+        }
+
+        # Attach the type specific information
+        if atomical['type'] == 'NFT':
+            # Attach any auxillary information that was already successfully parsed before
+            requested_realm = init_mint_info['$requested_realm']
+            if requested_realm:
+                atomical['mint_info']['$requested_realm'] = requested_realm
+            
+            requested_subrealm = init_mint_info['$requested_subrealm']
+            if requested_subrealm:
+                atomical['mint_info']['$requested_subrealm'] = requested_subrealm
+                # The requested_parent_realm_id is known to be set
+                atomical['mint_info']['$requested_parent_realm_id'] = init_mint_info['$requested_parent_realm_id']
+                atomical['mint_info']['$requested_parent_realm_id_compact'] = init_mint_info['$requested_parent_realm_id_compact']
+
+            requested_ticker = init_mint_info['$requested_ticker']
+            if requested_ticker:
+                atomical['mint_info']['$requested_ticker'] = requested_ticker
+            
+            requested_container = init_mint_info['$requested_container']
+            if requested_container:
+                atomical['mint_info']['$requested_container'] = requested_container
+
+            self.populate_extended_nft_atomical_info(atomical)
+        elif atomical['type'] == 'FT':
+            subtype = init_mint_info.get('subtype')
+            if subtype == 'distributed':
+                atomical['$max_supply'] = init_mint_info['$max_supply']
+                atomical['$mint_height'] = init_mint_info['$mint_height']
+                atomical['$mint_amount'] = init_mint_info['$mint_amount']
+                atomical['$max_mints'] = init_mint_info['$max_mints']
+            else: 
+                atomical['$max_supply'] = init_mint_info['$max_supply']
+        return atomical
+
+    # Get the atomical details base info
+    async def get_base_mint_info_by_atomical_id_async(self, atomical_id):
         def read_atomical():
-            utxos = []
-            utxos_append = utxos.append
-            mint_tx_hash, mint_output_index = get_tx_hash_index_from_location_id(atomical_id)
-            # Get Mint data
-            atomical_mint_data_key = b'md' + atomical_id
-            db_mint_value = self.utxo_db.get(atomical_mint_data_key)
-            if not db_mint_value:
-                return None
-    
-            # Get Mint Info
-            atomical_mint_info_key = b'mi' + atomical_id
-            atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
-            if not atomical_mint_info_value:
-                self.logger.error(f'mi{atomical_id} mint info not found for get_by_atomical_id')
-                return None
-            mint_info = pickle.loads(atomical_mint_info_value)
-            assert(mint_output_index == mint_info['index'])
+            return get_base_mint_info_by_atomical_id(atomical_id)
+        return await run_in_thread(read_atomical)
 
-            location_info = []
-            atomical_active_location_key_prefix = b'a' + atomical_id
-            for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
-                if not atomical_active_location_value:
-                    self.logger.error(f'a{atomical_id.hex()} active location not found for get_by_atomical_id')
-                    # This can happen if the DB was updated between
-                    # getting the hashXs and getting the UTXOs
-                    return None
+    def populate_extended_fields_atomical_info(self, atomical_id, atomical):
+        # Get Mint data fields
+        atomical_mint_data_key = b'md' + atomical_id
+        db_mint_value = self.utxo_db.get(atomical_mint_data_key)
+        if db_mint_value:
+            unpacked_data_summary = check_unpack_field_data(db_mint_value)
+            atomical['mint_data'] = {}
+            if unpacked_data_summary != None:
+                atomical['mint_data']['fields'] = unpacked_data_summary
+            else: 
+                atomical['mint_data']['fields'] = {}
+        return atomical 
+
+    def populate_extended_nft_atomical_info(self, atomical):
+        requested_realm = atomical['mint_info'].get('$requested_realm')
+        if requested_realm: 
+            found_realm = self.db.get_effective_realm(requested_realm)
+            if found_realm:
+                assert(found_realm == requested_realm)
+                atomical['subtype'] = 'realm'
+                atomical['$realm'] = found_realm
+                atomical['$fullrealm'] = found_realm
+                return atomical
+        
+        requested_subrealm = atomical['mint_info'].get('$requested_subrealm')
+        if requested_subrealm: 
+            requested_parent_realm_id = atomical['mint_info']['$requested_parent_realm_id']
+            requested_parent_realm_id_compact = atomical['mint_info']['$requested_parent_realm_id_compact']
+            found_subrealm = self.db.get_effective_subrealm(requested_parent_realm_id, requested_subrealm)
+            if found_subrealm:
+                assert(found_subrealm == requested_subrealm)
+                atomical['subtype'] = 'subrealm'
+                atomical['$subrealm'] = found_subrealm
+                atomical['$parent_realm_id'] = requested_parent_realm_id.hex()
+                atomical['$parent_realm_id_compact'] = requested_parent_realm_id_compact
+                parent_realm = self.get_base_mint_info_by_atomical_id(requested_parent_realm_id)
+                if not parent_realm:
+                    atomical_id = atomical['mint_info']['id']
+                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {requested_parent_realm_id}')
+                atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + found_subrealm
+                return atomical
+
+        requested_container = atomical['mint_info'].get('$requested_container')
+        if requested_container: 
+            found_container = self.db.get_effective_container(requested_container)
+            if found_container:
+                assert(found_container == requested_container)
+                atomical['subtype'] = 'container'
+                atomical['$container'] = found_container
+                return atomical
+
+        requested_ticker = atomical['mint_info'].get('$requested_ticker')
+        if requested_ticker: 
+            found_ticker = self.db.get_effective_ticker(requested_ticker)
+            if found_ticker:
+                assert(found_ticker == requested_ticker)
+                atomical['$ticker'] = found_ticker
+                return atomical
+        return atomical 
+
+    # Get the atomical details with location information added
+    async def populate_extended_location_atomical_info(self, atomical_id, atomical):
+        location_info = []
+        atomical_active_location_key_prefix = b'a' + atomical_id
+        for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
+            if atomical_active_location_value:
                 location = atomical_active_location_key[1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
                 atomical_output_script_key = b'po' + location
                 atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
-                if not atomical_output_script_value:
-                    self.logger.error(f'a{atomical_id.hex()} location {location.hex()} script not found for get_by_atomical_id')
-                    return None
                 location_script = atomical_output_script_value
                 location_tx_hash = location[ : 32]
                 atomical_location_idx, = unpack_le_uint32(location[ 32 : 36])
@@ -1193,113 +1318,65 @@ class DB:
                     'txid': hash_to_hex_str(location_tx_hash),
                     'index': atomical_location_idx,
                     'scripthash': hash_to_hex_str(location_scripthash),
-                    'scripthash_hex': location_scripthash.hex(),
                     'value': location_value,
                     'script': location_script.hex(),
                     'atomicals_at_location': atomicals_at_location
                 })
-            prefix = b'mod' + atomical_id
-            state_fields = {}
-            state_history = []
-            for db_state_key, db_state_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
-                # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
-                tx_numb = db_state_key[ 3 + ATOMICAL_ID_LEN : 3 + ATOMICAL_ID_LEN + TXNUM_LEN]
-                # Now lookup from the file system and add the padding
-                txnum_padding = bytes(8-TXNUM_LEN)
-                tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
-                state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
-                out_idx_packed = db_state_key[ 3 + ATOMICAL_ID_LEN + TXNUM_LEN: 3 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
-                out_idx = unpack_le_uint32(out_idx_packed)
-                state_entry = {'tx_num': tx_num_padded, 'height': state_height, 'txid': hash_to_hex_str(state_tx_hash), 'index': out_idx}
-                state_data = {}
-                state_entry['data'] = db_state_value
-                state_history.append(state_entry)
-
-            prefix = b'evt' + atomical_id
-            evt_history = []
-            for db_evt_key, db_evt_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
-                # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
-                tx_numb = db_evt_value[ 1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + TXNUM_LEN]
-                # Now lookup from the file system and add the padding
-                txnum_padding = bytes(8-TXNUM_LEN)
-                tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
-                evt_tx_hash, evt_height = self.fs_tx_hash(tx_num_padded)
-                out_idx_packed = db_evt_key[ 1 + ATOMICAL_ID_LEN + TXNUM_LEN: 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
-                out_idx = unpack_le_uint32(out_idx_packed)
-                evt_entry = {'tx_num': tx_num_padded, 'height': evt_height, 'txid': hash_to_hex_str(evt_tx_hash), 'index': out_idx}
-                state_data = {}
-                FIELD_START_IDX = 1 + ATOMICAL_ID_LEN + TXNUM_LEN + 1
-                field_name = db_evt_key[FIELD_START_IDX : ]
-                evt_entry['data'] = db_evt_value
-                state_history.append(evt_entry)
-
-            # Get Atomical number and check match
-            atomical_number = mint_info['number']
-            atomical_number_key = b'n' + pack_be_uint64(atomical_number)
-            atomical_number_value = self.utxo_db.get(atomical_number_key)
-            if not atomical_number_value:
-                self.logger.error(f'n{atomical_number} atomical number not found. IndexError.')
-                raise IndexError(f'n{atomical_number} atomical number not found. IndexError.')
-           
-            assert(atomical_number_value == atomical_id)
-            assert(atomical_number_value == mint_tx_hash + pack_le_uint32(mint_output_index))
-            assert(mint_output_index == mint_info['index'])
- 
-            subtype = mint_info.get('subtype')
-            atomical = {
-                'atomical_id': atomical_id,
-                'atomical_number': atomical_number,
-                'type': mint_info['type'],
-                'subtype': subtype,
-                'location_info': location_info,
-                'mint_info': {
-                    'txid':  hash_to_hex_str(mint_tx_hash),
-                    'index': mint_output_index,
-                    'blockheader': mint_info['header'].hex(),
-                    'blockhash': hash_to_hex_str(self.coin.header_hash(mint_info['header'])),
-                    'height': mint_info['height'],
-                    'scripthash': hash_to_hex_str(mint_info['scripthash']),
-                    'scripthash_hex': mint_info['scripthash'].hex(),
-                    'script': mint_info['script'].hex(),
-                    'value': mint_info['value'],
-                    'args': mint_info['args'],
-                    'meta': mint_info['meta']
-                },
-                'state': {
-                    'history': state_history
-                },
-                'event': {
-                    'history': evt_history
-                }
-            }
-            subrealm_mint_path = '/subrealm-mint'
-            crt_history = self.get_modpath_history(atomical_id, subrealm_mint_path)
-            if len(crt_history) > 0:
-                atomical[subrealm_mint_path] = {
-                    'history': crt_history
-                }
-
-            if atomical['type'] == 'FT':
-                mint_deferred = mint_info.get('$mint_deferred', False)
-                if mint_deferred:
-                    atomical['$mint_deferred'] = True
-                    atomical['$max_supply'] = mint_info['$max_supply']
-                    atomical['$mint_height'] = mint_info['$mint_height']
-                    atomical['$mint_amount'] = mint_info['$mint_amount']
-                    atomical['$max_mints'] = mint_info['$max_mints']
-                else: 
-                    atomical['$mint_deferred'] = False
-                    atomical['$max_supply'] = mint_info['$max_supply']
-
-            unpacked_data_summary = check_unpack_field_data(db_mint_value)
-            if unpacked_data_summary != None:
-                atomical['mint_info']['fields'] = unpacked_data_summary
-            else: 
-                atomical['mint_info']['fields'] = {}
-            return atomical
-        atomical = await run_in_thread(read_atomical)
+        atomical['location_info'] = location_info 
         return atomical
 
+    def populate_extended_mod_state_atomical_info(self, atomical_id, atomical):
+        prefix = b'mod' + atomical_id
+        history = []
+        for db_key, db_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
+            # Key: b'mod' + atomical_id + tx_num + out_idx
+            # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
+            tx_numb = db_key[ 3 + ATOMICAL_ID_LEN : 3 + ATOMICAL_ID_LEN + TXNUM_LEN]
+            # Now lookup from the file system and add the padding
+            txnum_padding = bytes(8-TXNUM_LEN)
+            tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
+            state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
+            out_idx_packed = db_key[ 3 + ATOMICAL_ID_LEN + TXNUM_LEN: 3 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
+            out_idx = unpack_le_uint32(out_idx_packed)
+            entry = {
+                'tx_num': tx_num_padded, 
+                'height': state_height, 
+                'txid': hash_to_hex_str(state_tx_hash), 
+                'index': out_idx,
+                'data': db_value.hex()
+            }
+            history.append(entry)
+        atomical['mod'] = {
+            'history': history
+        }
+        return atomical
+
+    def populate_extended_evt_state_atomical_info(self, atomical_id, atomical):
+        prefix = b'evt' + atomical_id
+        history = []
+        for db_key, db_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
+            # Key: b'evt' + atomical_id + tx_num + out_idx
+            # We obtain the tx number from big endian 64 bit and convert it to 64 bit little endian, with the TXNUM_LEN truncation
+            tx_numb = db_key[ 3 + ATOMICAL_ID_LEN : 3 + ATOMICAL_ID_LEN + TXNUM_LEN]
+            # Now lookup from the file system and add the padding
+            txnum_padding = bytes(8-TXNUM_LEN)
+            tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
+            state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
+            out_idx_packed = db_key[ 3 + ATOMICAL_ID_LEN + TXNUM_LEN: 3 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
+            out_idx = unpack_le_uint32(out_idx_packed)
+            entry = {
+                'tx_num': tx_num_padded, 
+                'height': state_height, 
+                'txid': hash_to_hex_str(state_tx_hash), 
+                'index': out_idx,
+                'data': db_value.hex()
+            }
+            history.append(entry)
+        atomical['evt'] = {
+            'history': history
+        }
+        return atomical
+ 
     async def get_atomicals_list(self, limit, offset, asc = False):
         if limit > 50:
             limit = 50

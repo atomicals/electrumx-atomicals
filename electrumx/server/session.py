@@ -31,7 +31,7 @@ from aiorpcx import (Event, JSONRPCAutoDetect, JSONRPCConnection,
 import electrumx
 import electrumx.lib.util as util
 from electrumx.lib.util import OldTaskGroup, unpack_le_uint64
-from electrumx.lib.util_atomicals import compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
+from electrumx.lib.util_atomicals import convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
 from electrumx.lib.hash import (HASHX_LEN, Base58Error, hash_to_hex_str,
                                 hex_str_to_hash, sha256, double_sha256)
 from electrumx.lib.merkle import MerkleCache
@@ -1190,189 +1190,53 @@ class ElectrumX(SessionBase):
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
-    async def atomical_id_get_location(self, compact_atomical_id):
-        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
-        if atomical == None:
-            # Check mempool
-            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
-            if atomical_in_mempool == None: 
-                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-        else:
-            confirmed = 1   
-        info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'type': atomical['type'],
-            'location_info': atomical['location_info']}
-        return info
-
-    async def atomical_id_get(self, compact_atomical_id):
+    async def atomical_id_get(self, compact_atomical_id, Verbose=False):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
+        atomical = await self.db.get_base_mint_info_by_atomical_id_async(atomical_id)
         if atomical == None:
             # Check mempool
             atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
             if atomical_in_mempool == None: 
                 raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-        else:
-            confirmed = 1    
-
-        if atomical == None: # This can happen if it was removed from the mempool beforing being committed to disk
-            raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-        else: 
-            print("atomical is not null")
-
-        blockheader = ''
-        spv = {}
-        if atomical['mint_info'].get('blockheader') != None:
-            blockheader = atomical['mint_info']['blockheader']
-            spv = await self.transaction_merkle(atomical['mint_info']['txid'], atomical['mint_info']['height'])
-
-        blockhash = ''
-        if atomical['mint_info'].get('blockhash') != None:
-            blockhash = atomical['mint_info']['blockhash']
+            return atomical_in_mempool
+        first_location_txid = atomical['mint_info']['first_location_txid']
+        convert_db_mint_info_to_rpc_mint_info_format(atomical)
+        if Verbose:
+            merkle = await self.transaction_merkle(first_location_txid, atomical['mint_info']['first_location_height'])
+            atomical['mint_info']['first_location_merkle'] = merkle 
         
-        height = 0
-        if atomical['mint_info'].get('height') != None:
-            height = atomical['mint_info']['height']
+        self.db.populate_extended_fields_atomical_info(atomical_id, atomical)
 
-        self.logger.info(atomical)
-        status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'type': atomical['type'],
-            'subtype': atomical['subtype'],
-            'mint_info': {
-                'txid': atomical['mint_info']['txid'],
-                'index': atomical['mint_info']['index'],
-                'blockheader': blockheader,
-                'blockhash': blockhash,
-                'height': height,
-                'merkle': spv,
-                'scripthash': atomical['mint_info']['scripthash'],
-                'script': atomical['mint_info']['script'],
-                'value': atomical['mint_info']['value'],
-                'fields': atomical['mint_info']['fields']
-            }}
-        realm = atomical['mint_info'].get('$realm', None)
-        subrealm = atomical['mint_info'].get('$subrealm', None)
-        ticker = atomical['mint_info'].get('$ticker', None)
-        collection = atomical['mint_info'].get('$container', None)
+        return atomical
 
-        self.logger.info(f'realm mint atomical {atomical}')
-        self.logger.info(f'realm set {realm}')
-        if realm: 
-            # status_info['mint_info']['$realm'] = realm
-            status_info['$realm'] = realm
-        if subrealm: 
-            # status_info['mint_info']['$subrealm'] = subrealm
-            status_info['$subrealm'] = subrealm
-            parent_realm_id = atomical['mint_info'].get('$parent_realm_id', None)
-            parent_realm_id_compact = atomical['mint_info'].get('$parent_realm_id_compact', None)
-            status_info['$parent_realm_id'] = parent_realm_id
-            status_info['$parent_realm_id_compact'] = parent_realm_id_compact
-        elif ticker: 
-            # status_info['mint_info']['$ticker'] = ticker
-            status_info['$ticker'] = ticker
-        elif collection: 
-            # status_info['mint_info']['$container'] = collection
-            status_info['$container'] = collection
-
-        return status_info
-
-    async def atomical_id_get_state(self, compact_atomical_id):
+    async def atomical_id_get_mod_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
-        if atomical == None:
-            # Check mempool
-            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
-            if atomical_in_mempool == None: 
-                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-            atomical.pop('mint_info', None)
-        else:
-            confirmed = 1    
+        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        self.db.populate_extended_mod_state_atomical_info(atomical_id, atomical)
+        return atomical
 
-        status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'state': atomical['state']}
-
-        return status_info
-
-    async def atomical_id_get_event(self, compact_atomical_id):
+    async def atomical_id_get_evt_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
-        if atomical == None:
-            # Check mempool
-            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
-            if atomical_in_mempool == None: 
-                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-            atomical.pop('mint_info', None)
-        else:
-            confirmed = 1    
-
-        info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'event': atomical['event']}
-
-        return info
-    
-    async def atomical_id_get_contract(self, compact_atomical_id):
+        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        self.db.populate_extended_evt_state_atomical_info(atomical_id, atomical)
+        return atomical
+ 
+    async def atomical_id_get_tx_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
-        if atomical == None:
-            # Check mempool
-            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
-            if atomical_in_mempool == None: 
-                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-            atomical.pop('mint_info', None)
-        else:
-            confirmed = 1    
-
-        info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'contract': atomical['contract']}
-
-        return info
-
-    async def atomical_id_get_history(self, compact_atomical_id):
-        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_by_atomical_id(atomical_id)
-        confirmed = 0
-        if atomical == None:
-            # Check mempool
-            atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
-            if atomical_in_mempool == None: 
-                raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
-            
-            atomical = atomical_in_mempool
-            atomical.pop('mint_info', None)
-        else:
-            confirmed = 1    
-
+        atomical = await self.atomical_id_get(atomical_id, Verbose)
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
-        status_info = {'atomical_id': compact_atomical_id,
-            'atomical_number': atomical['atomical_number'],
-            'type': atomical['type'],
-            'subtype': atomical['subtype'],
-            'history': history}
+        atomical['tx'] = {
+            'history': history
+        }
+        return atomical
 
-        return status_info
+    async def atomical_id_get_location(self, compact_atomical_id):
+        atomical_id = compact_to_location_id_bytes(compact_atomical_id)
+        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        self.db.populate_extended_location_atomical_info(atomical_id, atomical)
+        return atomical
 
     async def get_summary_info(self):
         return {
@@ -1436,26 +1300,22 @@ class ElectrumX(SessionBase):
         '''Return the list of atomicals order by reverse atomical number'''
         return await self.atomicals_list_get(offset, limit, asc)
 
-    async def atomicals_get_location(self, compact_atomical_id_or_atomical_number):
+    async def atomicals_get(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id, Verbose)} 
+
+    async def atomicals_get_location(self, compact_atomical_id_or_atomical_number, Verbose=False):
+        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id, Verbose)} 
  
-    async def atomicals_get(self, compact_atomical_id_or_atomical_number):
+    async def atomical_get_mod_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_mod_history(compact_atomical_id, Verbose)} 
 
-    async def atomicals_get_state(self, compact_atomical_id_or_atomical_number):
+    async def atomical_get_evt_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_evt_history(compact_atomical_id, Verbose)} 
 
-    async def atomicals_get_event(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event(compact_atomical_id)} 
-
-    async def atomicals_get_contract(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_contract(compact_atomical_id)} 
-    
     async def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
         if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
@@ -1467,7 +1327,7 @@ class ElectrumX(SessionBase):
             compact_atomical_id = location_id_bytes_to_compact(found_atomical_id)
         return compact_atomical_id
 
-    async def atomicals_get_history(self, compact_atomical_id_or_atomical_number):
+    async def atomicals_get_tx_history(self, compact_atomical_id_or_atomical_number):
         '''Return the history of an Atomical```
         atomical_id: the mint transaction hash + 'i'<index> of the atomical id
         verbose: to determine whether to print extended information
@@ -1477,7 +1337,7 @@ class ElectrumX(SessionBase):
             assert_atomical_id(compact_atomical_id)
         else:
             compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_history(compact_atomical_id)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_tx_history(compact_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
         found_atomical_id = await self.db.get_effective_ticker(ticker)
@@ -1503,7 +1363,7 @@ class ElectrumX(SessionBase):
             raise RPCError(BAD_REQUEST, f'unknown ticker: {ticker}')
         mint_info = self.session_mgr.bp.get_atomicals_id_mint_info(atomical_id)
         mint_atomical_id = mint_info['id']
-        if atomical_id != mint_atomical_id
+        if atomical_id != mint_atomical_id:
             raise RPCError(BAD_REQUEST, f'ticker atomical id mismatch: {mint_atomical_id}')
 
         response_struct = {
@@ -1948,7 +1808,6 @@ class ElectrumX(SessionBase):
 
     def set_request_handlers(self, ptuple):
         self.protocol_tuple = ptuple
-
         handlers = {
             'blockchain.block.header': self.block_header,
             'blockchain.block.headers': self.block_headers,
@@ -1965,10 +1824,9 @@ class ElectrumX(SessionBase):
             'blockchain.atomical.at_location': self.atomicals_at_location,
             'blockchain.atomical.get_location': self.atomicals_get_location,
             'blockchain.atomical.get': self.atomicals_get,
-            'blockchain.atomical.get_state': self.atomicals_get_state,
-            'blockchain.atomical.get_event': self.atomicals_get_event,
-            'blockchain.atomical.get_contract': self.atomicals_get_contract,
-            'blockchain.atomical.get_history': self.atomicals_get_history,
+            'blockchain.atomical.get_mod_history': self.atomical_id_get_mod_history,
+            'blockchain.atomical.get_evt_history': self.atomical_id_get_evt_history,
+            'blockchain.atomical.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomical.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomical.get_by_subrealm': self.atomicals_get_by_subrealm,
             'blockchain.atomical.get_by_ticker': self.atomicals_get_by_ticker,
@@ -1987,12 +1845,9 @@ class ElectrumX(SessionBase):
             'server.ping': self.ping,
             'server.version': self.server_version,
         }
-
         if ptuple >= (1, 4, 2):
             handlers['blockchain.scripthash.unsubscribe'] = self.scripthash_unsubscribe
-
         self.request_handlers = handlers
-
 
 class LocalRPC(SessionBase):
     '''A local TCP RPC server session.'''
