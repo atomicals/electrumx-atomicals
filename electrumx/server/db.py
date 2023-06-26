@@ -1201,24 +1201,24 @@ class DB:
         # Attach the type specific information
         if atomical['type'] == 'NFT':
             # Attach any auxillary information that was already successfully parsed before
-            requested_realm = init_mint_info['$requested_realm']
-            if requested_realm:
-                atomical['mint_info']['$requested_realm'] = requested_realm
+            request_realm = init_mint_info['$request_realm']
+            if request_realm:
+                atomical['mint_info']['$request_realm'] = request_realm
             
-            requested_subrealm = init_mint_info['$requested_subrealm']
-            if requested_subrealm:
-                atomical['mint_info']['$requested_subrealm'] = requested_subrealm
+            request_subrealm = init_mint_info['$request_subrealm']
+            if request_subrealm:
+                atomical['mint_info']['$request_subrealm'] = request_subrealm
                 # The requested_parent_realm_id is known to be set
                 atomical['mint_info']['$requested_parent_realm_id'] = init_mint_info['$requested_parent_realm_id']
                 atomical['mint_info']['$requested_parent_realm_id_compact'] = init_mint_info['$requested_parent_realm_id_compact']
 
-            requested_ticker = init_mint_info['$requested_ticker']
-            if requested_ticker:
-                atomical['mint_info']['$requested_ticker'] = requested_ticker
+            request_ticker = init_mint_info['$request_ticker']
+            if request_ticker:
+                atomical['mint_info']['$request_ticker'] = request_ticker
             
-            requested_container = init_mint_info['$requested_container']
-            if requested_container:
-                atomical['mint_info']['$requested_container'] = requested_container
+            request_container = init_mint_info['$request_container']
+            if request_container:
+                atomical['mint_info']['$request_container'] = request_container
 
             self.populate_extended_nft_atomical_info(atomical)
         elif atomical['type'] == 'FT':
@@ -1252,23 +1252,23 @@ class DB:
         return atomical 
 
     def populate_extended_nft_atomical_info(self, atomical):
-        requested_realm = atomical['mint_info'].get('$requested_realm')
-        if requested_realm: 
-            found_realm = self.db.get_effective_realm(requested_realm)
+        request_realm = atomical['mint_info'].get('$request_realm')
+        if request_realm: 
+            found_realm = self.db.get_effective_realm(request_realm)
             if found_realm:
-                assert(found_realm == requested_realm)
+                assert(found_realm == request_realm)
                 atomical['subtype'] = 'realm'
                 atomical['$realm'] = found_realm
                 atomical['$fullrealm'] = found_realm
                 return atomical
         
-        requested_subrealm = atomical['mint_info'].get('$requested_subrealm')
-        if requested_subrealm: 
+        request_subrealm = atomical['mint_info'].get('$request_subrealm')
+        if request_subrealm: 
             requested_parent_realm_id = atomical['mint_info']['$requested_parent_realm_id']
             requested_parent_realm_id_compact = atomical['mint_info']['$requested_parent_realm_id_compact']
-            found_subrealm = self.db.get_effective_subrealm(requested_parent_realm_id, requested_subrealm)
+            found_subrealm = self.db.get_effective_subrealm(requested_parent_realm_id, request_subrealm)
             if found_subrealm:
-                assert(found_subrealm == requested_subrealm)
+                assert(found_subrealm == request_subrealm)
                 atomical['subtype'] = 'subrealm'
                 atomical['$subrealm'] = found_subrealm
                 atomical['$parent_realm_id'] = requested_parent_realm_id.hex()
@@ -1280,20 +1280,20 @@ class DB:
                 atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + found_subrealm
                 return atomical
 
-        requested_container = atomical['mint_info'].get('$requested_container')
-        if requested_container: 
-            found_container = self.db.get_effective_container(requested_container)
+        request_container = atomical['mint_info'].get('$request_container')
+        if request_container: 
+            found_container = self.db.get_effective_container(request_container)
             if found_container:
-                assert(found_container == requested_container)
+                assert(found_container == request_container)
                 atomical['subtype'] = 'container'
                 atomical['$container'] = found_container
                 return atomical
 
-        requested_ticker = atomical['mint_info'].get('$requested_ticker')
-        if requested_ticker: 
-            found_ticker = self.db.get_effective_ticker(requested_ticker)
+        request_ticker = atomical['mint_info'].get('$request_ticker')
+        if request_ticker: 
+            found_ticker = self.db.get_effective_ticker(request_ticker)
             if found_ticker:
-                assert(found_ticker == requested_ticker)
+                assert(found_ticker == request_ticker)
                 atomical['$ticker'] = found_ticker
                 return atomical
         return atomical 

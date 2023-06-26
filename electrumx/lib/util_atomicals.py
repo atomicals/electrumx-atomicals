@@ -274,7 +274,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             return None, None
         if not is_valid_container_string_name(container):
             return None, None
-        mint_info['$requested_container'] = container
+        mint_info['$request_container'] = container
     elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
         realm = mint_info['args'].get('realm')
@@ -282,7 +282,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             return None, None
         if not is_valid_realm_string_name(realm):
             return None, None
-        mint_info['$requested_realm'] = realm
+        mint_info['$request_realm'] = realm
     elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
         subrealm = mint_info['args'].get('subrealm')
@@ -296,7 +296,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             return None, None
         if not is_compact_atomical_id(parent_realm_id):
             return None, None
-        mint_info['$requested_subrealm'] = subrealm
+        mint_info['$request_subrealm'] = subrealm
         # Save in the compact form to make it easier to understand for developers and users
         # It requires an extra step to convert, but it makes it easier to understand the format
         mint_info['$requested_parent_realm_id_compact'] = parent_realm_id
@@ -313,14 +313,14 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
-        mint_info['$requested_ticker'] = ticker
+        mint_info['$request_ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'distributed'
         ticker = mint_info['args'].get('tick', None)
         if not is_valid_ticker_string(ticker):
             return None, None
-        mint_info['$requested_ticker'] = ticker
+        mint_info['$request_ticker'] = ticker
         mint_height = mint_info['args'].get('height', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
             print(f'DFT mint has invalid mint_height height {tx.hash}, {mint_height}. Skipping...')

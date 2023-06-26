@@ -480,12 +480,9 @@ class BlockProcessor:
                 'atomical_number': result['number'],
                 'type': result['type']
             }
-
             # Todo fetch any containers, realms, subrealms or tickers for the utxo here...
-
             return basic_struct
         return result 
-
 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash): 
@@ -722,38 +719,38 @@ class BlockProcessor:
         return self.db.get_tx_num_from_tx_hash(tx_hash)
 
     def create_realm_entry_if_requested(self, mint_info):
-        if is_valid_realm_string_name(mint_info.get('$requested_realm')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$requested_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
+        if is_valid_realm_string_name(mint_info.get('$request_realm')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
 
     def create_subrealm_entry_if_requested(self, mint_info): 
-        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$requested_subrealm')):
+        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
             parent_realm_id = mint_info['$requested_parent_realm_id']
-            self.put_name_element_template(mint_info['id'], mint_info.get('$requested_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
             
     def create_container_entry_if_requested(self, mint_info):
-        if is_valid_container_string_name(mint_info.get('$requested_container')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$requested_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name)
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name)
     
     def create_ticker_entry_if_requested(self, mint_info):
-        if is_valid_ticker_string(mint_info.get('$requested_ticker')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$requested_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, is_valid_ticker_string_name)
+        if is_valid_ticker_string(mint_info.get('$request_ticker')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, is_valid_ticker_string_name)
 
     def delete_realm_entry_if_requested(self, mint_info):
-        if is_valid_realm_string_name(mint_info.get('$requested_realm')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$requested_realm'), mint_info['commit_tx_num'], self.realm_data_cache, b'rlm')
+        if is_valid_realm_string_name(mint_info.get('$request_realm')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, b'rlm')
     
     def delete_ticker_entry_if_requested(self, mint_info):
-        if is_valid_ticker_string_name(mint_info.get('$requested_ticker')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$requested_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, b'tick')
+        if is_valid_ticker_string_name(mint_info.get('$request_ticker')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, b'tick')
 
     def delete_container_entry_if_requested(self, mint_info):
-        if is_valid_container_string_name(mint_info.get('$requested_container')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$requested_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
     
     def delete_subrealm_entry_if_requested(self, mint_info):
-        if is_valid_subrealm_string_name(mint_info.get('$requested_subrealm')):
+        if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
             parent_realm_id = mint_info['$requested_parent_realm_id']
-            self.delete_name_element_template(mint_info['id'] + b'0000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$requested_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
+            self.delete_name_element_template(mint_info['id'] + b'0000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
   
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
