@@ -193,13 +193,13 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
     args = payload_data.get('args', {})
     if not isinstance(params, dict):
         return False, {}
-    ticker = params.get('tick', None)
+    ticker = params.get('mint_ticker', None)
     if is_valid_ticker_string(ticker):
         return True, {
             'payload': payload_data,
             'meta': metadata,
             'args': args,
-            '$ticker': ticker
+            '$mint_ticker': ticker
         }
     return False, {}
 
@@ -269,7 +269,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     ############################################
     if op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        container = mint_info['args'].get('container')
+        container = mint_info['args'].get('request_container')
         if not isinstance(container, str):
             return None, None
         if not is_valid_container_string_name(container):
@@ -277,7 +277,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         mint_info['$request_container'] = container
     elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        realm = mint_info['args'].get('realm')
+        realm = mint_info['args'].get('request_realm')
         if not isinstance(realm, str):
             return None, None
         if not is_valid_realm_string_name(realm):
@@ -285,7 +285,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         mint_info['$request_realm'] = realm
     elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        subrealm = mint_info['args'].get('subrealm')
+        subrealm = mint_info['args'].get('request_subrealm')
         if not isinstance(subrealm, str):
             return None, None
         if not is_valid_subrealm_string_name(subrealm):
@@ -299,9 +299,9 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         mint_info['$request_subrealm'] = subrealm
         # Save in the compact form to make it easier to understand for developers and users
         # It requires an extra step to convert, but it makes it easier to understand the format
-        mint_info['$requested_parent_realm_id_compact'] = parent_realm_id
+        mint_info['$pid_compact'] = parent_realm_id
         # Decode the compact form and make it available in the mint info
-        mint_info['$requested_parent_realm_id'] = compact_to_location_id_bytes(parent_realm_id)
+        mint_info['$pid'] = compact_to_location_id_bytes(parent_realm_id)
     ############################################
     #
     # Fungible Token (FT) Mint Operations
@@ -310,28 +310,28 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
     elif op_found_struct['op'] == 'ft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'base'
-        ticker = mint_info['args'].get('tick', None)
+        ticker = mint_info['args'].get('request_ticker', None)
         if not is_valid_ticker_string(ticker):
             return None, None
         mint_info['$request_ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'distributed'
-        ticker = mint_info['args'].get('tick', None)
+        ticker = mint_info['args'].get('request_ticker', None)
         if not is_valid_ticker_string(ticker):
             return None, None
         mint_info['$request_ticker'] = ticker
-        mint_height = mint_info['args'].get('height', None)
+        mint_height = mint_info['args'].get('mint_height', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
-            print(f'DFT mint has invalid mint_height height {tx.hash}, {mint_height}. Skipping...')
+            print(f'DFT mint has invalid mint_height {tx.hash}, {mint_height}. Skipping...')
             return None, None
-        mint_amount = mint_info['args'].get('amount', None)
+        mint_amount = mint_info['args'].get('mint_amount', None)
         if not isinstance(mint_amount, int) or mint_amount <= 0 or mint_amount > 10000000000:
-            print(f'DFT mint has invalid mint_amount amount {tx.hash}, {mint_amount}. Skipping...')
+            print(f'DFT mint has invalid mint_amount {tx.hash}, {mint_amount}. Skipping...')
             return None, None
-        max_mints = mint_info['args'].get('count', None)
+        max_mints = mint_info['args'].get('max_mints', None)
         if not isinstance(max_mints, int) or max_mints <= 0 or max_mints > 1000000:
-            print(f'DFT mint has invalid max_mints count {tx.hash}, {max_mints}. Skipping...')
+            print(f'DFT mint has invalid max_mints {tx.hash}, {max_mints}. Skipping...')
             return None, None
         # Do not mint because at least one is a zero
         if mint_amount <= 0 or max_mints <= 0:

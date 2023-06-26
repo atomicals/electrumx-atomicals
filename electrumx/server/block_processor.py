@@ -724,7 +724,7 @@ class BlockProcessor:
 
     def create_subrealm_entry_if_requested(self, mint_info): 
         if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
-            parent_realm_id = mint_info['$requested_parent_realm_id']
+            parent_realm_id = mint_info['$pid']
             self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
             
     def create_container_entry_if_requested(self, mint_info):
@@ -749,7 +749,7 @@ class BlockProcessor:
     
     def delete_subrealm_entry_if_requested(self, mint_info):
         if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
-            parent_realm_id = mint_info['$requested_parent_realm_id']
+            parent_realm_id = mint_info['$pid']
             self.delete_name_element_template(mint_info['id'] + b'0000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
   
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
@@ -800,8 +800,6 @@ class BlockProcessor:
                 self.create_subrealm_entry_if_requested(mint_info)
                 self.create_container_entry_if_requested(mint_info)
         elif valid_create_op_type == 'FT':
-            # Validate and create the FT, and also adding the $ticker property if it was requested in the params
-            # Adds $ticker symbol to mint_info always or fails
             if not self.validate_and_create_ft(mint_info, tx_hash):
                 self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None
@@ -908,7 +906,7 @@ class BlockProcessor:
                 self.apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height)
                 is_sealed = b'00'
                 # Only allow the NFT collection subtype to be sealed
-                if operations_found_at_inputs.get('op', None) == 'sl' and mint_info['type'] == 'NFT' and mint_info.get('subtype', None) == 'container' and operations_found_at_inputs.get('input_index', None) == 0:
+                if operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and mint_info.get('subtype') == 'container' and operations_found_at_inputs.get('input_index') == 0:
                     is_sealed = b'01'
                 self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + is_sealed)
             
@@ -962,7 +960,7 @@ class BlockProcessor:
             return None
 
         # get the potential dmt (distributed mint) atomical_id from the ticker given
-        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$ticker'], height)
+        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'], height)
         if not potential_dmt_atomical_id:
             self.logger.info(f'potential_dmt_atomical_id not found for dmt operation in {tx_hash}. Attempt was made for a non-existant ticker mint info. Ignoring...')
             return None 
@@ -980,8 +978,8 @@ class BlockProcessor:
         mint_ticker = mint_info_for_ticker['$ticker']
         mint_height = mint_info_for_ticker['$mint_height']
         
-        if mint_ticker != dmt_return_struct['$ticker']:
-            dmt_ticker = dmt_return_struct['$ticker']
+        if mint_ticker != dmt_return_struct['$mint_ticker']:
+            dmt_ticker = dmt_return_struct['$mint_ticker']
             raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
         
         if height < mint_height:
@@ -1194,10 +1192,10 @@ class BlockProcessor:
             return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, operations_found_at_inputs)
         if dmt_valid: 
-            ticker = dmt_return_struct['$ticker']
+            ticker = dmt_return_struct['$mint_ticker']
             self.logger.info(f'rollback_distmint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
             # get the potential dmt (distributed mint) atomical_id from the ticker given
-            potential_dmt_atomical_id = self.db.get_atomical_id_by_ticker(dmt_return_struct['$ticker'])
+            potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
             if potential_dmt_atomical_id:
                 self.logger.info(f'rollback_distmint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
                 output_index_packed = pack_le_uint32(idx)

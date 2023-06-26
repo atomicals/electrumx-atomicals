@@ -1208,9 +1208,9 @@ class DB:
             request_subrealm = init_mint_info['$request_subrealm']
             if request_subrealm:
                 atomical['mint_info']['$request_subrealm'] = request_subrealm
-                # The requested_parent_realm_id is known to be set
-                atomical['mint_info']['$requested_parent_realm_id'] = init_mint_info['$requested_parent_realm_id']
-                atomical['mint_info']['$requested_parent_realm_id_compact'] = init_mint_info['$requested_parent_realm_id_compact']
+                # The pid is known to be set
+                atomical['mint_info']['$pid'] = init_mint_info['$pid']
+                atomical['mint_info']['$pid_compact'] = init_mint_info['$pid_compact']
 
             request_ticker = init_mint_info['$request_ticker']
             if request_ticker:
@@ -1264,19 +1264,19 @@ class DB:
         
         request_subrealm = atomical['mint_info'].get('$request_subrealm')
         if request_subrealm: 
-            requested_parent_realm_id = atomical['mint_info']['$requested_parent_realm_id']
-            requested_parent_realm_id_compact = atomical['mint_info']['$requested_parent_realm_id_compact']
-            found_subrealm = self.db.get_effective_subrealm(requested_parent_realm_id, request_subrealm)
+            pid = atomical['mint_info']['$pid']
+            pid_compact = atomical['mint_info']['$pid_compact']
+            found_subrealm = self.db.get_effective_subrealm(pid, request_subrealm)
             if found_subrealm:
                 assert(found_subrealm == request_subrealm)
                 atomical['subtype'] = 'subrealm'
                 atomical['$subrealm'] = found_subrealm
-                atomical['$parent_realm_id'] = requested_parent_realm_id.hex()
-                atomical['$parent_realm_id_compact'] = requested_parent_realm_id_compact
-                parent_realm = self.get_base_mint_info_by_atomical_id(requested_parent_realm_id)
+                atomical['$pid'] = pid.hex()
+                atomical['$pid_compact'] = pid_compact
+                parent_realm = self.get_base_mint_info_by_atomical_id(pid)
                 if not parent_realm:
                     atomical_id = atomical['mint_info']['id']
-                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {requested_parent_realm_id}')
+                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
                 atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + found_subrealm
                 return atomical
 
