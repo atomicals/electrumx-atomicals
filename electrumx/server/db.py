@@ -1194,7 +1194,8 @@ class DB:
                 'script': init_mint_info['script'],
                 'value': init_mint_info['value'],
                 'args': init_mint_info['args'],
-                'meta': init_mint_info['meta']
+                'meta': init_mint_info['meta'],
+                'ctx': init_mint_info['ctx']
             }
         }
 

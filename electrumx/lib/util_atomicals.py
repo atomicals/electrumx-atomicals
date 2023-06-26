@@ -234,7 +234,7 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
             # 'height': height, 
             # 'tx_num': tx_num
         }
-       
+    
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
     # Enforces that both of these must be empty or a valid dictionary
     # This prevents a user from minting a big data blob into one of the fields
@@ -245,7 +245,11 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         args = op_found_payload.get('args', {})
         if not isinstance(args, dict):
             return False
+        ctx = op_found_payload.get('ctx', {})
+        if not isinstance(ctx, dict):
+            return False
         mint_info['args'] = args 
+        mint_info['ctx'] = ctx
         mint_info['meta'] = meta 
         return True
     
