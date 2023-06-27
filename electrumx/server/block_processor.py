@@ -486,7 +486,12 @@ class BlockProcessor:
 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
-  
+        i = 'todo'
+    
+    # Delete the subrealm payment
+    def delete_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+        i = 'todo'
+        
     # Save distributed mint infromation for the atomical
     # Mints are only stored if they are less than the max_mints amount
     def put_distmint_data(self, atomical_id, location_id, value): 
