@@ -486,7 +486,7 @@ class BlockProcessor:
 
     def get_expected_subrealm_payment_info(self, found_atomical_id):
 
-        i = 'todo'
+        return None, None, None 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
         i = 'todo'
