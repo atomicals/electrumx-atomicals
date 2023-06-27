@@ -916,9 +916,7 @@ class BlockProcessor:
             
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
-
-    todo refactor to use a pattern 
-
+    
     def get_effective_ticker(self, ticker, current_height):
         # Get the effective entries
         all_entries = []
