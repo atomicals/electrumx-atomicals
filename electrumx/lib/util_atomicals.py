@@ -513,6 +513,10 @@ def parse_operation_from_script(script, n):
     print(f'Invalid Atomicals Operation Code. Skipping... "{script[n : n + 4].hex()}"')
     return None, None
 
+def extract_subrealm_payment_opreturn(sc):
+
+    return None, None 
+    
 # Parses and detects valid Atomicals protocol operations in a witness script
 # Stops when it finds the first operation in the first input
 def parse_protocols_operations_from_witness_for_input(txinwitness):
