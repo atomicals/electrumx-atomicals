@@ -219,9 +219,9 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         # Create the general mint information
         return {
             'id': atomical_id,
-            'commit_txid': hash_to_hex_str(commit_txid),
+            'commit_txid': commit_txid,
             'commit_index': commit_index,
-            'location_txid': hash_to_hex_str(first_location_txid),
+            'location_txid': first_location_txid,
             'location_index': first_location_index,
             'location': location,
             'scripthash': scripthash,

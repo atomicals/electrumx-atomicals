@@ -119,11 +119,11 @@ class DB:
         # ---
         # Key: b'i' + location(tx_hash + txout_idx) + atomical_id(tx_hash + txout_idx)
         # Value: hashX + scripthash + value_sats
-        # "Map location to all the Atomicals located there. Permanently stored for every location even if spent."
+        # "map location to all the Atomicals which are located there. Permanently stored for every location even if spent."
         # ---
         # Key: b'a' + atomical_id(tx_hash + txout_idx) + location(tx_hash + txout_idx)
         # Value: hashX + scripthash + value_sats
-        # "Map Atomical ID to an unspent location. Used to located the NFT/FT Atomical UTXOs."
+        # "map atomical to an unspent location. Used to located the NFT/FT Atomical unspent UTXOs"
         # ---
         # Key: b'L' + block_height
         # Value: byte-concat list of (tx_hash + txout_idx + atomical_id(mint_tx_hash + mint_txout_idx) + hashX + scripthash + value_sats)
@@ -138,32 +138,36 @@ class DB:
         # "maps atomical_id to mint information such as block info"
         # ---
         # Key: b'n' + atomical_number (8 bytes integer)
-        # Value: Atomical_id
+        # Value: atomical_id
         # "maps atomical number to an atomical_id"
         # ---
         # Key: b'mod' + atomical_id + tx_num + out_idx
-        # Value: maps the atomical, transaction number and output that took the state
-        # "maps the atomical, transaction number and output for the general state"
-        # ---
-        # Key: b'evt' + atomical_id + tx_num + out_idx
-        # Value: maps the atomical, transaction number and output for the request/reply event operation
-        # "maps the atomical, transaction number and output for the event state"
+        # Value: payload data
+        # "maps the atomical, transaction number and output for the general mod state update data"
         # ---
         # Key: b'modpath' + atomical_id + path_padded + tx_num + out_idx + height
-        # Value: maps the atomical, transaction number and output for the mod 'subrealms' mint data rules
-        # "maps the atomical, transaction number and output for the subrealm mint data rules"
+        # Value: payload data
+        # "maps the atomical and path string (64 bytes padded) to a height and the payload data updated there"
+        # ---
+        # Key: b'evt' + atomical_id + tx_num + out_idx
+        # Value: payload data
+        # "maps the atomical, transaction number and output for the event data"
         # ---
         # Key: b'po' + tx_hash + tx_out_idx
         # Value: pk_script output
-        # "maps arbitrary location to an output script. Useful for decoding what address/scripthash as the Atomicals"
+        # "maps arbitrary location to an output script. Useful for decoding the address and script located at some output"
         # ---
-        # Key: b'rlm' + name bytes + tx_num
+        # Key: b'tx' + tx_hash
+        # Value: tx_num
+        # "maps tx_hash to the tx number as counted from the genesis block"
+        # ---
+        # Key: b'rlm' + name bytes + commit_tx_num
         # Value: atomical_id bytes
-        # "maps name to atomical id (NFT)"
+        # "maps top level realm name and commit tx number to atomical id"
         # ---
-        # Key: b'srlm' + parent_realm(atomical_id) + name + tx_num
+        # Key: b'srlm' + parent_realm(atomical_id) + name + commit_tx_num
         # Value: atomical_id bytes + payment_tx_hash (added only if payment is made)
-        # "maps parent realm atomical id and sub-name to the atomical_id (NFT)"
+        # "maps parent realm atomical id and sub-name and commit tx number to the atomical_id"
         # ---
         # Key: b'tick' + tick bytes + tx_num
         # Value: atomical_id bytes
@@ -172,10 +176,6 @@ class DB:
         # Key: b'gi' + atomical_id + location_id
         # Value: satoshis at the output 
         # "maps generated atomical mint and location to a value"
-        # ---
-        # Key: b'tx' + tx_hash
-        # Value: tx_num
-        # "maps tx_hash to the tx number as counted from the genesis block"
         self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
@@ -461,28 +461,30 @@ class DB:
         flush_data.ticker_adds.clear()
 
         # realm data adds
+        # Realms are grouped by realm name and distinguished by commit_tx_num
+        # The earliest commit_tx_num is the first-seen registration of the name
         batch_put = batch.put
         for key, v in flush_data.realm_adds.items():
-            for tx_num, atomical_id in v.items():
-                batch_put(b'rlm' + key + pack_le_uint64(tx_num), atomical_id)
-
+            for commit_tx_num, atomical_id in v.items():
+                batch_put(b'rlm' + key + pack_le_uint64(commit_tx_num), atomical_id)
         flush_data.realm_adds.clear()
 
         # container data adds
+        # Containers are grouped by container name and distinguished by commit_tx_num
+        # The earliest commit_tx_num is the first-seen registration of the name
         batch_put = batch.put
         for key, v in flush_data.container_adds.items():
             for tx_num, atomical_id in v.items():
                 batch_put(b'co' + key + pack_le_uint64(tx_num), atomical_id)
-
         flush_data.container_adds.clear()
 
-        # sub-realm data adds
-        # the key is the parent atomical id and the sub realm name
+        # subrealm data adds
+        # Subrealms are grouped by parent realm id and subrealm name and distinguished by commit_tx_num
+        # The earliest commit_tx_num is the first-seen registration of the name
         batch_put = batch.put
         for key, v in flush_data.subrealm_adds.items():
             for tx_num, atomical_id_suffix in v.items():
                 batch_put(b'srlm' + key + pack_le_uint64(tx_num), atomical_id_suffix)
-
         flush_data.subrealm_adds.clear()
 
         # New UTXOs
@@ -498,7 +500,8 @@ class DB:
             batch_put(b'u' + hashX + suffix, value_sats)
         flush_data.adds.clear()
         
-        # New atomicals UTXOs
+        # New atomicals location UTXOs
+        # Tracks the atomicals that passed through each location and maintains active unspent utxos
         batch_put = batch.put
         for location_key, atomical_map in flush_data.atomicals_adds.items():
             for atomical_id, value_with_tombstone in atomical_map.items():
@@ -514,6 +517,7 @@ class DB:
         flush_data.atomicals_adds.clear()
  
         # Distributed mint data adds
+        # Grouped by the atomical and locations. Maintains the global location of all initial mints of distributed ft tokens
         batch_put = batch.put
         for atomical_id_key, location_map in flush_data.distmint_adds.items():
             for location_id, value in location_map.items():
@@ -994,23 +998,25 @@ class DB:
         with self.utxo_db.write_batch() as batch:
             self.write_utxo_state(batch)
 
+    # Get the raw mint information for an atomical
     def get_atomical_mint_info_dump(self, atomical_id):
         mint_info_value_dump = self.utxo_db.get(b'mi' + atomical_id)
         if not mint_info_value_dump:
             raise IndexError(f'get_atomical_mint_info_dump {atomical_id.hex()} mint db record not found. Index error.')
         return mint_info_value_dump
- 
+    
+    # Resolve the atomical id for a given atomical number
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         def read_atomical_id():
             atomical_num_key = b'n' + pack_be_uint64(int(atomical_number))
             atomical_id_value = self.utxo_db.get(atomical_num_key)
             if not atomical_id_value:
-                self.logger.error(f'n{atomical_id_value} atomical id not found by atomical number')
+                self.logger.error(f'get_atomical_id_by_atomical_number {atomical_number} atomical number not found')
                 return None
             return atomical_id_value
-
         return await run_in_thread(read_atomical_id)
  
+    
     def get_tx_num_from_tx_hash(self, tx_hash):
         tx_hash_key = b'tx' + tx_hash
         tx_hash_value = self.utxo_db.get(tx_hash_key)
