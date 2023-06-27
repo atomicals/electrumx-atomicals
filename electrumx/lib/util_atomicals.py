@@ -213,7 +213,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         scripthash = double_sha256(txout.pk_script)
         hashX = script_hashX(txout.pk_script)
         output_idx_le = pack_le_uint32(expected_output_index) 
-        atomical_id = commit_txid + pack_le_uint32(mint_index)
+        atomical_id = commit_txid + pack_le_uint32(commit_index)
         location = first_location_txid + pack_le_uint32(first_location_index)
         value_sats = pack_le_uint64(txout.value)
         # Create the general mint information
