@@ -459,7 +459,7 @@ class BlockProcessor:
         return result 
     
     # Get basic atomical information in a format that can be attached to utxos in an RPC call
-    def get_atomicals_id_mint_info_basic_struct_for_evt(self, atomical_id):
+    def get_atomicals_id_mint_info_basic_struct(self, atomical_id):
         result = None
         self.logger.info('atomical_id')
         self.logger.info(atomical_id)
@@ -485,11 +485,8 @@ class BlockProcessor:
         return result 
 
     # Save the subrealm payment
-    def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash): 
-        # Todo
-        # Then also delete subrealm payment
-        i = 1
-
+    def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+  
     # Save distributed mint infromation for the atomical
     # Mints are only stored if they are less than the max_mints amount
     def put_distmint_data(self, atomical_id, location_id, value): 
@@ -1101,7 +1098,8 @@ class BlockProcessor:
                 # Double hash the atomical_id to add it to the history to leverage the existing history db for all operations involving the atomical
                 append_hashX(double_sha256(atomical_id))
             
-            #self.check_subrealm_payment_output(tx, height)
+            # Check if there were any payments for subrealms in thtx
+            self.check_subrealm_payment_output(tx, height)
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
@@ -1126,6 +1124,28 @@ class BlockProcessor:
         
         return undo_info, atomicals_undo_info
 
+    # Check for for output markers for a payment for a subrealm
+    # Same function is used for creating and rollback. Set Delete=True for rollback operation
+    def check_subrealm_payment_output(self, tx, height, Delete=False):
+        # Add the new UTXOs
+        found_atomical_id = None
+        for idx, txout in enumerate(tx.outputs):
+            found_atomical_id = extract_subrealm_payment_opreturn(txout.pk_script)
+            if found_atomical_id:
+                break
+        # Payment atomical id marker was found
+        if found_atomical_id:
+            # Get the details such as expected payment amount/output and which parent realm it was meant for
+            expected_payment_amount, expected_payment_output, parent_realm_id = self.get_expected_subrealm_payment_info(found_atomical_id)
+            if not expected_payment_amount:
+                return
+            for idx, txout in enumerate(tx.outputs):
+                if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
+                    if Delete:
+                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
+                    else: 
+                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
+                        
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
 
@@ -1478,13 +1498,16 @@ class BlockProcessor:
              # Delete the tx hash number
             self.db_deletes.append(b'tx' + tx_hash)
 
-            # Backup any Atomicals NFT, FT, or FTD mints
+            # Backup any Atomicals NFT, FT, or DFT mints
             operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
             was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, operations_found_at_inputs)
             if was_mint_found:
                 atomical_num -= 1
                 atomicals_minted += 1
-               
+            
+            # Rollback any subrealm payments
+            self.check_subrealm_payment_output(tx, height, True)
+
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
 
