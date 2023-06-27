@@ -729,10 +729,12 @@ class BlockProcessor:
             self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
 
     def create_subrealm_entry_if_requested(self, mint_info): 
-        if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
-            parent_realm_id = mint_info['$pid']
-            self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
-            
+        # todo
+        # if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
+        #   parent_realm_id = mint_info['$pid']
+        #   self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
+        return False 
+
     def create_container_entry_if_requested(self, mint_info):
         if is_valid_container_string_name(mint_info.get('$request_container')):
             self.put_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name)
