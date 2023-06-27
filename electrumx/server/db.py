@@ -1016,13 +1016,13 @@ class DB:
             return atomical_id_value
         return await run_in_thread(read_atomical_id)
  
-    
-    def get_tx_num_from_tx_hash(self, tx_hash):
+    def get_tx_num_height_from_tx_hash(self, tx_hash):
         tx_hash_key = b'tx' + tx_hash
         tx_hash_value = self.utxo_db.get(tx_hash_key)
         if tx_hash_value:
-            unpacked_value, = unpack_le_uint64(tx_hash_value)
-            return unpacked_value
+            unpacked_tx_num, = unpack_le_uint64(tx_hash_value[:8])
+            unpacked_height, = unpack_le_uint32(tx_hash_value[-4:])
+            return unpacked_tx_num, unpacked_height
         return None
 
     # Returns the valid realm and atomical by the earliest valid registration

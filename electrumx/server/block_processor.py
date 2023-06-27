@@ -716,12 +716,13 @@ class BlockProcessor:
         self.logger.info(f'Atomicals Create FT in Transaction {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
         return True
 
-    def get_tx_num_from_tx_hash(self, tx_hash):
-        tx_hash_num_val = self.general_data_cache.get(b'tx' + tx_hash)
-        if tx_hash_num_val:
-            unpacked_value, = unpack_le_uint64(tx_hash_num_val)
-            return unpacked_value
-        return self.db.get_tx_num_from_tx_hash(tx_hash)
+    def get_tx_num_height_from_tx_hash(self, tx_hash):
+        tx_hash_value = self.general_data_cache.get(b'tx' + tx_hash)
+        if tx_hash_value:
+            unpacked_tx_num, = unpack_le_uint64(tx_hash_value[:8])
+            unpacked_height, = unpack_le_uint32(tx_hash_value[-4:])
+            return unpacked_tx_num, unpacked_height
+        return self.db.get_tx_num_height_from_tx_hash(tx_hash)
 
     def create_realm_entry_if_requested(self, mint_info):
         if is_valid_realm_string_name(mint_info.get('$request_realm')):
@@ -781,19 +782,15 @@ class BlockProcessor:
         txout = tx.outputs[0]
 
         # The prev tx number is the prev input being spent that creates the atomical
-        commit_tx_num = self.get_tx_num_from_tx_hash(mint_info['commit_txid'])
+        commit_tx_num, commit_tx_height = self.get_tx_num_height_from_tx_hash(mint_info['commit_txid'])
         if not commit_tx_num:
             raise IndexError(f'Indexer error retrieved null commit_tx_num')
 
-        from_fs_tx_hash, commit_height = self.db.fs_tx_hash(commit_tx_num)
-        commit_tx_hash = mint_info['commit_txid']
-        if commit_tx_hash != from_fs_tx_hash:
-            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid {commit_tx_num} {from_fs_tx_hash} {commit_tx_hash}') 
         atomical_id = mint_info['id']
         mint_info['number'] = atomical_num 
         # The mint tx num is used to determine precedence for names like tickers, realms, containers
         mint_info['commit_tx_num'] = commit_tx_num 
-        mint_info['commit_height'] = commit_height 
+        mint_info['commit_height'] = commit_tx_height 
         mint_info['first_location_header'] = header 
         mint_info['first_location_height'] = height 
         mint_info['first_location_tx_num'] = tx_num 
@@ -1071,7 +1068,7 @@ class BlockProcessor:
                 txin_index = txin_index + 1
             
             # Save the tx number for the current tx
-            put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num))
+            put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num) + to_le_uint32(height))
 
             # Detect all protocol operations in the transaction witness inputs
             atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
