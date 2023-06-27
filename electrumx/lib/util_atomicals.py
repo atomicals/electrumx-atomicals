@@ -555,7 +555,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
     return None, None
 
 # Parses and detects the witness script array and detects the Atomicals operations
-def parse_protocols_operations_from_witness_array(tx):
+def parse_protocols_operations_from_witness_array(tx, tx_hash):
     '''Detect and parse all operations of atomicals across the witness input arrays (inputs 0 and 1) from a tx'''
     if not hasattr(tx, 'witness'):
         return {}
@@ -591,7 +591,7 @@ def parse_protocols_operations_from_witness_array(tx):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
-                'first_location_txid': tx.hash,
+                'first_location_txid': tx_hash,
                 'first_location_index': 0 # Always assume the first output is the first location
             }
 

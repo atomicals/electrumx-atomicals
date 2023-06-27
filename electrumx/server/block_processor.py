@@ -1071,7 +1071,7 @@ class BlockProcessor:
             put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num))
 
             # Detect all protocol operations in the transaction witness inputs
-            atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
+            atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
             if atomicals_operations_found_at_inputs:
                 size_payload = sys.getsizeof(atomicals_operations_found_at_inputs['payload_bytes'])
                 operation_found = atomicals_operations_found_at_inputs['op']
@@ -1507,7 +1507,7 @@ class BlockProcessor:
             self.db_deletes.append(b'tx' + tx_hash)
 
             # Backup any Atomicals NFT, FT, or DFT mints
-            operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx)
+            operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
             was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, operations_found_at_inputs)
             if was_mint_found:
                 atomical_num -= 1
