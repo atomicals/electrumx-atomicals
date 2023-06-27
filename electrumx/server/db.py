@@ -1393,7 +1393,6 @@ class DB:
                     break
             else:
                 search_starting_at_atomical_number = offset
-            
             # Generate up to limit number of keys to search
             list_of_keys = []
             for x in range(limit):
@@ -1416,7 +1415,6 @@ class DB:
                     # Once we do not find one, then we are done because there should be no more
                     break
             return atomical_ids
-
         return await run_in_thread(read_atomical_list)
  
     async def all_utxos(self, hashX):

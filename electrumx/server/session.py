@@ -1208,7 +1208,6 @@ class ElectrumX(SessionBase):
             atomical['mint_info']['first_location_merkle'] = merkle 
         
         self.db.populate_extended_fields_atomical_info(atomical_id, atomical)
-
         return atomical
 
     async def atomical_id_get_mod_history(self, compact_atomical_id, Verbose=False):

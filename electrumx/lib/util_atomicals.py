@@ -539,7 +539,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                     n += 1 
                     # Get the next if statement    
                     if op == OpCodes.OP_IF:
-                        # spr3 / atom
+                        # spr4 / atom
                         if "0473707234" == script[n : n + 5].hex():
                             found_operation_definition = True
                             # Parse to ensure it is in the right format

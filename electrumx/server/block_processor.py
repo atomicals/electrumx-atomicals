@@ -764,6 +764,7 @@ class BlockProcessor:
     # such as realm, container, ticker, etc. Only succeeds if the appropriate names can be assigned
     def create_atomical(self, operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash):
         if not operations_found_at_inputs:
+            self.logger.info(f'create_atomical not operations_found_at_inputs: {tx_hash}')
             return None
         # Catch the strange case where there are no outputs
         if len(tx.outputs) == 0:
@@ -773,6 +774,7 @@ class BlockProcessor:
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
         valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, tx_hash, operations_found_at_inputs)
         if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
+            self.logger.info(f'create_atomical not valid type: {tx_hash}')
             return None
 
         # The atomical would always be created at the first output
