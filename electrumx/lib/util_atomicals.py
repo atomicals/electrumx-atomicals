@@ -265,6 +265,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     # Create the base mint information structure
     mint_info = build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index)
     if not populate_args_meta(mint_info, op_found_struct['payload']):
+        print(f'get_mint_info_op_factory - not populate_args_meta {hash_to_hex_str(tx_hash)}')
         return None, None
     ############################################
     #
@@ -273,39 +274,24 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     ############################################
     if op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'NFT'
-        container = mint_info['args'].get('request_container')
-        if not isinstance(container, str):
-            return None, None
-        if not is_valid_container_string_name(container):
-            return None, None
-        mint_info['$request_container'] = container
-    elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
-        mint_info['type'] = 'NFT'
         realm = mint_info['args'].get('request_realm')
-        if not isinstance(realm, str):
-            return None, None
-        if not is_valid_realm_string_name(realm):
-            return None, None
-        mint_info['$request_realm'] = realm
-    elif op_found_struct['op'] == 'nft' and op_found_struct['input_index'] == 0:
-        mint_info['type'] = 'NFT'
         subrealm = mint_info['args'].get('request_subrealm')
-        if not isinstance(subrealm, str):
-            return None, None
-        if not is_valid_subrealm_string_name(subrealm):
-            return None, None
-        # The parent realm id is in a compact form string to make it easier for users and developers
-        parent_realm_id = mint_info['args'].get('pid')
-        if not isinstance(parent_realm_id, str):
-            return None, None
-        if not is_compact_atomical_id(parent_realm_id):
-            return None, None
-        mint_info['$request_subrealm'] = subrealm
-        # Save in the compact form to make it easier to understand for developers and users
-        # It requires an extra step to convert, but it makes it easier to understand the format
-        mint_info['$pid_compact'] = parent_realm_id
-        # Decode the compact form and make it available in the mint info
-        mint_info['$pid'] = compact_to_location_id_bytes(parent_realm_id)
+        container = mint_info['args'].get('request_container')
+        if isinstance(realm, str) and is_valid_realm_string_name(realm):
+            mint_info['$request_realm'] = realm
+        elif isinstance(subrealm, str) and is_valid_subrealm_string_name(subrealm):
+            # The parent realm id is in a compact form string to make it easier for users and developers
+            # Only store the details if the pid is also set correctly
+            parent_realm_id = mint_info['args'].get('pid')
+            if isinstance(parent_realm_id, str) and is_compact_atomical_id(parent_realm_id):
+                mint_info['$request_subrealm'] = subrealm
+                # Save in the compact form to make it easier to understand for developers and users
+                # It requires an extra step to convert, but it makes it easier to understand the format
+                mint_info['$pid_compact'] = parent_realm_id
+                # Decode the compact form and make it available in the mint info
+                mint_info['$pid'] = compact_to_location_id_bytes(parent_realm_id)
+        elif isinstance(container, str) and is_valid_container_string_name(container):
+            mint_info['$request_container'] = container
     ############################################
     #
     # Fungible Token (FT) Mint Operations

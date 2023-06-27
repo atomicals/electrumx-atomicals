@@ -764,7 +764,6 @@ class BlockProcessor:
     # such as realm, container, ticker, etc. Only succeeds if the appropriate names can be assigned
     def create_atomical(self, operations_found_at_inputs, atomicals_spent_at_inputs, header, height, tx_num, atomical_num, tx, tx_hash):
         if not operations_found_at_inputs:
-            self.logger.info(f'create_atomical not operations_found_at_inputs: {tx_hash}')
             return None
         # Catch the strange case where there are no outputs
         if len(tx.outputs) == 0:
@@ -781,12 +780,12 @@ class BlockProcessor:
         txout = tx.outputs[0]
 
         # The prev tx number is the prev input being spent that creates the atomical
-        commit_tx_num = self.get_tx_num_from_tx_hash(mint['commit_txid'])
+        commit_tx_num = self.get_tx_num_from_tx_hash(mint_info['commit_txid'])
         if not commit_tx_num:
             raise IndexError(f'Indexer error retrieved null commit_tx_num')
 
         from_fs_tx_hash, commit_height = self.db.fs_tx_hash(commit_tx_num)
-        if mint['commit_txid'] != from_fs_tx_hash:
+        if mint_info['commit_txid'] != from_fs_tx_hash:
             raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid') 
         atomical_id = mint_info['id']
         mint_info['number'] = atomical_num 
