@@ -788,7 +788,7 @@ class BlockProcessor:
         from_fs_tx_hash, commit_height = self.db.fs_tx_hash(commit_tx_num)
         commit_tx_hash = mint_info['commit_txid']
         if commit_tx_hash != from_fs_tx_hash:
-            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid {from_fs_tx_hash} {commit_tx_hash}') 
+            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid {commit_tx_num} {from_fs_tx_hash} {commit_tx_hash}') 
         atomical_id = mint_info['id']
         mint_info['number'] = atomical_num 
         # The mint tx num is used to determine precedence for names like tickers, realms, containers
