@@ -486,7 +486,7 @@ class BlockProcessor:
 
     def get_expected_subrealm_payment_info(self, found_atomical_id):
         return None, None, None 
-        
+
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
         i = 'todo'
@@ -786,8 +786,9 @@ class BlockProcessor:
             raise IndexError(f'Indexer error retrieved null commit_tx_num')
 
         from_fs_tx_hash, commit_height = self.db.fs_tx_hash(commit_tx_num)
-        if mint_info['commit_txid'] != from_fs_tx_hash:
-            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid') 
+        commit_tx_hash = mint_info['commit_txid']
+        if commit_tx_hash != from_fs_tx_hash:
+            raise IndexError(f'Indexer error retrieved fs tx_hash not same as commit_txid {from_fs_tx_hash} {commit_tx_hash}') 
         atomical_id = mint_info['id']
         mint_info['number'] = atomical_num 
         # The mint tx num is used to determine precedence for names like tickers, realms, containers
