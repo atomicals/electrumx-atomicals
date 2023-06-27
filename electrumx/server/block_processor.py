@@ -485,7 +485,6 @@ class BlockProcessor:
         return result 
 
     def get_expected_subrealm_payment_info(self, found_atomical_id):
-
         return None, None, None 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
@@ -772,7 +771,7 @@ class BlockProcessor:
 
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, tx_hash, operations_found_at_inputs)
         if not valid_create_op_type or (valid_create_op_type != 'NFT' and valid_create_op_type != 'FT'):
             return None
 
@@ -918,6 +917,8 @@ class BlockProcessor:
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
 
+    todo refactor to use a pattern 
+
     def get_effective_ticker(self, ticker, current_height):
         # Get the effective entries
         all_entries = []
@@ -980,9 +981,9 @@ class BlockProcessor:
 
         max_mints = mint_info_for_ticker['$max_mints']
         mint_amount = mint_info_for_ticker['$mint_amount']
-        mint_ticker = mint_info_for_ticker['$ticker']
         mint_height = mint_info_for_ticker['$mint_height']
-        
+        mint_ticker = mint_info_for_ticker['$ticker']
+
         if mint_ticker != dmt_return_struct['$mint_ticker']:
             dmt_ticker = dmt_return_struct['$mint_ticker']
             raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
@@ -1253,7 +1254,7 @@ class BlockProcessor:
         was_mint_found = False
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
-        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, operations_found_at_inputs)
+        valid_create_op_type, mint_info = get_mint_info_op_factory(self.coin.hashX_from_script, tx, tx_hash, operations_found_at_inputs)
         if not valid_create_op_type:
             self.logger.info(f'delete_atomical_mint not valid_create_op_type')
             return False

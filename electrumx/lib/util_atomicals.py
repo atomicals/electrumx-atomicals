@@ -204,7 +204,7 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
     return False, {}
 
 # Get the mint information structure if it's a valid mint event type
-def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
+def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     # Builds the base mint information that's common to all minted Atomicals
     def build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index):
         # The first output is always imprinted
@@ -327,19 +327,19 @@ def get_mint_info_op_factory(script_hashX, tx, op_found_struct):
         mint_info['$request_ticker'] = ticker
         mint_height = mint_info['args'].get('mint_height', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
-            print(f'DFT mint has invalid mint_height {tx.hash}, {mint_height}. Skipping...')
+            print(f'DFT mint has invalid mint_height {tx_hash}, {mint_height}. Skipping...')
             return None, None
         mint_amount = mint_info['args'].get('mint_amount', None)
         if not isinstance(mint_amount, int) or mint_amount <= 0 or mint_amount > 10000000000:
-            print(f'DFT mint has invalid mint_amount {tx.hash}, {mint_amount}. Skipping...')
+            print(f'DFT mint has invalid mint_amount {tx_hash}, {mint_amount}. Skipping...')
             return None, None
         max_mints = mint_info['args'].get('max_mints', None)
         if not isinstance(max_mints, int) or max_mints <= 0 or max_mints > 1000000:
-            print(f'DFT mint has invalid max_mints {tx.hash}, {max_mints}. Skipping...')
+            print(f'DFT mint has invalid max_mints {tx_hash}, {max_mints}. Skipping...')
             return None, None
         # Do not mint because at least one is a zero
         if mint_amount <= 0 or max_mints <= 0:
-            self.logger.info(f'FT mint has zero quantities {tx.hash}, {mint_amount}. Skipping...')
+            self.logger.info(f'FT mint has zero quantities {tx_hash}, {mint_amount}. Skipping...')
             return None, None
         mint_info['$mint_height'] = mint_height
         mint_info['$mint_amount'] = mint_amount
