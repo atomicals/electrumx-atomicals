@@ -694,7 +694,7 @@ class BlockProcessor:
     def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
             return False
-        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
@@ -706,7 +706,7 @@ class BlockProcessor:
     # Validate the parameters for a FT
     def validate_and_create_ft(self, mint_info, tx_hash):
         self.logger.info(f'validate_and_create_ft: tx_hash={hash_to_hex_str(tx_hash)}')
-        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
