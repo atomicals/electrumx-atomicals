@@ -1076,9 +1076,11 @@ class BlockProcessor:
                 size_payload = sys.getsizeof(atomicals_operations_found_at_inputs['payload_bytes'])
                 operation_found = atomicals_operations_found_at_inputs['op']
                 operation_input_index = atomicals_operations_found_at_inputs['input_index']
-                mint_hash = atomicals_operations_found_at_inputs['mint_hash']
-                mint_index = atomicals_operations_found_at_inputs['mint_index']
-                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, mint_hash={hash_to_hex_str(mint_hash)}, mint_index={mint_index}')
+                commit_txid = atomicals_operations_found_at_inputs['commit_txid']
+                commit_index = atomicals_operations_found_at_inputs['commit_index']
+                first_location_txid = atomicals_operations_found_at_inputs['first_location_txid']
+                first_location_index = atomicals_operations_found_at_inputs['first_location_index']
+                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, commit_txid={hash_to_hex_str(commit_txid)}, commit_index={commit_index}, first_location_txid={hash_to_hex_str(first_location_txid)}, first_location_index={first_location_index}')
 
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):
