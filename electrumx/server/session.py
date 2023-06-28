@@ -1187,9 +1187,11 @@ class ElectrumX(SessionBase):
                 for utxo in utxos
                 if (utxo.tx_hash, utxo.tx_pos) not in spends]
 
+    # Get atomical_id from an atomical inscription number
     async def get_atomical_id_by_atomical_number(self, atomical_number):
         return await self.db.get_atomical_id_by_atomical_number(atomical_number)
 
+    # Get atomicals base information from db or placeholder information if mint is still in the mempool and unconfirmed
     async def atomical_id_get(self, compact_atomical_id, Verbose=False):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''

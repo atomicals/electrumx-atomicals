@@ -594,17 +594,21 @@ def check_unpack_field_data(db_mint_value):
             for key, value in loaded_data.items():
                 fieldset[key] = {}
                 if value:
-                    if value.get('$ct', None) != None:
-                        if len(value['$ct']) < 256:
+                    if value.get('$ct'):
+                        if len(value['$ct']) <= 256:
                             fieldset[key]['content-type'] = value['$ct']
                         else:
                             fieldset[key]['content-type'] = 'invalid-content-type-too-long'
                     else: 
+                        fieldset[key]['name'] = key
                         fieldset[key]['content-type'] = 'application/json'
-                        serialized_object_size = sys.getsizeof(dumps(value))
+                        value_decoded_dump = dumps(value)
+                        serialized_object_size = sys.getsizeof(value_decoded_dump)
                         fieldset[key]['content-length'] = serialized_object_size
-                    if value.get('$d', None) != None:
-                        fieldset[key]['content-length'] = len(value['$d'])
+                        if serialized_object_size <= 1024:
+                            fieldset[key]['data'] = value_decoded_dump
+                    if value.get('$d'):
+                        fieldset[key]['content-length'] = sys.getsizeof(value['$d'])
                 else: 
                     # Empty value unparsed
                     fieldset[key] = {}
