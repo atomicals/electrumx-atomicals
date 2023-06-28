@@ -1135,7 +1135,6 @@ class BlockProcessor:
         
         return undo_info, atomicals_undo_info
 
-    
     # Check for for output markers for a payment for a subrealm
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
     def check_subrealm_payment_output(self, tx, height, Delete=False):
@@ -1147,12 +1146,16 @@ class BlockProcessor:
                 break
         # Payment atomical id marker was found
         if found_atomical_id:
-            # Get the details such as expected payment amount/output and which parent realm it was meant for
+            # Get the details such as expected payment amount/output and which parent realm it belongs to
             expected_payment_amount, expected_payment_output, parent_realm_id = self.get_expected_subrealm_payment_info(found_atomical_id)
+            # An expected payment amount might not be set if there is no valid subrealm minting rules, or something invalid was found
             if not expected_payment_amount:
                 return
+            # Valid subrealm minting rules were found, scan all the outputs to check for a match
             for idx, txout in enumerate(tx.outputs):
+                # Found the required payment amount and script
                 if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
+                    # Delete or create he record based on whether we are reorg rollback or creating new
                     if Delete:
                         self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
                     else: 
@@ -1239,8 +1242,8 @@ class BlockProcessor:
                 self.db_deletes.append(b'i' + location + potential_dmt_atomical_id)
     
     # Rollback atomical mint data
-    def delete_atomical_mint_data(self, atomical_id, atomical_num):
-        self.logger.info(f'delete_atomical_mint_data: atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
+    def delete_atomical_mint_data_info(self, atomical_id, atomical_num):
+        self.logger.info(f'delete_atomical_mint_data_info: atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
         self.db_deletes.append(b'md' + atomical_id)
         self.db_deletes.append(b'mi' + atomical_id)
         # Make sure to remove the atomical number
@@ -1284,40 +1287,38 @@ class BlockProcessor:
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
-            self.delete_atomical_mint_data(atomical_id, atomical_num)
+            self.delete_atomical_mint_data_info(atomical_id, atomical_num)
 
         self.logger.info(f'delete_atomical_mint return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}')
         return was_mint_found  
 
     # Get the price regex list for a subrealm atomical
     # Returns the most recent value sorted by height descending
-    def get_subrealm_regex_price_list_from_height(self, atomical_id, height):
-        subrealm_mint_path = '/subrealm-mint'
-        subrealm_mint_modpath_history = self.db.get_modpath_history(atomical_id, subrealm_mint_path)
-        # The crt history is when the value was set at height
-        # The conention is that the data in b'modpath' only becomes valid exactly 6 blocks after the height
+    def get_subrealm_regex_price_list_from_height(self, atomical_id, height, subrealm_mint_modpath_history):
+        # The modpath history is when the value was set at height for the given path
+        # The convention used for subrealm minting that the data in b'modpath' only becomes valid exactly MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS blocks after the height
         # The reason for this is that a price list cannot be changed with active transactions.
         # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
         # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
         # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
         # This is sufficient notice (about 1 hour) for apps to notice that the price list changed, and act accordingly.
-        for crt_item in subrealm_mint_modpath_history:
-            crt_valid_from = crt_item['height'] + MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
-            if height < crt_valid_from:
+        for modpath_item in subrealm_mint_modpath_history:
+            valid_from_height = modpath_item['height'] + MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
+            if height < valid_from_height:
                 continue
             # Found a valid subrealm_mint_path entry
             # Get the subrealm_mint_path for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
-            if not crt_item['payload'] or not isinstance(crt_item['payload'], dict):
+            if not modpath_item['payload'] or not isinstance(modpath_item['payload'], dict):
                 self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
 
-            mod_path = crt_item['payload'].get('path')
+            mod_path = modpath_item['payload'].get('path')
             if mod_path != subrealm_mint_path:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height subrealm-mint path not found atomical_id={atomical_id.hex()}')
                 continue
 
             # It is at least a dictionary
-            regexes = crt_item['payload'].get('prices', None)
+            regexes = modpath_item['payload'].get('prices', None)
             if not regexes:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height prices value not found atomical_id={atomical_id.hex()}')
                 continue
@@ -1369,7 +1370,9 @@ class BlockProcessor:
     # Recall that the 'modpath' (contract) values will take effect only after 6 blocks have passed after the height in
     # which the update 'modpath' operation was mined.
     def get_matched_price_point_for_subrealm_name_by_height(self, parent_atomical_id, proposed_subrealm_name, txout, height):
-        regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height)
+        subrealm_mint_path = '/subrealm-mint'
+        subrealm_mint_modpath_history = self.db.get_modpath_history(parent_atomical_id, subrealm_mint_path)
+        regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height, subrealm_mint_modpath_history)
         # Ensure there is a list of regex price list that is available for the atomical
         if not regex_price_point_list or len(regex_price_point_list) <= 0:
             self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')

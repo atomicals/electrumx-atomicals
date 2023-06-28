@@ -335,6 +335,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         return None, None
     return mint_info['type'], mint_info
     
+# Format the relevant byte fields in the mint raw data into strings to send on rpc calls well formatted
 def convert_db_mint_info_to_rpc_mint_info_format(mint_info):
     mint_info['atomical_id'] = location_id_bytes_to_compact(mint_info['atomical_id'])
     mint_info['mint_info']['commit_txid'] = hash_to_hex_str(mint_info['mint_info']['commit_txid'])
@@ -499,8 +500,8 @@ def parse_operation_from_script(script, n):
     print(f'Invalid Atomicals Operation Code. Skipping... "{script[n : n + 4].hex()}"')
     return None, None
 
+# todo: Not done yet
 def extract_subrealm_payment_opreturn(sc):
-
     return None, None 
     
 # Parses and detects valid Atomicals protocol operations in a witness script
