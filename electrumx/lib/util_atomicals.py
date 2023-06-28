@@ -221,13 +221,13 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'id': atomical_id,
             'commit_txid': commit_txid,
             'commit_index': commit_index,
-            'location_txid': first_location_txid,
-            'location_index': first_location_index,
-            'location': location,
-            'scripthash': scripthash,
-            'hashX': hashX,
-            'value': txout.value,
-            'script': txout.pk_script,
+            'first_location_txid': first_location_txid,
+            'first_location_index': first_location_index,
+            'first_location': location,
+            'first_location_scripthash': scripthash,
+            'first_location_hashX': hashX,
+            'first_location_value': txout.value,
+            'first_location_script': txout.pk_script,
             # The following fields will be added at a different level of processing
             # 'number': atomical_num,  
             # 'header': header, 
@@ -341,8 +341,8 @@ def convert_db_mint_info_to_rpc_mint_info_format(mint_info):
     mint_info['mint_info']['first_location_txid'] = hash_to_hex_str(mint_info['mint_info']['first_location_txid'])
     mint_info['mint_info']['first_location_header'] = mint_info['mint_info']['first_location_header'].hex()
     mint_info['mint_info']['first_location_blockhash'] = self.coin.header_hash(mint_info['first_location_header']).hex()
-    mint_info['mint_info']['scripthash'] = hash_to_hex_str(mint_info['mint_info']['scripthash'])
-    mint_info['mint_info']['script'] = mint_info['mint_info']['script'].hex()
+    mint_info['mint_info']['first_location_scripthash'] = hash_to_hex_str(mint_info['mint_info']['first_location_scripthash'])
+    mint_info['mint_info']['first_location_script'] = mint_info['mint_info']['first_location_script'].hex()
     return mint_info 
 
 # A valid ticker string must be at least 3 characters and max 10 with a-z0-9

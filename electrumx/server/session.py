@@ -1209,8 +1209,8 @@ class ElectrumX(SessionBase):
             merkle = await self.transaction_merkle(first_location_txid, atomical['mint_info']['first_location_height'])
             atomical['mint_info']['first_location_merkle'] = merkle 
         
-        self.db.populate_extended_fields_atomical_info(atomical_id, atomical)
-        self.logger.info(f'populate_extended_fields_atomical_info {atomical}')
+        self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
+        self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical
 
     async def atomical_id_get_mod_history(self, compact_atomical_id, Verbose=False):

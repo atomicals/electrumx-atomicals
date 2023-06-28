@@ -61,15 +61,34 @@ class FlushData:
     adds = attr.ib()  # type: Dict[bytes, bytes]  # txid+out_idx -> hashX+tx_num+value_sats
     deletes = attr.ib()  # type: List[bytes]  # b'h' db keys, and b'u' db keys, and Atomicals and related keys
     tip = attr.ib()
-    atomical_count = attr.ib()
-    atomicals_undo_infos = attr.ib()  # type: List[Tuple[Sequence[bytes], int]]
-    atomicals_adds = attr.ib()  # type: Dict[bytes, bytes]  # b'a' + atomical_id(txid+out_idx) + location(txid+out_idx) -> hashX + scripthash + value_sats
-    general_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    ticker_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    realm_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    subrealm_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    container_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    distmint_adds = attr.ib()  # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
+    
+    # Atomicals specific cache flush data below:
+    # ------------------------------------------
+    # atomical_count of Atomicals operates exactly similarly to tx_count
+    atomical_count = attr.ib()          # Count of total Atomicals created
+    # atomicals_undo_infos operates exactly similarly to undo_infos and contains enough information to reconstruct all indexes on reorg rollback
+    atomicals_undo_infos = attr.ib()    # type: List[Tuple[Sequence[bytes], int]]
+    # atomicals_adds is used to track atomicals locations and unspent utxos with the b'i' and b'a' indexes
+    # It uses a field 'deleted' to indicate whether to write the b'a' (active unspent utxo) or not - because it may have been spent before the cache flushed
+    # Maps location_id to atomical_ids and the value/deleted entry
+    atomicals_adds = attr.ib()          # type: Dict[bytes, Dict[bytes, { value: bytes, deleted: Boolean}] ] 
+    # general_adds is a general purpose storage for key-value, used for the majority of atomicals data
+    general_adds = attr.ib()            # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
+    # realm_adds map realm names to commit_tx_num ints, which then map onto an atomical_id
+    # The purpose is to track the earliest appearance of a realm name claim request in the order of the commit tx number
+    realm_adds = attr.ib()              # type: Dict[bytes, Dict[int, bytes]
+    # container_adds map container names to commit_tx_num ints, which then map onto an atomical_id
+    # The purpose is to track the earliest appearance of a container name claim request in the order of the commit tx number
+    container_adds = attr.ib()          # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
+    # ticker_adds map ticker names to commit_tx_num ints, which then map onto an atomical_id
+    # The purpose is to track the earliest appearance of a ticker name claim request in the order of the commit tx number
+    ticker_adds = attr.ib()             # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
+    # subrealm_adds maps parent_realm_id + subrealm name to commit_tx_num ints, which then map onto an atomical_id+payment_outpoint
+    # When there is no valid payment, then the payment_outpoint is 36 null bytes zeroes
+    subrealm_adds = attr.ib()           # type: Dict[bytes, Dict[int, bytes]
+    # distmint_adds tracks the b'gi' which is the initial distributed mint location tracked to determine if any more mints are allowed
+    # It maps atomical_id (of the dft deploy token mint) to location_ids and then the details of the scripthash+value_sats of the mint        
+    distmint_adds = attr.ib()           # type: Dict[bytes, Dict[bytes, bytes]
     
 COMP_TXID_LEN = 4
 
@@ -117,6 +136,9 @@ class DB:
         # Value: byte-concat list of (hashX + tx_num + value_sats)
         # "undo data: list of UTXOs spent at block height"
         # ---
+
+        # Atomicals specific index below:
+        # ------------------------------------------
         # Key: b'i' + location(tx_hash + txout_idx) + atomical_id(tx_hash + txout_idx)
         # Value: hashX + scripthash + value_sats
         # "map location to all the Atomicals which are located there. Permanently stored for every location even if spent."
@@ -268,7 +290,7 @@ class DB:
         # Read TX counts (requires meta directory)
         await self._read_tx_counts()
 
-        # Read Atomicals number counts (requires meta directory)
+        # Read Atomicals counts (requires meta directory)
         await self._read_atomical_counts()
 
     async def open_for_compacting(self):
@@ -523,7 +545,6 @@ class DB:
             for location_id, value in location_map.items():
                 # the value is the format of: scripthash + value_sats
                 batch_put(b'gi' + atomical_id_key + location_id, value)
-
         flush_data.distmint_adds.clear()
 
         # New undo information
@@ -998,6 +1019,81 @@ class DB:
         with self.utxo_db.write_batch() as batch:
             self.write_utxo_state(batch)
 
+    async def all_utxos(self, hashX):
+        '''Return all UTXOs for an address sorted in no particular order.'''
+        def read_utxos():
+            utxos = []
+            utxos_append = utxos.append
+            txnum_padding = bytes(8-TXNUM_LEN)
+            # Key: b'u' + address_hashX + txout_idx + tx_num
+            # Value: the UTXO value as a 64-bit unsigned integer
+            prefix = b'u' + hashX
+            for db_key, db_value in self.utxo_db.iterator(prefix=prefix):
+                txout_idx, = unpack_le_uint32(db_key[-TXNUM_LEN-4:-TXNUM_LEN])
+                tx_num, = unpack_le_uint64(db_key[-TXNUM_LEN:] + txnum_padding)
+                value, = unpack_le_uint64(db_value)
+                tx_hash, height = self.fs_tx_hash(tx_num)
+                utxos_append(UTXO(tx_num, txout_idx, tx_hash, height, value))
+            return utxos
+
+        while True:
+            utxos = await run_in_thread(read_utxos)
+            if all(utxo.tx_hash is not None for utxo in utxos):
+                return utxos
+            self.logger.warning(f'all_utxos: tx hash not '
+                                f'found (reorg?), retrying...')
+            await sleep(0.25)
+ 
+    async def lookup_utxos(self, prevouts):
+        '''For each prevout, lookup it up in the DB and return a (hashX,
+        value) pair or None if not found.
+
+        Used by the mempool code.
+        '''
+        def lookup_hashXs():
+            '''Return (hashX, suffix) pairs, or None if not found,
+            for each prevout.
+            '''
+            def lookup_hashX(tx_hash, tx_idx):
+                idx_packed = pack_le_uint32(tx_idx)
+                txnum_padding = bytes(8-TXNUM_LEN)
+
+                # Key: b'h' + compressed_tx_hash + tx_idx + tx_num
+                # Value: hashX
+                prefix = b'h' + tx_hash[:COMP_TXID_LEN] + idx_packed
+
+                # Find which entry, if any, the TX_HASH matches.
+                for db_key, hashX in self.utxo_db.iterator(prefix=prefix):
+                    tx_num_packed = db_key[-TXNUM_LEN:]
+                    tx_num, = unpack_le_uint64(tx_num_packed + txnum_padding)
+                    hash, _height = self.fs_tx_hash(tx_num)
+                    if hash == tx_hash:
+                        return hashX, idx_packed + tx_num_packed
+                return None, None
+            return [lookup_hashX(*prevout) for prevout in prevouts]
+
+        def lookup_utxos(hashX_pairs):
+            def lookup_utxo(hashX, suffix):
+                if not hashX:
+                    # This can happen when the daemon is a block ahead
+                    # of us and has mempool txs spending outputs from
+                    # that new block
+                    return None
+                # Key: b'u' + address_hashX + tx_idx + tx_num
+                # Value: the UTXO value as a 64-bit unsigned integer
+                key = b'u' + hashX + suffix
+                db_value = self.utxo_db.get(key)
+                if not db_value:
+                    # This can happen if the DB was updated between
+                    # getting the hashXs and getting the UTXOs
+                    return None
+                value, = unpack_le_uint64(db_value)
+                return hashX, value
+            return [lookup_utxo(*hashX_pair) for hashX_pair in hashX_pairs]
+
+        hashX_pairs = await run_in_thread(lookup_hashXs)
+        return await run_in_thread(lookup_utxos, hashX_pairs)
+
     # Get the raw mint information for an atomical
     def get_atomical_mint_info_dump(self, atomical_id):
         mint_info_value_dump = self.utxo_db.get(b'mi' + atomical_id)
@@ -1156,6 +1252,8 @@ class DB:
             return self.get_atomicals_by_location(location)
 
     # Get the atomical details base info
+    # Does not retrieve the active b'a' locations in this method because there could be many thousands (in the case of FTs)
+    # Another method is provided to layer on the active location and gives the user control over whether to retrieve them
     def get_base_mint_info_by_atomical_id(self, atomical_id):
         # Get Mint general info
         atomical_mint_info_key = b'mi' + atomical_id
@@ -1179,12 +1277,10 @@ class DB:
         assert(mint_output_index == init_mint_info['first_location_index'])
         assert(init_mint_info['number'] == atomical_number)
 
-        subtype = init_mint_info.get('subtype')
         atomical = {
             'atomical_id': atomical_id,
             'atomical_number': atomical_number,
             'type': init_mint_info['type'],
-            'subtype': subtype,
             'mint_info': {
                 'commit_txid': init_mint_info['commit_txid'],
                 'commit_index': init_mint_info['commit_index'],
@@ -1196,9 +1292,9 @@ class DB:
                 'first_location_height': init_mint_info['first_location_height'],
                 'first_location_header': init_mint_info['first_location_header'],
                 'first_location_blockhash': self.coin.header_hash(init_mint_info['first_location_header']),
-                'scripthash': init_mint_info['scripthash'],
-                'script': init_mint_info['script'],
-                'value': init_mint_info['value'],
+                'first_location_scripthash': init_mint_info['first_location_scripthash'],
+                'first_location_script': init_mint_info['first_location_script'],
+                'first_location_value': init_mint_info['first_location_value'],
                 'args': init_mint_info['args'],
                 'meta': init_mint_info['meta'],
                 'ctx': init_mint_info['ctx']
@@ -1226,10 +1322,9 @@ class DB:
             request_container = init_mint_info['$request_container']
             if request_container:
                 atomical['mint_info']['$request_container'] = request_container
-
-            self.populate_extended_nft_atomical_info(atomical)
         elif atomical['type'] == 'FT':
             subtype = init_mint_info.get('subtype')
+            atomical['subtype'] = subtype
             if subtype == 'distributed':
                 atomical['$max_supply'] = init_mint_info['$max_supply']
                 atomical['$mint_height'] = init_mint_info['$mint_height']
@@ -1237,15 +1332,20 @@ class DB:
                 atomical['$max_mints'] = init_mint_info['$max_mints']
             else: 
                 atomical['$max_supply'] = init_mint_info['$max_supply']
+
+        # Resolve any name like details such as realms, subrealms, containers and tickers
+        self.populate_extended_atomical_subtype_info(atomical)
         return atomical
 
-    # Get the atomical details base info
+    # Get the atomical details base info async
     async def get_base_mint_info_by_atomical_id_async(self, atomical_id):
+        that = self
         def read_atomical():
-            return get_base_mint_info_by_atomical_id(atomical_id)
+            return that.get_base_mint_info_by_atomical_id(atomical_id)
         return await run_in_thread(read_atomical)
 
-    def populate_extended_fields_atomical_info(self, atomical_id, atomical):
+    # Populates a summary of the mint data fields for informational purposes
+    def populate_extended_field_summary_atomical_info(self, atomical_id, atomical):
         # Get Mint data fields
         atomical_mint_data_key = b'md' + atomical_id
         db_mint_value = self.utxo_db.get(atomical_mint_data_key)
@@ -1258,7 +1358,10 @@ class DB:
                 atomical['mint_data']['fields'] = {}
         return atomical 
 
-    def populate_extended_nft_atomical_info(self, atomical):
+    # Populate the subtype information such as realms, subrealms, containers and tickers
+    # An atomical can have a naming element if it passed all the validity checks of the assignment
+    # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
+    def populate_extended_atomical_subtype_info(self, atomical):
         request_realm = atomical['mint_info'].get('$request_realm')
         if request_realm: 
             found_realm = self.db.get_effective_realm(request_realm)
@@ -1306,6 +1409,9 @@ class DB:
         return atomical 
 
     # Get the atomical details with location information added
+    # In the case of NFTs, there will only be every 1 maximum active location
+    # In the case of FTs, there can be an unbounded nu mber of maximum active locations (one for each UTXO for all holders)
+    # This makees it easy to get all top holders and locations of the token to audit the supply
     async def populate_extended_location_atomical_info(self, atomical_id, atomical):
         location_info = []
         atomical_active_location_key_prefix = b'a' + atomical_id
@@ -1332,6 +1438,9 @@ class DB:
         atomical['location_info'] = location_info 
         return atomical
 
+    # Populate the mod(ify) state information for an Atomical.
+    # There could be potentially many updates for an Atomical and this should be called to enumerate the entire state history
+    # From the state history, clients can reconstruct the "latest state" of an Atomical dynamic data fields
     def populate_extended_mod_state_atomical_info(self, atomical_id, atomical):
         prefix = b'mod' + atomical_id
         history = []
@@ -1358,6 +1467,11 @@ class DB:
         }
         return atomical
 
+    # Populate the events data information for an Atomical.
+    # There could be potentially many events for an Atomical and this should be called to enumerate the entire event history
+    # From the event history, clients can play back all of the events emitted for an Atomical.
+    # This is very similar to the "mod" operation, but the semantics are different and follow an emit/event like pattern
+    # ...whereas the "mod" operation is intended to modify stable state.
     def populate_extended_evt_state_atomical_info(self, atomical_id, atomical):
         prefix = b'evt' + atomical_id
         history = []
@@ -1383,7 +1497,9 @@ class DB:
             'history': history
         }
         return atomical
- 
+    
+    # Retrieve the list feed of Atomicals in order
+    # Can be used to construct a "latest Atomicals mints" page and a feed of the global activity
     async def get_atomicals_list(self, limit, offset, asc = False):
         if limit > 50:
             limit = 50
@@ -1423,77 +1539,4 @@ class DB:
             return atomical_ids
         return await run_in_thread(read_atomical_list)
  
-    async def all_utxos(self, hashX):
-        '''Return all UTXOs for an address sorted in no particular order.'''
-        def read_utxos():
-            utxos = []
-            utxos_append = utxos.append
-            txnum_padding = bytes(8-TXNUM_LEN)
-            # Key: b'u' + address_hashX + txout_idx + tx_num
-            # Value: the UTXO value as a 64-bit unsigned integer
-            prefix = b'u' + hashX
-            for db_key, db_value in self.utxo_db.iterator(prefix=prefix):
-                txout_idx, = unpack_le_uint32(db_key[-TXNUM_LEN-4:-TXNUM_LEN])
-                tx_num, = unpack_le_uint64(db_key[-TXNUM_LEN:] + txnum_padding)
-                value, = unpack_le_uint64(db_value)
-                tx_hash, height = self.fs_tx_hash(tx_num)
-                utxos_append(UTXO(tx_num, txout_idx, tx_hash, height, value))
-            return utxos
-
-        while True:
-            utxos = await run_in_thread(read_utxos)
-            if all(utxo.tx_hash is not None for utxo in utxos):
-                return utxos
-            self.logger.warning(f'all_utxos: tx hash not '
-                                f'found (reorg?), retrying...')
-            await sleep(0.25)
- 
-    async def lookup_utxos(self, prevouts):
-        '''For each prevout, lookup it up in the DB and return a (hashX,
-        value) pair or None if not found.
-
-        Used by the mempool code.
-        '''
-        def lookup_hashXs():
-            '''Return (hashX, suffix) pairs, or None if not found,
-            for each prevout.
-            '''
-            def lookup_hashX(tx_hash, tx_idx):
-                idx_packed = pack_le_uint32(tx_idx)
-                txnum_padding = bytes(8-TXNUM_LEN)
-
-                # Key: b'h' + compressed_tx_hash + tx_idx + tx_num
-                # Value: hashX
-                prefix = b'h' + tx_hash[:COMP_TXID_LEN] + idx_packed
-
-                # Find which entry, if any, the TX_HASH matches.
-                for db_key, hashX in self.utxo_db.iterator(prefix=prefix):
-                    tx_num_packed = db_key[-TXNUM_LEN:]
-                    tx_num, = unpack_le_uint64(tx_num_packed + txnum_padding)
-                    hash, _height = self.fs_tx_hash(tx_num)
-                    if hash == tx_hash:
-                        return hashX, idx_packed + tx_num_packed
-                return None, None
-            return [lookup_hashX(*prevout) for prevout in prevouts]
-
-        def lookup_utxos(hashX_pairs):
-            def lookup_utxo(hashX, suffix):
-                if not hashX:
-                    # This can happen when the daemon is a block ahead
-                    # of us and has mempool txs spending outputs from
-                    # that new block
-                    return None
-                # Key: b'u' + address_hashX + tx_idx + tx_num
-                # Value: the UTXO value as a 64-bit unsigned integer
-                key = b'u' + hashX + suffix
-                db_value = self.utxo_db.get(key)
-                if not db_value:
-                    # This can happen if the DB was updated between
-                    # getting the hashXs and getting the UTXOs
-                    return None
-                value, = unpack_le_uint64(db_value)
-                return hashX, value
-            return [lookup_utxo(*hashX_pair) for hashX_pair in hashX_pairs]
-
-        hashX_pairs = await run_in_thread(lookup_hashXs)
-        return await run_in_thread(lookup_utxos, hashX_pairs)
+    

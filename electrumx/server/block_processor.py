@@ -698,7 +698,7 @@ class BlockProcessor:
         value_sats = pack_le_uint64(mint_info['value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
-        self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+        self.put_atomicals_utxo(mint_info['first_location'], mint_info['id'], mint_info['first_location_hashX'] + mint_info['first_location_scripthash'] + value_sats + is_sealed)
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create NFT in reveal tx {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
         return True
@@ -711,7 +711,7 @@ class BlockProcessor:
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
-            self.put_atomicals_utxo(mint_info['location'], mint_info['id'], mint_info['hashX'] + mint_info['scripthash'] + value_sats + is_sealed)
+            self.put_atomicals_utxo(mint_info['first_location_location'], mint_info['id'], mint_info['first_location_hashX'] + mint_info['first_location_scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
         self.logger.info(f'Atomicals Create FT in reveal tx {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
         return True
