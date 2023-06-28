@@ -1248,9 +1248,11 @@ class ElectrumX(SessionBase):
 
     async def atomicals_list_get(self, limit, offset, asc):
         atomicals = await self.db.get_atomicals_list(limit, offset, asc)
+        self.logger.info(f'atomicals_list_get {atomicals}')
         atomicals_populated = []
         for atomical_id in atomicals: 
             atomical = await self.atomical_id_get(location_id_bytes_to_compact(atomical_id))
+            self.logger.info(f'atomical_id {atomical_id}')
             atomicals_populated.append(atomical)
         return {'global': await self.get_summary_info(), 'result': atomicals_populated }
 
