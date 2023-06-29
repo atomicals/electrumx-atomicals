@@ -625,16 +625,6 @@ class BlockProcessor:
             name_data_cache[subject_enc] = {}
         name_data_cache[prefix_key + subject_enc][commit_tx_num] = atomical_id
 
-    # todo check for subrealm caching
-    # Save subrealm name to the cache that will be flushed to the db 
-    # def put_subrealm_data(self, atomical_id, subrealm, parent_atomical_id, commit_tx_num): 
-    #    self.logger.info(f'put_subrealm_data: atomical_id={atomical_id.hex()}, subrealm={subrealm}, parent_atomical_id={parent_atomical_id.hex()}, commit_tx_num={commit_tx_num}')
-    #    if not is_valid_subrealm_string_name(subrealm):
-    #        raise IndexError(f'Subrealm is_valid_subrealm_string_name invalid {subrealm}')
-    #    # Add on 32 null bytes to be the placeholder for the payment eventually
-    #    subrealm_key_enc = subrealm.encode() + pack_le_uint64(commit_tx_num)
-    #    self.subrealm_data_cache[parent_atomical_id + subrealm_key_enc] = atomical_id + b'0000000000000000000000000000000000000000000000000000000000000000'
-
     def delete_name_element_template(self, expected_entry_value, subject, commit_tx_num, name_data_cache, db_get_name_func, db_delete_prefix, prefix_key=b''): 
         subject_enc = subject.encode() 
         # Check if it's located in the cache first

@@ -1264,8 +1264,7 @@ class DB:
             return None
 
         init_mint_info = pickle.loads(atomical_mint_info_value)
-        assert(mint_output_index == init_mint_info['index'])
-
+        
         # Get Atomical number and check match
         atomical_number = init_mint_info['number']
         atomical_number_key = b'n' + pack_be_uint64(atomical_number)
