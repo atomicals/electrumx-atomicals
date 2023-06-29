@@ -487,7 +487,7 @@ class BlockProcessor:
             if isinstance(request_subrealm, str) and is_valid_subrealm_string_name(request_subrealm):
                 # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
                 # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
-                todo...
+                # todo...
     
                 # The parent realm id is in a compact form string to make it easier for users and developers
                 # Only store the details if the pid is also set correctly
