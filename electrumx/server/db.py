@@ -1512,9 +1512,11 @@ class DB:
                 prefix = b'n'
                 for atomical_number_key, atomical_id_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
                     search_starting_at_atomical_number, = unpack_be_uint64(atomical_number_key[ 1 : 1 + 8])
+                    self.logger.info(f'search_starting_at_atomical_number {search_starting_at_atomical_number}')
                     break
             else:
                 search_starting_at_atomical_number = offset
+            
             # Generate up to limit number of keys to search
             list_of_keys = []
             for x in range(limit):
@@ -1523,7 +1525,7 @@ class DB:
                     list_of_keys.append(current_key)
                 else:
                     # Do not go to 0 or below
-                    if search_starting_at_atomical_number - x <= 0:
+                    if search_starting_at_atomical_number - x < 0:
                         break 
                     current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number - x)
                     list_of_keys.append(current_key)
