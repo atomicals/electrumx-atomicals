@@ -505,8 +505,8 @@ def parse_operation_from_script(script, n):
     return None, None
 
 # Check for an 'atom' payment marker and return the potential atomical id being paid
-def is_unspendable_payment_marker_atomical_id(sc):
-    if not sc:
+def is_unspendable_payment_marker_atomical_id(script):
+    if not script:
         return None 
     
     # The output script is too short

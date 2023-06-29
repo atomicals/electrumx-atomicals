@@ -469,7 +469,7 @@ class BlockProcessor:
         }
 
     # Get the expected payment amount and destination for an atomical subrealm
-    def get_expected_subrealm_payment_info(self, found_atomical_id):
+    def get_expected_subrealm_payment_info(self, found_atomical_id, current_height):
         # Lookup the subrealm atomical to obtain the details of which subrealm parent it is for
         found_atomical_mint_info = self.get_atomicals_id_mint_info(found_atomical_id)
         if found_atomical_mint_info:
@@ -487,8 +487,10 @@ class BlockProcessor:
             if isinstance(request_subrealm, str) and is_valid_subrealm_string_name(request_subrealm):
                 # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
                 # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
-                # todo...
-    
+                if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info):
+                    # The first_location_height (mint/reveal height) is too old and this payment came in far too late
+                    # Ignore the payment therefore.
+                    return None
                 # The parent realm id is in a compact form string to make it easier for users and developers
                 # Only store the details if the pid is also set correctly
                 request_parent_realm_id_compact = mint_info['args'].get('pid')
@@ -790,10 +792,13 @@ class BlockProcessor:
     def delete_subrealm_entry_if_requested(self, mint_info):
         if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
             parent_realm_id = mint_info['$pid']
-            self.delete_name_element_template(mint_info['id'] + b'0000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
+            self.delete_name_element_template(mint_info['id'] + b'000000000000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
   
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
+
+    def is_within_acceptable_blocks_for_subrealm_payment(self, mint_info):
+        return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
 
     # Check whether to create an atomical NFT/FT 
     # Validates the format of the detected input operation and then checks the correct extra data is valid
@@ -1304,7 +1309,6 @@ class BlockProcessor:
         if valid_create_op_type == 'NFT':
             self.logger.info(f'delete_atomical_mint - NFT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
             was_mint_found = True
-
             if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
                 self.delete_realm_entry_if_requested(mint_info)
                 self.delete_subrealm_entry_if_requested(mint_info)

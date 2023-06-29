@@ -1173,6 +1173,8 @@ class DB:
         return None, []
 
     # Returns the valid subrealm and atomical by the earliest valid registration
+    # TODO: critical that we validate that if the payment is not made, then we get to the next entry
+    # If you see this message, then the LOGIC IS NOT DONE AND NOT VALIDATED. Verify and fix it!
     def get_effective_subrealm(self, parent_atomical_id, subrealm):
         subrealm_key_prefix = b'srlm' + parent_atomical_id + subrealm
         entries = []
@@ -1189,7 +1191,7 @@ class DB:
         entries.sort(key=lambda x: x.tx_num)
         if len(entries) > 0:
             for entry in entries:
-                if entry['payment_tx_hash'] != b'0000000000000000000000000000000000000000000000000000000000000000':
+                if entry['payment_tx_hash'] != b'000000000000000000000000000000000000000000000000000000000000000000000000':
                     return entry['atomical_id'], entries
         return None, []
 
