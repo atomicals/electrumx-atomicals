@@ -1312,8 +1312,8 @@ class DB:
             if request_subrealm:
                 atomical['mint_info']['$request_subrealm'] = request_subrealm
                 # The pid is known to be set
+                atomical['mint_info']['$pid_bytes'] = init_mint_info['$pid_bytes']
                 atomical['mint_info']['$pid'] = init_mint_info['$pid']
-                atomical['mint_info']['$pid_compact'] = init_mint_info['$pid_compact']
 
             request_ticker = init_mint_info['$request_ticker']
             if request_ticker:
@@ -1374,15 +1374,15 @@ class DB:
         
         request_subrealm = atomical['mint_info'].get('$request_subrealm')
         if request_subrealm: 
-            pid = atomical['mint_info']['$pid']
-            pid_compact = atomical['mint_info']['$pid_compact']
+            pid = atomical['mint_info']['$pid_bytes']
+            pid_compact = atomical['mint_info']['$pid']
             found_subrealm = self.db.get_effective_subrealm(pid, request_subrealm)
             if found_subrealm:
                 assert(found_subrealm == request_subrealm)
                 atomical['subtype'] = 'subrealm'
                 atomical['$subrealm'] = found_subrealm
-                atomical['$pid'] = pid.hex()
-                atomical['$pid_compact'] = pid_compact
+                atomical['$pid_bytes'] = pid_bytes.hex()
+                atomical['$pid'] = pid_compact
                 parent_realm = self.get_base_mint_info_by_atomical_id(pid)
                 if not parent_realm:
                     atomical_id = atomical['mint_info']['id']

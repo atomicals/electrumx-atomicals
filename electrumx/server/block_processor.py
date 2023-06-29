@@ -24,7 +24,7 @@ from electrumx.lib.util import (
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
-from electrumx.lib.util_atomicals import is_valid_container_string_name, extract_subrealm_payment_opreturn, pad_bytes64, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
+from electrumx.lib.util_atomicals import is_valid_container_string_name, is_unspendable_payment_marker_atomical_id, pad_bytes64, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -459,32 +459,64 @@ class BlockProcessor:
         return result 
     
     # Get basic atomical information in a format that can be attached to utxos in an RPC call
+    # Must be called for known existing atomicals or will throw an exception
     def get_atomicals_id_mint_info_basic_struct(self, atomical_id):
-        result = None
-        self.logger.info('atomical_id')
-        self.logger.info(atomical_id)
-        try:
-            result = self.atomicals_id_cache[atomical_id]
-        except KeyError:
-            # Now check the mint cache (before flush to db)
-            try:
-                result = unpack_mint_info(self.general_data_cache[b'mi' + atomical_id])
-            except KeyError:
-                result = unpack_mint_info(self.db.get_atomical_mint_info_dump(atomical_id))
-            
-            self.atomicals_id_cache[atomical_id] = result
-        
-        if result: 
-            basic_struct = {
-                'atomical_id': location_id_bytes_to_compact(result['id']),
-                'atomical_number': result['number'],
-                'type': result['type']
-            }
-            # Todo fetch any containers, realms, subrealms or tickers for the utxo here...
-            return basic_struct
-        return result 
+        result = self.get_atomicals_id_mint_info(atomical_id)
+        return {
+            'atomical_id': location_id_bytes_to_compact(result['id']),
+            'atomical_number': result['number'],
+            'type': result['type']
+        }
 
+    # Get the expected payment amount and destination for an atomical subrealm
     def get_expected_subrealm_payment_info(self, found_atomical_id):
+        # Lookup the subrealm atomical to obtain the details of which subrealm parent it is for
+        found_atomical_mint_info = self.get_atomicals_id_mint_info(found_atomical_id)
+        if found_atomical_mint_info:
+            # Found the mint information. Use the mint details to determine the parent realm id and name requested
+            # Along with the price that was expected according to the mint reveal height
+            args_subrealm = found_atomical_mint_info['args'].get('request_subrealm')
+            request_subrealm = found_atomical_mint_info['$request_subrealm']
+            # Check that $request_subrealm was set because it will only be set if the basic validation succeeded
+            # If it's not set, then the atomical subrealm mint was not valid on a basic level and must be rejected
+            if not request_subrealm:
+                return None
+            # Sanity check
+            assert(args_subrealm == request_subrealm)
+            # More sanity checks on the formats and validity
+            if isinstance(request_subrealm, str) and is_valid_subrealm_string_name(request_subrealm):
+                # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
+                # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
+                todo...
+    
+                # The parent realm id is in a compact form string to make it easier for users and developers
+                # Only store the details if the pid is also set correctly
+                request_parent_realm_id_compact = mint_info['args'].get('pid')
+                parent_realm_id_compact = mint_info.get('$pid')
+                parent_realm_id = mint_info['$pid_bytes']
+                assert(request_parent_realm_id_compact == parent_realm_id_compact)
+                if isinstance(parent_realm_id_compact, str) and is_compact_atomical_id(parent_realm_id_compact):
+                    # We have a validated potential parent id, now look it up to see if the parent is a valid atomical
+                    found_parent_mint_info = self.get_atomicals_id_mint_info(parent_realm_id)
+                    if found_parent_mint_info:
+                        # We have found the parent atomical, which may or may not be a valid realm
+                        # Do the basic check for $request_realm which indicates it succeeded the basic validity checks
+                        args_realm = found_parent_mint_info['args'].get('request_realm')
+                        request_realm = found_parent_mint_info['$request_realm']
+                        # One or both was empty and therefore didn't pass the basic checks
+                        # Someone apparently made a payment marker for an invalid parent realm id. They made a mistake, ignoring it..
+                        if not args_realm or not request_subrealm: 
+                            return None
+                        # Make sure it's the right type and format checks pass again just in case
+                        if not isinstance(request_realm, str) or not is_valid_realm_string_name(request_realm):
+                            return None 
+                        # At this point we know we have a valid parent, but because realm allocation is delayed by MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
+                        # ... we do not actually know if the parent was awarded the realm or not until the required heights are met
+                        # Nonetheless, someone DID make a payment and referenced the parent by the specific atomical id and therefore we will try to apply to payment
+                        # It does not mean in the end that they actually get the subrealm if they paid the wrong parent. But that's their mistake and was easily avoided
+                        # Here we go and check for the required payment amount and details now...
+
+      
         return None, None, None 
 
     # Save the subrealm payment
@@ -1141,13 +1173,13 @@ class BlockProcessor:
         # Add the new UTXOs
         found_atomical_id = None
         for idx, txout in enumerate(tx.outputs):
-            found_atomical_id = extract_subrealm_payment_opreturn(txout.pk_script)
+            found_atomical_id = is_unspendable_payment_marker_atomical_id(txout.pk_script)
             if found_atomical_id:
                 break
         # Payment atomical id marker was found
         if found_atomical_id:
             # Get the details such as expected payment amount/output and which parent realm it belongs to
-            expected_payment_amount, expected_payment_output, parent_realm_id = self.get_expected_subrealm_payment_info(found_atomical_id)
+            expected_payment_amount, expected_payment_output, parent_realm_id, request_name = self.get_expected_subrealm_payment_info(found_atomical_id)
             # An expected payment amount might not be set if there is no valid subrealm minting rules, or something invalid was found
             if not expected_payment_amount:
                 return

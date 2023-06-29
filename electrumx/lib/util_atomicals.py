@@ -53,6 +53,10 @@ MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS = 12 # ~2 hours
 # This is sufficient notice (about 2 hours) for apps to notice that the price list changed, and act accordingly.
 MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 12 # Magic number that requires a grace period of 12 blocks ~2 hours
 
+# The Envelope is for the reveal script and also the op_return payment markers
+# "atom" / "spr4" (beta testing)
+ATOMICALS_ENVELOPE_MARKER_BYTES = '0473707234'
+
 def pad_bytes64(val):
     padlen = 64
     if len(val) > padlen:
@@ -282,14 +286,14 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         elif isinstance(subrealm, str) and is_valid_subrealm_string_name(subrealm):
             # The parent realm id is in a compact form string to make it easier for users and developers
             # Only store the details if the pid is also set correctly
-            parent_realm_id = mint_info['args'].get('pid')
-            if isinstance(parent_realm_id, str) and is_compact_atomical_id(parent_realm_id):
+            parent_realm_id_compact = mint_info['args'].get('pid')
+            if isinstance(parent_realm_id_compact, str) and is_compact_atomical_id(parent_realm_id_compact):
                 mint_info['$request_subrealm'] = subrealm
                 # Save in the compact form to make it easier to understand for developers and users
                 # It requires an extra step to convert, but it makes it easier to understand the format
-                mint_info['$pid_compact'] = parent_realm_id
+                mint_info['$pid'] = parent_realm_id_compact
                 # Decode the compact form and make it available in the mint info
-                mint_info['$pid'] = compact_to_location_id_bytes(parent_realm_id)
+                mint_info['$pid_bytes'] = compact_to_location_id_bytes(parent_realm_id_compact)
         elif isinstance(container, str) and is_valid_container_string_name(container):
             mint_info['$request_container'] = container
     ############################################
@@ -500,9 +504,32 @@ def parse_operation_from_script(script, n):
     print(f'Invalid Atomicals Operation Code. Skipping... "{script[n : n + 4].hex()}"')
     return None, None
 
-# todo: Not done yet
-def extract_subrealm_payment_opreturn(sc):
-    return None, None 
+# Check for an 'atom' payment marker and return the potential atomical id being paid
+def is_unspendable_payment_marker_atomical_id(sc):
+    if not sc:
+        return None 
+    
+    # The output script is too short
+    if len(script) < 40: 
+        return None 
+
+    # Ensure it is an unspendable OP_RETURN
+    if script[:2] != b'\x00\x6a':
+        return None
+
+    # Check for the envelope format
+    if script[2:7].hex() != ATOMICALS_ENVELOPE_MARKER_BYTES:
+        return None 
+
+    # Check the next op code matches b'p' for payment
+    if script[7:9].hex() != '0134':
+        return None 
+    
+    # Check there is a 36 byte push data
+    if script[9:10].hex() != '24':
+        return None 
+    # Return the potential atomical id that the payment marker is associated with
+    return script[10:46]
     
 # Parses and detects valid Atomicals protocol operations in a witness script
 # Stops when it finds the first operation in the first input
@@ -526,8 +553,7 @@ def parse_protocols_operations_from_witness_for_input(txinwitness):
                     n += 1 
                     # Get the next if statement    
                     if op == OpCodes.OP_IF:
-                        # spr4 / atom
-                        if "0473707234" == script[n : n + 5].hex():
+                        if ATOMICALS_ENVELOPE_MARKER_BYTES == script[n : n + 5].hex():
                             found_operation_definition = True
                             # Parse to ensure it is in the right format
                             operation_type, payload = parse_operation_from_script(script, n + 5)
