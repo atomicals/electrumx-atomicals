@@ -1264,7 +1264,7 @@ class DB:
             return None
 
         init_mint_info = pickle.loads(atomical_mint_info_value)
-        
+
         # Get Atomical number and check match
         atomical_number = init_mint_info['number']
         atomical_number_key = b'n' + pack_be_uint64(atomical_number)
@@ -1273,10 +1273,6 @@ class DB:
             raise IndexError(f'atomical number not found. IndexError. {atomical_number}')
         
         assert(atomical_number_value == atomical_id)
-        assert(atomical_number_value == mint_tx_hash + pack_le_uint32(mint_output_index))
-        assert(mint_tx_hash == init_mint_info['first_location_txid'])
-        assert(mint_output_index == init_mint_info['first_location_index'])
-        assert(init_mint_info['number'] == atomical_number)
 
         atomical = {
             'atomical_id': atomical_id,
