@@ -340,12 +340,12 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     return mint_info['type'], mint_info
     
 # Format the relevant byte fields in the mint raw data into strings to send on rpc calls well formatted
-def convert_db_mint_info_to_rpc_mint_info_format(mint_info):
+def convert_db_mint_info_to_rpc_mint_info_format(header_hash, mint_info):
     mint_info['atomical_id'] = location_id_bytes_to_compact(mint_info['atomical_id'])
     mint_info['mint_info']['commit_txid'] = hash_to_hex_str(mint_info['mint_info']['commit_txid'])
     mint_info['mint_info']['first_location_txid'] = hash_to_hex_str(mint_info['mint_info']['first_location_txid'])
     mint_info['mint_info']['first_location_header'] = mint_info['mint_info']['first_location_header'].hex()
-    mint_info['mint_info']['first_location_blockhash'] = self.coin.header_hash(mint_info['first_location_header']).hex()
+    mint_info['mint_info']['first_location_blockhash'] = header_hash(mint_info['first_location_header']).hex()
     mint_info['mint_info']['first_location_scripthash'] = hash_to_hex_str(mint_info['mint_info']['first_location_scripthash'])
     mint_info['mint_info']['first_location_script'] = mint_info['mint_info']['first_location_script'].hex()
     return mint_info 
