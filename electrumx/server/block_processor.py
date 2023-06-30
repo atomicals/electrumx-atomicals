@@ -544,7 +544,7 @@ class BlockProcessor:
         self.logger.info(f'put_atomicals_utxo: atomical_id={atomical_id.hex()}, location_id={location_id.hex()}, value={value}')
         if self.atomicals_utxo_cache.get(location_id) == None: 
             self.atomicals_utxo_cache[location_id] = {}
-        # Use a tombstone to mark deleted because even if it's removd we must
+        # Use a tombstone to mark deleted because even if it's removed we must
         # store the b'i' value
         self.atomicals_utxo_cache[location_id][atomical_id] = {
             'deleted': False,
@@ -581,20 +581,24 @@ class BlockProcessor:
         cache_map = self.atomicals_utxo_cache.get(location_id)
         if cache_map:
             self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} has Atomicals...')
-            spent_cache_values = []
+            atomicals_data_list_cached = []
             for key in cache_map.keys(): 
                 value_with_tombstone = cache_map[key]
                 value = value_with_tombstone['value']
                 is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8:]
                 if is_sealed == b'00':
                     # Only allow it to be spent if not sealed  
-                    spent_cache_values.append(location_id + key + value)
+                    atomicals_data_list_cached.append({
+                        'atomical_id': key,
+                        'location_id': location_id,
+                        'data': value
+                    })
                     value_with_tombstone['deleted'] = True  # Flag it as deleted so the b'a' active location will not be written on flushed
                 self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} atomical_id={key.hex()}, is_sealed={is_sealed}, value={value}')
-            if len(spent_cache_values) > 0:
-                return spent_cache_values
+            if len(atomicals_data_list_cached) > 0:
+                return atomicals_data_list_cached
         # Search the locations of existing atomicals
-        # Key:  b'i' + tx_hash + txout_idx + mint_tx_hash + mint_txout_idx
+        # Key:  b'i' + location(tx_hash + txout_idx) + atomical_id(mint_tx_hash + mint_txout_idx)
         # Value: hashX + scripthash + value
         prefix = b'i' + location_id
         found_at_least_one = False
@@ -612,7 +616,11 @@ class BlockProcessor:
             # Only allow the deletion/spending if it wasn't sealed
             if is_sealed == b'00':
                 self.db_deletes.append(b'a' + atomical_id + location_id)
-                atomicals_data_list.append(atomical_i_db_key[1:] + atomical_i_db_value)
+                atomicals_data_list.append({
+                    'atomical_id': atomical_id,
+                    'location_id': location_id,
+                    'data': atomical_i_db_value
+                })
             self.logger.info(f'spend_atomicals_utxo.utxo_db: location_id={location_id.hex()} atomical_id={atomical_id.hex()}, is_sealed={is_sealed}, value={atomical_i_db_value}')
             # Return all of the atomicals spent at the address
         return atomicals_data_list
@@ -671,7 +679,7 @@ class BlockProcessor:
         self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
    
     # Validate the parameters for an NFT and validate realm/subrealm/container data
-    def validate_and_create_nft(self, mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
+    def validate_and_create_nft_mint_utxo(self, mint_info, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
             return False
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
@@ -684,8 +692,8 @@ class BlockProcessor:
         return True
     
     # Validate the parameters for a FT
-    def validate_and_create_ft(self, mint_info, tx_hash):
-        self.logger.info(f'validate_and_create_ft: tx_hash={hash_to_hex_str(tx_hash)}')
+    def validate_and_create_ft_mint_utxo(self, mint_info, tx_hash):
+        self.logger.info(f'validate_and_create_ft_mint_utxo: tx_hash={hash_to_hex_str(tx_hash)}')
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['first_location_value'])
         # Save the initial location to have the atomical located there
@@ -716,8 +724,9 @@ class BlockProcessor:
         # as the payment then
         parent_realm_id = mint_info['$pid_bytes']
         initiated_by_parent = False
-        for idx, atomical_list in atomicals_spent_at_inputs.items():
-            for atomical_id in atomical_list:
+        for idx, atomical_entry_list in atomicals_spent_at_inputs.items():
+            for atomical_entry in atomical_entry_list:
+                atomical_id = atomical_entry['atomical_id']
                 if atomical_id == parent_realm_id:
                     initiated_by_parent = True
                     break
@@ -751,11 +760,28 @@ class BlockProcessor:
         if is_valid_container_string_name(mint_info.get('$request_container')):
             self.delete_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
     
-    def delete_subrealm_entry_if_requested(self, mint_info):
-        if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
-            parent_realm_id = mint_info['$pid_bytes']
-            self.delete_name_element_template(mint_info['id'] + b'000000000000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
-  
+    # Delete the subrealm created entry
+    # Be careful to determine if it was created with the parent realm or not
+    # Because if it was creatd with the parent realm then there will be no future payment and the tx itself is considered the payment
+    def delete_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs):
+        if not is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
+            return
+        parent_realm_id = mint_info['$pid_bytes']
+        initiated_by_parent = False
+        for idx, atomical_entry_list in atomicals_spent_at_inputs.items():
+            for atomical_entry in atomical_entry_list:
+                atomical_id = atomical_entry['atomical_id']
+                if atomical_id == parent_realm_id:
+                    initiated_by_parent = True
+                    break
+            # parent atomical matches being spent
+            if initiated_by_parent:
+                break
+        payment_tx_outpoint = b'000000000000000000000000000000000000000000000000000000000000000000000000'
+        if initiated_by_parent:
+            payment_tx_outpoint = mint_info['first_location_txid'] + pack_le_uint32(0)
+        self.delete_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
+
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
 
@@ -797,16 +823,16 @@ class BlockProcessor:
         mint_info['first_location_tx_num'] = tx_num 
         
         if valid_create_op_type == 'NFT':
-            if not self.validate_and_create_nft(mint_info, operations_found_at_inputs, atomicals_spent_at_inputs, txout, height, tx_hash):
-                self.logger.info(f'Atomicals Create NFT validate_and_create_nft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
+            if not self.validate_and_create_nft_mint_utxo(mint_info, txout, height, tx_hash):
+                self.logger.info(f'Atomicals Create NFT validate_and_create_nft_mint_utxo returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None
             if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
                 self.create_realm_entry_if_requested(mint_info)
                 self.create_subrealm_entry_if_requested(mint_info, atomicals_spent_at_inputs)
                 self.create_container_entry_if_requested(mint_info)
         elif valid_create_op_type == 'FT':
-            if not self.validate_and_create_ft(mint_info, tx_hash):
-                self.logger.info(f'Atomicals Create FT validate_and_create_ft returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
+            if not self.validate_and_create_ft_mint_utxo(mint_info, tx_hash):
+                self.logger.info(f'Atomicals Create FT validate_and_create_ft_mint_utxo returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None
             # Add $max_supply informative property
             if mint_info['subtype'] == 'distributed':
@@ -832,10 +858,10 @@ class BlockProcessor:
 
     # Build a map of atomical id to the type, value, and input indexes
     # This information is used below to assess which inputs are of which type and therefore which outputs to color
-    def build_atomical_id_info_map(self, map_atomical_ids_to_info, atomicals_list, txin_index):
-        for atomicals_entry in atomicals_list:
-            atomical_id = atomicals_entry[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-            value, = unpack_le_uint64(atomicals_entry[-8:])
+    def build_atomical_id_info_map(self, map_atomical_ids_to_info, atomicals_entry_list, txin_index):
+        for atomicals_entry in atomicals_entry_list:
+            atomical_id = atomicals_entry['atomical_id']
+            value, = unpack_le_uint64(atomicals_entry['data'][-8:])
             atomical_mint_info = self.get_atomicals_id_mint_info(atomical_id)
             if not atomical_mint_info: 
                 raise IndexError(f'color_atomicals_outputs {atomical_id.hex()} not found in mint info. IndexError.')
@@ -890,10 +916,10 @@ class BlockProcessor:
         put_general_data = self.general_data_cache.__setitem__
         map_atomical_ids_to_info = {}
         atomical_ids_touched = []
-        for txin_index, atomicals_list in atomicals_spent_at_inputs.items():
+        for txin_index, atomicals_entry_list in atomicals_spent_at_inputs.items():
             # Accumulate the total input value by atomical_id
             # The value will be used below to determine the amount of input we can allocate for FT's
-            self.build_atomical_id_info_map(map_atomical_ids_to_info, atomicals_list, txin_index)
+            self.build_atomical_id_info_map(map_atomical_ids_to_info, atomicals_entry_list, txin_index)
         
         # For each atomical, get the expected output indexes to color
         for atomical_id, mint_info in map_atomical_ids_to_info.items():
@@ -911,7 +937,7 @@ class BlockProcessor:
                 self.apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height)
                 is_sealed = b'00'
                 # Only allow the NFT collection subtype to be sealed
-                if operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and mint_info.get('subtype') == 'container' and operations_found_at_inputs.get('input_index') == 0:
+                if operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('input_index') == 0:
                     is_sealed = b'01'
                 self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + is_sealed)
             
@@ -1058,14 +1084,15 @@ class BlockProcessor:
                 undo_info_append(cache_value)
                 append_hashX(cache_value[:HASHX_LEN])
                 
-                attila
                 # Find all the existing transferred atomicals and spend the Atomicals utxos
                 atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
                 if len(atomicals_transferred_list):
                     atomicals_spent_at_inputs[txin_index] = atomicals_transferred_list
-                    for atomical_id_spent in atomicals_transferred_list:
-                        self.logger.info(f'atomicals_transferred_list - tx_hash={hash_to_hex_str(tx_hash)}, txin_index={txin_index}, txin_hash={hash_to_hex_str(txin.prev_hash)}, txin_previdx={txin.prev_idx}, atomical_id_spent={atomical_id_spent.hex()}')
+                    for atomical_spent in atomicals_transferred_list:
+                        atomical_id = atomical_spent['atomical_id']
+                        self.logger.info(f'atomicals_transferred_list - tx_hash={hash_to_hex_str(tx_hash)}, txin_index={txin_index}, txin_hash={hash_to_hex_str(txin.prev_hash)}, txin_previdx={txin.prev_idx}, atomical_id_spent={atomical_id.hex()}')
 
+                todo and get the format here
                 atomicals_undo_info_extend(atomicals_transferred_list)
                 txin_index = txin_index + 1
             
@@ -1110,7 +1137,7 @@ class BlockProcessor:
                 append_hashX(double_sha256(atomical_id))
             
             # Check if there were any payments for subrealms in thtx
-            self.create_subrealm_payment_output_if_valid(tx, height)
+            self.create_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs)
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
@@ -1137,7 +1164,7 @@ class BlockProcessor:
 
     # Check for for output markers for a payment for a subrealm
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
-    def create_subrealm_payment_output_if_valid(self, tx, height, Delete=False):
+    def create_subrealm_payment_output_if_valid(self, tx, height, atomicals_spent_at_inputs, Delete=False):
         # Add the new UTXOs
         found_atomical_id = None
         for idx, txout in enumerate(tx.outputs):
@@ -1202,11 +1229,12 @@ class BlockProcessor:
             self.db_deletes.append(b'po' + current_location)
         hashXs = []
         for spent_atomical in spent_atomicals:
-            self.logger.info(f'rollback_spend_atomicals, atomical_id={spent_atomical.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            hashX = spent_atomical[ ATOMICAL_ID_LEN + ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN]
+            atomical_id = spent_atomical['atomical_id']
+            location_id = spent_atomical['location_id']
+            self.logger.info(f'rollback_spend_atomicals, atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+            #  hashX + scripthash + value_sats + is_sealed
+            hashX = spent_atomical['data'][:HASHX_LEN]
             hashXs.append(hashX)
-            atomical_id = spent_atomical[ ATOMICAL_ID_LEN : ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-            location = spent_atomical[ : ATOMICAL_ID_LEN]
             # Any mod operations are deleted
             if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'mod' and operations_found_at_inputs.get('input_index') == 0:
                 self.db_deletes.append(b'mod' + atomical_id + tx_numb + output_index_packed)
@@ -1220,7 +1248,7 @@ class BlockProcessor:
             # Any evt operations are deleted
             elif operations_found_at_inputs and operations_found_at_inputs.get('op') == 'evt' and operations_found_at_inputs.get('input_index') == 0:
                 self.db_deletes.append(b'evt' + atomical_id + tx_numb + output_index_packed)
-        return hashXs 
+        return hashXs, spent_atomicals
 
     # Rollback any distributed mints
     def rollback_distmint_data(self, tx_hash, operations_found_at_inputs):
@@ -1256,7 +1284,7 @@ class BlockProcessor:
         self.db_deletes.append(b'i' + atomical_id + atomical_id)
 
     # Delete atomical mint data and any associated realms, subrealms, containers and tickers
-    def delete_atomical_mint(self, tx_hash, tx, atomical_num, operations_found_at_inputs):
+    def delete_atomical_mint(self, tx_hash, tx, atomical_num, atomicals_spent_at_inputs, operations_found_at_inputs):
         was_mint_found = False
         # All mint types always look at only input 0 to determine if the operation was found
         # This is done to preclude complex scenarios of valid/invalid different mint types across inputs 
@@ -1275,11 +1303,8 @@ class BlockProcessor:
             was_mint_found = True
             if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
                 self.delete_realm_entry_if_requested(mint_info)
-
-                todo: ensure not deleting wrong one and check for spent atomicals here
-                self.delete_subrealm_entry_if_requested(mint_info)
+                self.delete_subrealm_entry_if_requested(mint_info, atomicals_spent_at_inputs)
                 self.delete_container_entry_if_requested(mint_info)
-
         # If it was an FT
         elif valid_create_op_type == 'FT': 
             self.logger.info(f'delete_atomical_mint FT: atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -1495,7 +1520,8 @@ class BlockProcessor:
         tx_numb = to_le_uint64(tx_num)[:TXNUM_LEN]
         atomical_num = self.atomical_count
         atomicals_minted = 0
-
+        # Track the atomicals being rolled back to be used primarily for determining subrealm rollback validity
+        atomicals_spent_at_inputs = {}
         for tx, tx_hash in reversed(txs):
             for idx, txout in enumerate(tx.outputs):
                 # Spend the TX outputs.  Be careful with unspendable
@@ -1508,22 +1534,26 @@ class BlockProcessor:
                 txout_value = cache_value[:-8] 
                 touched.add(hashX)
                 # Rollback the atomicals that were created at the output
-                hashXs_spent = self.rollback_spend_atomicals(tx_hash, idx, tx, tx_numb)
+                hashXs_spent, spent_atomicals = self.rollback_spend_atomicals(tx_hash, idx, tx, tx_numb)
                 for hashX_spent in hashXs_spent:
                     touched.add(hashX_spent)
+                # The idx is not where it was spent, because this is the rollback operation
+                # Nonetheless we use the output idx as the "spent at" just to keep a consistent format when 
+                # the variable atomicals_spent_at_inputs is used in other places. There is no usage for the index, but informational purpose only
+                atomicals_spent_at_inputs[idx] = spent_atomicals
 
-             # Delete the tx hash number
+            # Delete the tx hash number
             self.db_deletes.append(b'tx' + tx_hash)
 
             # Backup any Atomicals NFT, FT, or DFT mints
             operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
-            was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, operations_found_at_inputs)
+            was_mint_found = self.delete_atomical_mint(tx_hash, tx, atomical_num, atomicals_spent_at_inputs, operations_found_at_inputs)
             if was_mint_found:
                 atomical_num -= 1
                 atomicals_minted += 1
             
             # Rollback any subrealm payments
-            self.create_subrealm_payment_output_if_valid(tx, height, True)
+            self.create_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs, True)
 
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
