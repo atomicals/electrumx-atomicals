@@ -1301,22 +1301,22 @@ class DB:
         # Attach the type specific information
         if atomical['type'] == 'NFT':
             # Attach any auxillary information that was already successfully parsed before
-            request_realm = init_mint_info['$request_realm']
+            request_realm = init_mint_info.get('$request_realm')
             if request_realm:
                 atomical['mint_info']['$request_realm'] = request_realm
             
-            request_subrealm = init_mint_info['$request_subrealm']
+            request_subrealm = init_mint_info.get('$request_subrealm')
             if request_subrealm:
                 atomical['mint_info']['$request_subrealm'] = request_subrealm
                 # The pid is known to be set
                 atomical['mint_info']['$pid_bytes'] = init_mint_info['$pid_bytes']
                 atomical['mint_info']['$pid'] = init_mint_info['$pid']
 
-            request_ticker = init_mint_info['$request_ticker']
+            request_ticker = init_mint_info.get('$request_ticker')
             if request_ticker:
                 atomical['mint_info']['$request_ticker'] = request_ticker
             
-            request_container = init_mint_info['$request_container']
+            request_container = init_mint_info.get('$request_container')
             if request_container:
                 atomical['mint_info']['$request_container'] = request_container
         elif atomical['type'] == 'FT':
