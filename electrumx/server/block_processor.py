@@ -719,7 +719,7 @@ class BlockProcessor:
         if not mint_info or not isinstance(mint_info, dict):
             return False
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
-        value_sats = pack_le_uint64(mint_info['value'])
+        value_sats = pack_le_uint64(mint_info['first_location_value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
         self.put_atomicals_utxo(mint_info['first_location'], mint_info['id'], mint_info['first_location_hashX'] + mint_info['first_location_scripthash'] + value_sats + is_sealed)
@@ -731,7 +731,7 @@ class BlockProcessor:
     def validate_and_create_ft(self, mint_info, tx_hash):
         self.logger.info(f'validate_and_create_ft: tx_hash={hash_to_hex_str(tx_hash)}')
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
-        value_sats = pack_le_uint64(mint_info['value'])
+        value_sats = pack_le_uint64(mint_info['first_location_value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
