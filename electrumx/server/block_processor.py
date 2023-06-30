@@ -517,6 +517,9 @@ class BlockProcessor:
                         # Nonetheless, someone DID make a payment and referenced the parent by the specific atomical id and therefore we will try to apply to payment
                         # It does not mean in the end that they actually get the subrealm if they paid the wrong parent. But that's their mistake and was easily avoided
                         # Here we go and check for the required payment amount and details now...
+                        expected_payment_amount = 0
+                        expected_payment_output = b''
+                        return expected_payment_amount, expected_payment_output, parent_realm_id, request_subrealm
 
       
         return None, None, None 
