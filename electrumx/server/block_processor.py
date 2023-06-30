@@ -1091,9 +1091,11 @@ class BlockProcessor:
                     for atomical_spent in atomicals_transferred_list:
                         atomical_id = atomical_spent['atomical_id']
                         self.logger.info(f'atomicals_transferred_list - tx_hash={hash_to_hex_str(tx_hash)}, txin_index={txin_index}, txin_hash={hash_to_hex_str(txin.prev_hash)}, txin_previdx={txin.prev_idx}, atomical_id_spent={atomical_id.hex()}')
-
-                todo and get the format here
-                atomicals_undo_info_extend(atomicals_transferred_list)
+                # Get the undo format for the spent atomicals
+                reformatted_for_undo_entries = []
+                for atomicals_entry in atomicals_transferred_list:
+                    reformatted_for_undo_entries.append(atomicals_entry['location_id'] + atomicals_entry['atomical_id'] + atomicals_entry['data'])
+                atomicals_undo_info_extend(reformatted_for_undo_entries)
                 txin_index = txin_index + 1
             
             # Save the tx number for the current tx
@@ -1492,9 +1494,9 @@ class BlockProcessor:
             if atomicals_undo_info_map.get(atomicals_location, None) == None:
                 atomicals_undo_info_map[atomicals_location] = []
             atomicals_undo_info_map[atomicals_location].append({ 
-                location: atomicals_location,
-                atomical_id: atomicals_atomical_id,
-                value: atomicals_value
+                'location_id': atomicals_location,
+                'atomical_id': atomicals_atomical_id,
+                'data': atomicals_value
             })
             counted_atomicals_count += 1
         assert(counted_atomicals_count == atomicals_count)
@@ -1569,10 +1571,10 @@ class BlockProcessor:
                 touched.add(hashX)
 
                 # Restore the atomicals utxos in the undo information
-                potential_atomicals_list_to_restore = atomicals_undo_info_map.get(txin.prev_hash + pack_le_uint32(txin.prev_idx), None)
+                potential_atomicals_list_to_restore = atomicals_undo_info_map.get(txin.prev_hash + pack_le_uint32(txin.prev_idx))
                 if potential_atomicals_list_to_restore != None:
                     for atomical_to_restore in potential_atomicals_list_to_restore:
-                        self.put_atomicals_utxo(atomical_to_restore['location'], atomical_to_restore['atomical_id'], atomical_to_restore['value'])
+                        self.put_atomicals_utxo(atomical_to_restore['location_id'], atomical_to_restore['atomical_id'], atomical_to_restore['data'])
                         touched.add(double_sha256(atomical_to_restore['atomical_id']))
             
             tx_num -= 1
