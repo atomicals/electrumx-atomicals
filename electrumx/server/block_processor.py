@@ -618,14 +618,14 @@ class BlockProcessor:
         return atomicals_data_list
 
     # Put a name element template to the cache
-    def put_name_element_template(self, atomical_id, subject, commit_tx_num, name_data_cache, is_valid_name_string_func, prefix_key=b'', suffix_value=b''): 
-        self.logger.info(f'put_name_element_template: atomical_id={atomical_id.hex()}, subject={subject}, commit_tx_num={commit_tx_num}')
+    def put_name_element_template(self, atomical_id_value, subject, commit_tx_num, name_data_cache, is_valid_name_string_func, prefix_key=b'', suffix_value=b''): 
+        self.logger.info(f'put_name_element_template: atomical_id_value={atomical_id_value.hex()}, subject={subject}, commit_tx_num={commit_tx_num}')
         if not is_valid_name_string_func(subject):
             raise IndexError(f'put_name_element_template subject invalid {subject}')
         subject_enc = subject.encode()
         if not name_data_cache.get(subject_enc):
             name_data_cache[subject_enc] = {}
-        name_data_cache[prefix_key + subject_enc][commit_tx_num] = atomical_id
+        name_data_cache[prefix_key + subject_enc][commit_tx_num] = atomical_id_value
 
     def delete_name_element_template(self, expected_entry_value, subject, commit_tx_num, name_data_cache, db_get_name_func, db_delete_prefix, prefix_key=b''): 
         subject_enc = subject.encode() 
@@ -666,53 +666,7 @@ class BlockProcessor:
 
     def log_subrealm_request(self, method, msg, status, subrealm, parent_realm_atomical_id, height):
         self.logger.info(f'{method} - {msg}, status={status} subrealm={subrealm}, parent_realm_atomical_id={parent_realm_atomical_id.hex()}, height={height}')
-    
-    # Whether a subrealm by a given name is a valid subrealm string and if it's not already claimed
-    def is_subrealm_acceptable_to_be_created(self, operations_found_at_inputs, atomicals_spent_at_inputs, txout, parent_realm_atomical_id, subrealm, height):
-        method = 'is_subrealm_acceptable_to_be_created'
-        if not subrealm:
-            self.log_subrealm_request(method, 'empty', False, subrealm, parent_realm_atomical_id, height)
-            return None 
-        if is_valid_subrealm_string_name(subrealm):
-            # first step is to validate that the subrealm name meets the requirements of the owner of the parent
-            # as far as minting rules go. Recall that a subrealm can be minted by the parent manually OR
-            # The parent can set the `realm/reg` key using the `crt` operation to specific what regex/price points
-            # are available for the minting of subrealms
-            # First we check if it was minted manually by the parent realm and if that fails, then check if there are regex/price points
-            # that could be satisfied.
-            #
-            # After the subrealm minting rules are satisfied the final step is to check that the subrealm is not already taken
-            initiated_by_parent = False
-            if operations_found_at_inputs['input_index'] == 0 and operations_found_at_inputs['op'] == 'nft':
-                atomical_list = atomicals_spent_at_inputs.get(0)
-                for atomical_id in atomical_list:
-                    # Only mint under the atomical if there is exactly one atomical that requested it
-                    if atomical_id == parent_realm_atomical_id:
-                        initiated_by_parent = True
-                        break
-            # If it was initiated by the parent, then we can skip trying to match it against a crt price point
-            if not initiated_by_parent:
-                price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_realm_atomical_id, subrealm, txout, height)
-                if not price_point:
-                    self.log_subrealm_request(method, 'no_price_point', False, subrealm, parent_realm_atomical_id, height)
-                    return False 
-            # If we got this far it was either initiated by the parent or it matched one of the regex price points
-            # All that is left to do is ensure that the name is not taken already
-            subrealm_enc = subrealm.encode()
-            # It already exists in cache, therefore cannot assign
-            if self.subrealm_data_cache.get(parent_realm_atomical_id + subrealm_enc, None) != None: 
-                self.log_subrealm_request(method, 'cache_exists', False, subrealm, parent_realm_atomical_id, height)
-                return None 
-            # Or it already exists in db and also cannot use
-            if self.db.get_subrealm(parent_realm_atomical_id, subrealm_enc) != None:
-                self.log_subrealm_request(method, 'db_exists', False, subrealm, parent_realm_atomical_id, height)
-                return None
-            # Congratulations, we can create a subrealm now for the parent realm
-            self.log_subrealm_request(method, 'success', True, subrealm, parent_realm_atomical_id, height)
-            return subrealm
-        self.log_subrealm_request(method, 'is_valid_realm_string_name', False, subrealm, parent_realm_atomical_id, height)
-        return None
-    
+     
     def log_can_be_created(self, method, msg, subject, validity, val):
         self.logger.info(f'{method} - {msg}: {subject} value {val} is acceptable to be created: {validity}')
    
@@ -754,12 +708,28 @@ class BlockProcessor:
         if is_valid_realm_string_name(mint_info.get('$request_realm')):
             self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
 
-    def create_subrealm_entry_if_requested(self, mint_info): 
-        # todo
-        # if self.is_subrealm_acceptable_to_be_created(mint_info.get('$request_subrealm')):
-        #   parent_realm_id = mint_info['$pid']
-        #   self.put_name_element_template(mint_info['id'], mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, parent_realm_id, b'0000000000000000000000000000000000000000000000000000000000000000')
-        return False 
+    def create_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs): 
+        if not is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
+            return
+        # Check to see if the parent realm was spent as part of the inputs to authorize the direct creation of the subrealm
+        # If the parent realm was spent as one of the inputs, then there does not need to be a payment made, we consider the current transaction
+        # as the payment then
+        parent_realm_id = mint_info['$pid_bytes']
+        initiated_by_parent = False
+        for idx, atomical_list in atomicals_spent_at_inputs.items():
+            for atomical_id in atomical_list:
+                if atomical_id == parent_realm_id:
+                    initiated_by_parent = True
+                    break
+            # parent atomical matches being spent
+            if initiated_by_parent:
+                break
+        # By default the payment hash is all zeroes, awaiting a payment to be made later
+        payment_tx_outpoint = b'000000000000000000000000000000000000000000000000000000000000000000000000'
+        if initiated_by_parent:
+            # However if it was initiated by the parent, therefore simply assign the payment tx hash as the reveal (first_location_txid) of the subrealm nft mint
+            payment_tx_outpoint = mint_info['first_location_txid'] + pack_le_uint32(0)
+        self.put_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name)
 
     def create_container_entry_if_requested(self, mint_info):
         if is_valid_container_string_name(mint_info.get('$request_container')):
@@ -783,7 +753,7 @@ class BlockProcessor:
     
     def delete_subrealm_entry_if_requested(self, mint_info):
         if is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
-            parent_realm_id = mint_info['$pid']
+            parent_realm_id = mint_info['$pid_bytes']
             self.delete_name_element_template(mint_info['id'] + b'000000000000000000000000000000000000000000000000000000000000000000000000', mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
   
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
@@ -832,7 +802,7 @@ class BlockProcessor:
                 return None
             if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
                 self.create_realm_entry_if_requested(mint_info)
-                self.create_subrealm_entry_if_requested(mint_info)
+                self.create_subrealm_entry_if_requested(mint_info, atomicals_spent_at_inputs)
                 self.create_container_entry_if_requested(mint_info)
         elif valid_create_op_type == 'FT':
             if not self.validate_and_create_ft(mint_info, tx_hash):
@@ -1088,6 +1058,7 @@ class BlockProcessor:
                 undo_info_append(cache_value)
                 append_hashX(cache_value[:HASHX_LEN])
                 
+                attila
                 # Find all the existing transferred atomicals and spend the Atomicals utxos
                 atomicals_transferred_list = spend_atomicals_utxo(txin.prev_hash, txin.prev_idx)
                 if len(atomicals_transferred_list):
@@ -1139,7 +1110,7 @@ class BlockProcessor:
                 append_hashX(double_sha256(atomical_id))
             
             # Check if there were any payments for subrealms in thtx
-            self.check_subrealm_payment_output(tx, height)
+            self.create_subrealm_payment_output_if_valid(tx, height)
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
@@ -1166,7 +1137,7 @@ class BlockProcessor:
 
     # Check for for output markers for a payment for a subrealm
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
-    def check_subrealm_payment_output(self, tx, height, Delete=False):
+    def create_subrealm_payment_output_if_valid(self, tx, height, Delete=False):
         # Add the new UTXOs
         found_atomical_id = None
         for idx, txout in enumerate(tx.outputs):
@@ -1185,6 +1156,7 @@ class BlockProcessor:
                 # Found the required payment amount and script
                 if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
                     # Delete or create he record based on whether we are reorg rollback or creating new
+                    todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
                     if Delete:
                         self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
                     else: 
@@ -1303,6 +1275,8 @@ class BlockProcessor:
             was_mint_found = True
             if self.is_within_acceptable_blocks_for_name_reveal(mint_info):
                 self.delete_realm_entry_if_requested(mint_info)
+
+                todo: ensure not deleting wrong one and check for spent atomicals here
                 self.delete_subrealm_entry_if_requested(mint_info)
                 self.delete_container_entry_if_requested(mint_info)
 
@@ -1549,7 +1523,7 @@ class BlockProcessor:
                 atomicals_minted += 1
             
             # Rollback any subrealm payments
-            self.check_subrealm_payment_output(tx, height, True)
+            self.create_subrealm_payment_output_if_valid(tx, height, True)
 
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
