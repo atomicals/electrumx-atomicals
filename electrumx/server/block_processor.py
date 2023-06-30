@@ -521,7 +521,6 @@ class BlockProcessor:
                         expected_payment_output = b''
                         return expected_payment_amount, expected_payment_output, parent_realm_id, request_subrealm
 
-      
         return None, None, None 
 
     # Save the subrealm payment
@@ -684,7 +683,7 @@ class BlockProcessor:
             #
             # After the subrealm minting rules are satisfied the final step is to check that the subrealm is not already taken
             initiated_by_parent = False
-            if operations_found_at_inputs['input_index'] == 0 and operations_found_at_inputs['op'] == 'sub':
+            if operations_found_at_inputs['input_index'] == 0 and operations_found_at_inputs['op'] == 'nft':
                 atomical_list = atomicals_spent_at_inputs.get(0)
                 for atomical_id in atomical_list:
                     # Only mint under the atomical if there is exactly one atomical that requested it
@@ -1434,12 +1433,12 @@ class BlockProcessor:
                 if not valid_pattern.match(proposed_subrealm_name):
                     self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height not match pattern valid_pattern={valid_pattern} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
                     continue
-                if txout.value < satoshis:
-                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.value < satoshis txout.value={txout.value}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
-                    continue
-                if txout.pk_script != output: 
-                    self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.pk_script != output txout.pk_script={txout.pk_script}, txout.output={txout.output}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
-                    continue
+                # if txout.value < satoshis:
+                #     self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.value < satoshis txout.value={txout.value}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                #     continue
+                # if txout.pk_script != output: 
+                #     self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height txout.pk_script != output txout.pk_script={txout.pk_script}, txout.output={txout.output}, satoshis={satoshis} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+                #     continue
 
                 self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height successfully matched regex price point, parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
                 return regex_price_point
