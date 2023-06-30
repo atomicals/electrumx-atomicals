@@ -517,19 +517,44 @@ class BlockProcessor:
                         # Nonetheless, someone DID make a payment and referenced the parent by the specific atomical id and therefore we will try to apply to payment
                         # It does not mean in the end that they actually get the subrealm if they paid the wrong parent. But that's their mistake and was easily avoided
                         # Here we go and check for the required payment amount and details now...
-                        expected_payment_amount = 0
-                        expected_payment_output = b''
-                        return expected_payment_amount, expected_payment_output, parent_realm_id, request_subrealm
-
-        return None, None, None 
+                        matched_price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_atomical_id, request_subrealm, current_height)
+                        if matched_price_point:
+                            return matched_price_point, parent_atomical_id, request_subrealm
+        return None
 
     # Save the subrealm payment
-    def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
-        # Ensure
+    def put_subrealm_payment(self, parent_atomical_id, atomical_id, subrealm_name, tx_hash_idx_of_payment): 
+        # Retrieve the subrealm index record first
+        # subject_enc = subject.encode() 
+        # Check if it's located in the cache first
+        # name_map = name_data_cache.get(prefix_key + subject_enc)
+        # cached_atomical_id = None
+        # if name_map:
+        #     atomical_id = name_map.get(commit_tx_num)
+        #     if atomical_id:
+        #          if atomical_id != expected_entry_value:
+        #             raise IndexerError(f'IndexerError: delete_name_element_template {db_delete_prefix} cache name data does not match expected atomical id {commit_tx_num} {expected_atomical_id} {subject} {atomical_id}')
+        #         # remove from the cache
+        #         name_map.pop(commit_tx_num)
+            # Intentionally fall through to catch it in the db as well just in case
+        # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
+        # db_delete_key = db_delete_prefix + prefix_key + subject_enc + pack_le_uint64(commit_tx_num)
+        # atomical_data_from_db = self.db.utxo_db.get(db_delete_key)
+        # if atomical_data_from_db:
+        #     if atomical_data_from_db != expected_entry_value: 
+        #         raise IndexerError(f'IndexerError: delete_name_element_template {db_delete_prefix} db data does not match expected atomical id {commit_tx_num} {expected_atomical_id} {subject} {name_data_from_db}')
+        #     self.db_deletes.append(db_delete_key)
+        #     self.logger.info(f'IndexerError: delete_name_element_template {db_delete_prefix} deletes subject={subject}, expected_entry_value={expected_entry_value.hex()}')
+        # if cached_atomical_id or atomical_data_from_db:
+        #     return True
+
+        # Ensure that the subrealm record had no payment associated with it; do not allow overwriting
+
+        # Save the payment record
         i = 'todo'
     
     # Delete the subrealm payment
-    def delete_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+    def delete_subrealm_payment(self, parent_atomical_id, atomical_id, subrealm_name, tx_hash_idx_of_payment): 
         i = 'todo'
 
     # Save distributed mint infromation for the atomical
@@ -1177,10 +1202,23 @@ class BlockProcessor:
         # Payment atomical id marker was found
         if found_atomical_id:
             # Get the details such as expected payment amount/output and which parent realm it belongs to
-            expected_payment_amount, expected_payment_output, parent_realm_id, request_name = self.get_expected_subrealm_payment_info(found_atomical_id)
+            matched_price_point, parent_realm_id, request_subrealm_name = self.get_expected_subrealm_payment_info(found_atomical_id, height)
             # An expected payment amount might not be set if there is no valid subrealm minting rules, or something invalid was found
-            if not expected_payment_amount:
+            if not matched_price_point:
                 return
+            
+            expected_payment_output = matched_price_point['output']
+            expected_payment_amount = matched_price_point['value']
+            expected_payment_regex = matched_price_point['regex']
+
+            # Sanity check that request_subrealm_name matches the regex
+            # intentionally assume regex pattern is valid and name matches because the logic path should have already been checked
+            # Any exception here indicates a developer error and the service will intentionally crash
+            # Compile the regular expression
+            valid_pattern = re.compile(rf"{expected_payment_regex}")
+            if not valid_pattern.match(request_subrealm_name):
+                raise IndexError(f'valid pattern failed to match request_subrealm_name. DeveloperError {request_subrealm_name} {expected_payment_regex}')
+           
             # Valid subrealm minting rules were found, scan all the outputs to check for a match
             for idx, txout in enumerate(tx.outputs):
                 # Found the required payment amount and script
@@ -1188,10 +1226,10 @@ class BlockProcessor:
                     # Delete or create he record based on whether we are reorg rollback or creating new
                     # todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
                     if Delete:
-                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
+                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
                     else: 
-                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
-                        
+                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
+    
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
 
@@ -1399,7 +1437,7 @@ class BlockProcessor:
     # Get a matched price point (if any) for a subrealm name for the parent atomical taking into account the height
     # Recall that the 'modpath' (contract) values will take effect only after 6 blocks have passed after the height in
     # which the update 'modpath' operation was mined.
-    def get_matched_price_point_for_subrealm_name_by_height(self, parent_atomical_id, proposed_subrealm_name, txout, height):
+    def get_matched_price_point_for_subrealm_name_by_height(self, parent_atomical_id, proposed_subrealm_name, height):
         subrealm_mint_path = '/subrealm-mint'
         subrealm_mint_modpath_history = self.db.get_modpath_history(parent_atomical_id, subrealm_mint_path)
         regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height, subrealm_mint_modpath_history)
