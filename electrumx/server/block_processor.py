@@ -525,6 +525,7 @@ class BlockProcessor:
 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, tx_hash_idx_of_payment): 
+        # Ensure
         i = 'todo'
     
     # Delete the subrealm payment
@@ -1185,7 +1186,7 @@ class BlockProcessor:
                 # Found the required payment amount and script
                 if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
                     # Delete or create he record based on whether we are reorg rollback or creating new
-                    todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
+                    # todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
                     if Delete:
                         self.put_subrealm_payment(parent_realm_id, found_atomical_id, tx.hash + pack_le_uint32(idx))
                     else: 
