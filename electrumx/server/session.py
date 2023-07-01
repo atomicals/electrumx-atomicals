@@ -1317,7 +1317,7 @@ class ElectrumX(SessionBase):
  
     async def atomical_get_modify_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_mod_history(compact_atomical_id, Verbose)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_modify_history(compact_atomical_id, Verbose)} 
 
     async def atomical_get_event_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
@@ -1830,7 +1830,7 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.at_location': self.atomicals_at_location,
             'blockchain.atomicals.get_location': self.atomicals_get_location,
             'blockchain.atomicals.get': self.atomicals_get,
-            'blockchain.atomicals.get_modify_history': self.atomical_get_mod_history,
+            'blockchain.atomicals.get_modify_history': self.atomical_get_modify_history,
             'blockchain.atomicals.get_event_history': self.atomical_get_event_history,
             'blockchain.atomicals.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomicals.get_by_realm': self.atomicals_get_by_realm,
