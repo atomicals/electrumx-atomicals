@@ -1217,19 +1217,19 @@ class ElectrumX(SessionBase):
 
     async def atomical_id_get_mod_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         self.db.populate_extended_mod_state_atomical_info(atomical_id, atomical)
         return atomical
 
     async def atomical_id_get_evt_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         self.db.populate_extended_evt_state_atomical_info(atomical_id, atomical)
         return atomical
  
     async def atomical_id_get_tx_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
         atomical['tx'] = {
             'history': history
@@ -1238,7 +1238,7 @@ class ElectrumX(SessionBase):
 
     async def atomical_id_get_location(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.atomical_id_get(atomical_id, Verbose)
+        atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         self.db.populate_extended_location_atomical_info(atomical_id, atomical)
         return atomical
 
