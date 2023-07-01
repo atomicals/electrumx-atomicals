@@ -904,6 +904,7 @@ class BlockProcessor:
     def get_expected_output_indexes_to_color(self, operations_found_at_inputs, mint_info, tx, atomical_id):
         if mint_info['type'] == 'NFT':
             assert(len(mint_info['input_indexes']) == 1)
+            self.logger.info(f'get_expected_output_indexes_to_color {atomical_id} {operations_found_at_inputs}')
             expected_output_indexes = [get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, operations_found_at_inputs)]
         elif mint_info['type'] == 'FT':
             assert(len(mint_info['input_indexes']) >= 1)
