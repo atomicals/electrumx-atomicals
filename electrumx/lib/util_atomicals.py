@@ -91,6 +91,7 @@ def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomic
     # The expected output index will become the 0'th index if the 'x' extract operation was specified or there are insufficient outputs
     if expected_output_index >= len(tx.outputs):
         expected_output_index = 0
+    print(f'expected output indexes nft {expected_output_index}')
     return expected_output_index
 
 # Get the expected output indexes of an Atomical FT
