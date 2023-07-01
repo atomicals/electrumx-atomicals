@@ -968,11 +968,14 @@ class BlockProcessor:
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
     
-    def get_effective_ticker(self, ticker, current_height):
-        # Get the effective entries
+        name_data_cache, self.db.get_effective_ticker
+
+    # Get the effectivee name after the required number of blocks has past
+    def get_effective_name_template(self, subject, current_height, name_data_cache, db_get_effective_func):
+        # Get the effective name entries
         all_entries = []
-        found_atomical_id, entries = self.db.get_effective_ticker(ticker)
-        for key, v in self.ticker_data_cache.items():
+        found_atomical_id, entries = db_get_effective_func(subject)
+        for key, v in self.name_data_cache.items():
             for commit_tx_num, atomical_id in v.items():
                 all_entries.append({
                     'atomical_id': atomical_id,
@@ -983,31 +986,12 @@ class BlockProcessor:
         if len(entries) > 0:
             # Get the commit_tx_num and use that to get the height 
             candidate_entry = entries[0]
+            # Convert to using the db lookup
             commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['commit_tx_num'])
             if commit_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
                 return candidate_entry['atomical_id']
         return None 
-
-    def get_effective_realm(self, realm, current_height):
-        # Get the effective entries
-        all_entries = []
-        found_atomical_id, entries = self.db.get_effective_realm(realm)
-        for key, v in self.realm_data_cache.items():
-            for tx_num, atomical_id in v.items():
-                all_entries.append({
-                    'atomical_id': atomical_id,
-                    'tx_num': tx_num
-                })
-        all_entries.extend(entries)
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            # Get the tx_num and use that to get the height 
-            candidate_entry = entries[0]
-            commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['tx_num'])
-            if commit_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
-                return candidate_entry['atomical_id']
-        return None 
-
+ 
     # Create a distributed mint output as long as the rules are satisfied
     def create_distmint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, atomicals_operations_found_at_inputs)
@@ -1015,7 +999,7 @@ class BlockProcessor:
             return None
 
         # get the potential dmt (distributed mint) atomical_id from the ticker given
-        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'], height)
+        potential_dmt_atomical_id = self.get_effective_name_template(dmt_return_struct['$mint_ticker'], height, self.ticker_data_cache, self.db.get_effective_ticker)
         if not potential_dmt_atomical_id:
             self.logger.info(f'potential_dmt_atomical_id not found for dmt operation in {tx_hash}. Attempt was made for a non-existant ticker mint info. Ignoring...')
             return None 

@@ -1331,6 +1331,7 @@ class DB:
                 atomical['$max_supply'] = init_mint_info['$max_supply']
 
         # Resolve any name like details such as realms, subrealms, containers and tickers
+        # todo: put this into the layer above to get the information in the cache too?
         self.populate_extended_atomical_subtype_info(atomical)
         return atomical
 
@@ -1464,7 +1465,7 @@ class DB:
                 'data': db_value.hex()
             }
             history.append(entry)
-        atomical['mod'] = {
+        atomical['modify'] = {
             'history': history
         }
         return atomical
@@ -1495,7 +1496,7 @@ class DB:
                 'data': db_value.hex()
             }
             history.append(entry)
-        atomical['evt'] = {
+        atomical['event'] = {
             'history': history
         }
         return atomical

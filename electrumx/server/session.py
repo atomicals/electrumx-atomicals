@@ -1347,6 +1347,9 @@ class ElectrumX(SessionBase):
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_tx_history(compact_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
+        # Todo pass in the current height to resolve the effective ticker
+        # found_atomical_id = self.bp.get_effective_name_template(ticker, height, self.ticker_data_cache, self.db.get_effective_ticker)
+
         found_atomical_id = await self.db.get_effective_ticker(ticker)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
     
@@ -1826,8 +1829,8 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.at_location': self.atomicals_at_location,
             'blockchain.atomicals.get_location': self.atomicals_get_location,
             'blockchain.atomicals.get': self.atomicals_get,
-            'blockchain.atomicals.get_mod_history': self.atomical_id_get_mod_history,
-            'blockchain.atomicals.get_evt_history': self.atomical_id_get_evt_history,
+            'blockchain.atomicals.get_modify_history': self.atomical_id_get_mod_history,
+            'blockchain.atomicals.get_event_history': self.atomical_id_get_evt_history,
             'blockchain.atomicals.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomicals.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomicals.get_by_subrealm': self.atomicals_get_by_subrealm,
