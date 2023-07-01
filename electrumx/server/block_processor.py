@@ -901,7 +901,7 @@ class BlockProcessor:
         return map_atomical_ids_to_info
     
     # Get the expected output indexes to color for the atomicals based on the atomical types and input conditions
-    def get_expected_output_indexes_to_color(operations_found_at_inputs, mint_info, tx, atomical_id):
+    def get_expected_output_indexes_to_color(self, operations_found_at_inputs, mint_info, tx, atomical_id):
         if mint_info['type'] == 'NFT':
             assert(len(mint_info['input_indexes']) == 1)
             expected_output_indexes = [get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, operations_found_at_inputs)]
