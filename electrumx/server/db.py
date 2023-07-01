@@ -1411,32 +1411,34 @@ class DB:
     # This makees it easy to get all top holders and locations of the token to audit the supply
     async def populate_extended_location_atomical_info(self, atomical_id, atomical):
         self.logger.info(f'populate_extended_location_atomical_info {atomical_id}')
-        location_info = []
-        atomical_active_location_key_prefix = b'a' + atomical_id
-        for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
-            self.logger.info(f'populate_extended_location_atomical_info with value {atomical_id} {atomical_active_location_value}')
-            if atomical_active_location_value:
-                location = atomical_active_location_key[1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
-                atomical_output_script_key = b'po' + location
-                atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
-                location_script = atomical_output_script_value
-                location_tx_hash = location[ : 32]
-                atomical_location_idx, = unpack_le_uint32(location[ 32 : 36])
-                location_scripthash = atomical_active_location_value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]  
-                location_value, = unpack_le_uint64(atomical_active_location_value[HASHX_LEN + SCRIPTHASH_LEN : HASHX_LEN + SCRIPTHASH_LEN + 8])
-                atomicals_at_location = self.get_atomicals_by_location(location)
-                location_info.append({
-                    'location': location_id_bytes_to_compact(location),
-                    'txid': hash_to_hex_str(location_tx_hash),
-                    'index': atomical_location_idx,
-                    'scripthash': hash_to_hex_str(location_scripthash),
-                    'value': location_value,
-                    'script': location_script.hex(),
-                    'atomicals_at_location': atomicals_at_location
-                })
-        atomical['location_info'] = location_info 
-        self.logger.info(f'populate_extended_location_atomical_info atomical{atomical}')
-        return atomical
+        def query_location():
+            location_info = []
+            atomical_active_location_key_prefix = b'a' + atomical_id
+            for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
+                self.logger.info(f'populate_extended_location_atomical_info with value {atomical_id} {atomical_active_location_value}')
+                if atomical_active_location_value:
+                    location = atomical_active_location_key[1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
+                    atomical_output_script_key = b'po' + location
+                    atomical_output_script_value = self.utxo_db.get(atomical_output_script_key)
+                    location_script = atomical_output_script_value
+                    location_tx_hash = location[ : 32]
+                    atomical_location_idx, = unpack_le_uint32(location[ 32 : 36])
+                    location_scripthash = atomical_active_location_value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]  
+                    location_value, = unpack_le_uint64(atomical_active_location_value[HASHX_LEN + SCRIPTHASH_LEN : HASHX_LEN + SCRIPTHASH_LEN + 8])
+                    atomicals_at_location = self.get_atomicals_by_location(location)
+                    location_info.append({
+                        'location': location_id_bytes_to_compact(location),
+                        'txid': hash_to_hex_str(location_tx_hash),
+                        'index': atomical_location_idx,
+                        'scripthash': hash_to_hex_str(location_scripthash),
+                        'value': location_value,
+                        'script': location_script.hex(),
+                        'atomicals_at_location': atomicals_at_location
+                    })
+            atomical['location_info'] = location_info 
+            self.logger.info(f'populate_extended_location_atomical_info atomical{atomical}')
+            return atomical
+        return await run_in_thread(query_location)
 
     # Populate the mod(ify) state information for an Atomical.
     # There could be potentially many updates for an Atomical and this should be called to enumerate the entire state history
