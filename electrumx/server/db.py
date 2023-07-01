@@ -1285,6 +1285,7 @@ class DB:
                 'commit_height': init_mint_info['commit_height'],
                 'first_location_txid': init_mint_info['first_location_txid'],
                 'first_location_index': init_mint_info['first_location_index'],
+                'first_location': init_mint_info['first_location'],
                 'first_location_tx_num': init_mint_info['first_location_tx_num'],
                 'first_location_height': init_mint_info['first_location_height'],
                 'first_location_header': init_mint_info['first_location_header'],
