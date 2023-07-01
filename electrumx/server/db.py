@@ -1410,9 +1410,11 @@ class DB:
     # In the case of FTs, there can be an unbounded nu mber of maximum active locations (one for each UTXO for all holders)
     # This makees it easy to get all top holders and locations of the token to audit the supply
     async def populate_extended_location_atomical_info(self, atomical_id, atomical):
+        self.logger.info(f'populate_extended_location_atomical_info {atomical_id}')
         location_info = []
         atomical_active_location_key_prefix = b'a' + atomical_id
         for atomical_active_location_key, atomical_active_location_value in self.utxo_db.iterator(prefix=atomical_active_location_key_prefix):
+             self.logger.info(f'populate_extended_location_atomical_info with value {atomical_id} {atomical_active_location_value}')
             if atomical_active_location_value:
                 location = atomical_active_location_key[1 + ATOMICAL_ID_LEN : 1 + ATOMICAL_ID_LEN + ATOMICAL_ID_LEN]
                 atomical_output_script_key = b'po' + location
@@ -1433,6 +1435,7 @@ class DB:
                     'atomicals_at_location': atomicals_at_location
                 })
         atomical['location_info'] = location_info 
+        self.logger.info(f'populate_extended_location_atomical_info atomical{atomical}')
         return atomical
 
     # Populate the mod(ify) state information for an Atomical.
