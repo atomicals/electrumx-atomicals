@@ -76,7 +76,7 @@ def unpack_mint_info(mint_info_value):
 # The 'x' extract operation allows a UTXO, which has multiple Atomicals imprinted on it, to be split (or extracted) apart
 def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomicals_operations_found):
     assert(mint_info['type'] == 'NFT')  # Sanity check
-    if len(mint_info['input_indexes'] > 1):
+    if len(mint_info['input_indexes']) > 1:
         raise IndexError(f'get_expected_output_index_of_atomical_nft len is greater than 1. Critical developer or index error. AtomicalId={atomical_id.hex()}')
     # The expected output index is equal to the input index...
     expected_output_index = mint_info['input_indexes'][0]
