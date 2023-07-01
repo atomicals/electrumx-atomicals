@@ -914,7 +914,7 @@ class BlockProcessor:
         return expected_output_indexes
     # Detect and apply updates-related like operations for an atomical such as mod/evt/crt/sl
     def apply_state_like_updates(self, operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
-        if not apply_state_like_updates:
+        if not operations_found_at_inputs:
             return 
 
         put_general_data = self.general_data_cache.__setitem__
