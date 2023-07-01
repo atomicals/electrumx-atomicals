@@ -878,8 +878,9 @@ class BlockProcessor:
         # Track the atomical number for the newly minted atomical
         atomical_count_numb = pack_be_uint64(atomical_num)
         put_general_data(b'n' + atomical_count_numb, atomical_id)
-        # Save the output script of the atomical to lookup at a future point
+        # Save the output script of the atomical commit and reveal mint outputs to lookup at a future point for resolving address script
         put_general_data(b'po' + atomical_id, txout.pk_script)
+        put_general_data(b'po' + mint['first_location'], txout.pk_script)
         return atomical_id
 
     # Build a map of atomical id to the type, value, and input indexes
@@ -1125,11 +1126,15 @@ class BlockProcessor:
                 txin_index = txin_index + 1
             
             # Save the tx number for the current tx
+            # This index is used to lookup the height of a commit tx when minting an atomical
+            # For example if the reveal of a realm/container/ticker mint is greater than 
+            # MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS then the realm request is invalid. 
             put_general_data(b'tx' + tx_hash, to_le_uint64(tx_num) + to_le_uint32(height))
 
             # Detect all protocol operations in the transaction witness inputs
             atomicals_operations_found_at_inputs = parse_protocols_operations_from_witness_array(tx, tx_hash)
             if atomicals_operations_found_at_inputs:
+                # Log information to help troubleshoot
                 size_payload = sys.getsizeof(atomicals_operations_found_at_inputs['payload_bytes'])
                 operation_found = atomicals_operations_found_at_inputs['op']
                 operation_input_index = atomicals_operations_found_at_inputs['input_index']
@@ -1165,13 +1170,12 @@ class BlockProcessor:
                 append_hashX(double_sha256(atomical_id))
             
             # Check if there were any payments for subrealms in thtx
-            self.create_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs)
+            self.create_or_delete_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs)
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
             atomical_id_of_distmint = self.create_distmint_output(atomicals_operations_found_at_inputs, tx_hash, tx, height)
             if atomical_id_of_distmint:
-                distmint_num += 1
                 # Double hash the atomical_id_of_distmint to add it to the history to leverage the existing history db for all operations involving the atomical
                 append_hashX(double_sha256(atomical_id_of_distmint))
                 self.logger.info(f'create_distmint_output:atomical_id_of_distmint - atomical_id={atomical_id_of_distmint.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -1192,7 +1196,7 @@ class BlockProcessor:
 
     # Check for for output markers for a payment for a subrealm
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
-    def create_subrealm_payment_output_if_valid(self, tx, height, atomicals_spent_at_inputs, Delete=False):
+    def create_or_delete_subrealm_payment_output_if_valid(self, tx, height, atomicals_spent_at_inputs, Delete=False):
         # Add the new UTXOs
         found_atomical_id = None
         for idx, txout in enumerate(tx.outputs):
@@ -1312,7 +1316,7 @@ class BlockProcessor:
                 self.db_deletes.append(b'i' + location + potential_dmt_atomical_id)
     
     # Rollback atomical mint data
-    def delete_atomical_mint_data_info(self, atomical_id, atomical_num):
+    def delete_atomical_mint_data_info(self, atomical_id, location, atomical_num):
         self.logger.info(f'delete_atomical_mint_data_info: atomical_id={atomical_id.hex()}, atomical_num={atomical_num}')
         self.db_deletes.append(b'md' + atomical_id)
         self.db_deletes.append(b'mi' + atomical_id)
@@ -1323,6 +1327,9 @@ class BlockProcessor:
         self.db_deletes.append(b'a' + atomical_id + atomical_id)
         # remove the b'i' atomicals entry at the mint location
         self.db_deletes.append(b'i' + atomical_id + atomical_id)
+        # remove the script output for the commit and reveal mint
+        self.db_deletes.append(b'po' + atomical_id)
+        self.db_deletes.append(b'po' + location)
 
     # Delete atomical mint data and any associated realms, subrealms, containers and tickers
     def delete_atomical_mint(self, tx_hash, tx, atomical_num, atomicals_spent_at_inputs, operations_found_at_inputs):
@@ -1355,7 +1362,7 @@ class BlockProcessor:
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
-            self.delete_atomical_mint_data_info(atomical_id, atomical_num)
+            self.delete_atomical_mint_data_info(atomical_id, mint_info['first_location'], atomical_num)
 
         self.logger.info(f'delete_atomical_mint return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}')
         return was_mint_found  
@@ -1594,7 +1601,7 @@ class BlockProcessor:
                 atomicals_minted += 1
             
             # Rollback any subrealm payments
-            self.create_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs, True)
+            self.create_or_delete_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs, True)
 
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
