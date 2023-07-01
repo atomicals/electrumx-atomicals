@@ -1240,6 +1240,7 @@ class ElectrumX(SessionBase):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         self.db.populate_extended_location_atomical_info(atomical_id, atomical)
+        self.logger.info(f'atomical_id_get_location {compact_atomical_id}')
         return atomical
 
     async def get_summary_info(self):
