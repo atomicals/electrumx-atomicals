@@ -347,6 +347,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
 def convert_db_mint_info_to_rpc_mint_info_format(header_hash, mint_info):
     mint_info['atomical_id'] = location_id_bytes_to_compact(mint_info['atomical_id'])
     mint_info['mint_info']['commit_txid'] = hash_to_hex_str(mint_info['mint_info']['commit_txid'])
+    mint_info['mint_info']['commit_location'] = location_id_bytes_to_compact(mint_info['mint_info']['commit_location'])
     mint_info['mint_info']['first_location_txid'] = hash_to_hex_str(mint_info['mint_info']['first_location_txid'])
     mint_info['mint_info']['first_location'] = location_id_bytes_to_compact(mint_info['mint_info']['first_location'])
     mint_info['mint_info']['first_location_blockhash'] = header_hash(mint_info['mint_info']['first_location_header']).hex()
@@ -609,6 +610,7 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
+                'commit_location': prev_tx_hash + prev_idx,
                 'first_location_txid': tx_hash,
                 'first_location_index': 0 # Always assume the first output is the first location
             }

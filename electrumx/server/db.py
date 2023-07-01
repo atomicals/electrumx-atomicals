@@ -1281,6 +1281,7 @@ class DB:
             'mint_info': {
                 'commit_txid': init_mint_info['commit_txid'],
                 'commit_index': init_mint_info['commit_index'],
+                'commit_location': init_mint_info['commit_location'],
                 'commit_tx_num': init_mint_info['commit_tx_num'],
                 'commit_height': init_mint_info['commit_height'],
                 'first_location_txid': init_mint_info['first_location_txid'],
