@@ -652,19 +652,22 @@ class BlockProcessor:
         return atomicals_data_list
 
     # Put a name element template to the cache
-    def put_name_element_template(self, atomical_id_value, subject, commit_tx_num, name_data_cache, is_valid_name_string_func, prefix_key=b'', suffix_value=b''): 
+    def put_name_element_template(self, atomical_id_value, subject, commit_tx_num, name_data_cache, is_valid_name_string_func, db_prefix_key, subject_prefix_key=b''): 
         self.logger.info(f'put_name_element_template: atomical_id_value={atomical_id_value.hex()}, subject={subject}, commit_tx_num={commit_tx_num}')
         if not is_valid_name_string_func(subject):
             raise IndexError(f'put_name_element_template subject invalid {subject}')
         subject_enc = subject.encode()
-        if not name_data_cache.get(subject_enc):
-            name_data_cache[subject_enc] = {}
-        name_data_cache[prefix_key + subject_enc][commit_tx_num] = atomical_id_value
+        record_key = db_prefix_key + subject_prefix_key + subject_enc
+        if not name_data_cache.get(record_key):
+            name_data_cache[record_key] = {}
+        # subject_prefix_key is the potential parent realm id for subrealms only, empty for everything else
+        name_data_cache[record_key][commit_tx_num] = atomical_id_value
 
-    def delete_name_element_template(self, expected_entry_value, subject, commit_tx_num, name_data_cache, db_get_name_func, db_delete_prefix, prefix_key=b''): 
+    def delete_name_element_template(self, expected_entry_value, subject, commit_tx_num, name_data_cache, db_get_name_func, db_delete_prefix, subject_prefix_key=b''): 
         subject_enc = subject.encode() 
+        record_key = db_prefix_key + subject_prefix_key + subject_enc
         # Check if it's located in the cache first
-        name_map = name_data_cache.get(prefix_key + subject_enc)
+        name_map = name_data_cache.get(record_key)
         cached_atomical_id = None
         if name_map:
             atomical_id = name_map.get(commit_tx_num)
@@ -675,7 +678,7 @@ class BlockProcessor:
                 name_map.pop(commit_tx_num)
             # Intentionally fall through to catch it in the db as well just in case
         # Check the db whether or not it was in the cache as a safety measure (todo: Can be removed later as codebase proves robust)
-        db_delete_key = db_delete_prefix + prefix_key + subject_enc + pack_le_uint64(commit_tx_num)
+        db_delete_key = record_key + pack_le_uint64(commit_tx_num)
         atomical_data_from_db = self.db.utxo_db.get(db_delete_key)
         if atomical_data_from_db:
             if atomical_data_from_db != expected_entry_value: 
@@ -740,11 +743,33 @@ class BlockProcessor:
 
     def create_realm_entry_if_requested(self, mint_info):
         if is_valid_realm_string_name(mint_info.get('$request_realm')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name)
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, is_valid_realm_string_name, b'rlm')
 
-    def create_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs): 
+    def delete_realm_entry_if_requested(self, mint_info):
+        if is_valid_realm_string_name(mint_info.get('$request_realm')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, b'rlm')
+    
+    def create_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name, b'co')
+    
+    def delete_container_entry_if_requested(self, mint_info):
+        if is_valid_container_string_name(mint_info.get('$request_container')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
+
+    def create_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string(mint_info.get('$request_ticker')):
+            self.put_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, is_valid_ticker_string_name, b'tick')
+
+    def delete_ticker_entry_if_requested(self, mint_info):
+        if is_valid_ticker_string_name(mint_info.get('$request_ticker')):
+            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, b'tick')
+
+    # Check for the payment and parent information for a subrealm mint request
+    # This information is used to determine how to put and delete the record in the index
+    def get_subrealm_parent_realm_payment_info(self, mint_info, atomicals_spent_at_inputs): 
         if not is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
-            return
+            return None, None
         # Check to see if the parent realm was spent as part of the inputs to authorize the direct creation of the subrealm
         # If the parent realm was spent as one of the inputs, then there does not need to be a payment made, we consider the current transaction
         # as the payment then
@@ -764,49 +789,21 @@ class BlockProcessor:
         if initiated_by_parent:
             # However if it was initiated by the parent, therefore simply assign the payment tx hash as the reveal (first_location_txid) of the subrealm nft mint
             payment_tx_outpoint = mint_info['first_location_txid'] + pack_le_uint32(0)
-        self.put_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name)
+        return parent_realm_id, payment_tx_outpoint
 
-    def create_container_entry_if_requested(self, mint_info):
-        if is_valid_container_string_name(mint_info.get('$request_container')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, is_valid_container_string_name)
-    
-    def create_ticker_entry_if_requested(self, mint_info):
-        if is_valid_ticker_string(mint_info.get('$request_ticker')):
-            self.put_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, is_valid_ticker_string_name)
+    # Create the subrealm entry if requested correctly
+    def create_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs): 
+        parent_realm_id, payment_tx_outpoint = self.get_subrealm_payment_parent_realm_info(mint_info, atomicals_spent_at_inputs)
+        if parent_realm_id
+            self.put_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, b'srlm', parent_realm_id)
 
-    def delete_realm_entry_if_requested(self, mint_info):
-        if is_valid_realm_string_name(mint_info.get('$request_realm')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_realm'), mint_info['commit_tx_num'], self.realm_data_cache, b'rlm')
-    
-    def delete_ticker_entry_if_requested(self, mint_info):
-        if is_valid_ticker_string_name(mint_info.get('$request_ticker')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_ticker'), mint_info['commit_tx_num'], self.ticker_data_cache, b'tick')
-
-    def delete_container_entry_if_requested(self, mint_info):
-        if is_valid_container_string_name(mint_info.get('$request_container')):
-            self.delete_name_element_template(mint_info['id'], mint_info.get('$request_container'), mint_info['commit_tx_num'], self.container_data_cache, b'co')
-    
     # Delete the subrealm created entry
     # Be careful to determine if it was created with the parent realm or not
     # Because if it was creatd with the parent realm then there will be no future payment and the tx itself is considered the payment
     def delete_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs):
-        if not is_valid_subrealm_string_name(mint_info.get('$request_subrealm')):
-            return
-        parent_realm_id = mint_info['$pid_bytes']
-        initiated_by_parent = False
-        for idx, atomical_entry_list in atomicals_spent_at_inputs.items():
-            for atomical_entry in atomical_entry_list:
-                atomical_id = atomical_entry['atomical_id']
-                if atomical_id == parent_realm_id:
-                    initiated_by_parent = True
-                    break
-            # parent atomical matches being spent
-            if initiated_by_parent:
-                break
-        payment_tx_outpoint = b'000000000000000000000000000000000000000000000000000000000000000000000000'
-        if initiated_by_parent:
-            payment_tx_outpoint = mint_info['first_location_txid'] + pack_le_uint32(0)
-        self.delete_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
+        parent_realm_id, payment_tx_outpoint = self.get_subrealm_payment_parent_realm_info(mint_info, atomicals_spent_at_inputs)
+        if parent_realm_id
+            self.delete_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
 
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
@@ -880,7 +877,7 @@ class BlockProcessor:
         put_general_data(b'n' + atomical_count_numb, atomical_id)
         # Save the output script of the atomical commit and reveal mint outputs to lookup at a future point for resolving address script
         put_general_data(b'po' + atomical_id, txout.pk_script)
-        put_general_data(b'po' + mint['first_location'], txout.pk_script)
+        put_general_data(b'po' + mint_info['first_location'], txout.pk_script)
         return atomical_id
 
     # Build a map of atomical id to the type, value, and input indexes
@@ -976,17 +973,17 @@ class BlockProcessor:
         all_entries = []
         found_atomical_id, entries = self.db.get_effective_ticker(ticker)
         for key, v in self.ticker_data_cache.items():
-            for tx_num, atomical_id in v.items():
+            for commit_tx_num, atomical_id in v.items():
                 all_entries.append({
                     'atomical_id': atomical_id,
-                    'tx_num': tx_num
+                    'commit_tx_num': commit_tx_num
                 })
         all_entries.extend(entries)
-        entries.sort(key=lambda x: x.tx_num)
+        entries.sort(key=lambda x: x.commit_tx_num)
         if len(entries) > 0:
-            # Get the tx_num and use that to get the height 
+            # Get the commit_tx_num and use that to get the height 
             candidate_entry = entries[0]
-            commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['tx_num'])
+            commit_tx_hash, commit_height = self.db.fs_tx_hash(candidate_entry['commit_tx_num'])
             if commit_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
                 return candidate_entry['atomical_id']
         return None 
