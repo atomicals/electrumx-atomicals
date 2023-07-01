@@ -1215,16 +1215,16 @@ class ElectrumX(SessionBase):
         self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical
 
-    async def atomical_id_get_mod_history(self, compact_atomical_id, Verbose=False):
+    async def atomical_id_get_modify_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
         self.db.populate_extended_mod_state_atomical_info(atomical_id, atomical)
         return atomical
 
-    async def atomical_id_get_evt_history(self, compact_atomical_id, Verbose=False):
+    async def atomical_id_get_event_history(self, compact_atomical_id, Verbose=False):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id, Verbose)
-        self.db.populate_extended_evt_state_atomical_info(atomical_id, atomical)
+        self.db.populate_extended_event_state_atomical_info(atomical_id, atomical)
         return atomical
  
     async def atomical_id_get_tx_history(self, compact_atomical_id, Verbose=False):
@@ -1315,13 +1315,13 @@ class ElectrumX(SessionBase):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id, Verbose)} 
  
-    async def atomical_get_mod_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
+    async def atomical_get_modify_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_mod_history(compact_atomical_id, Verbose)} 
 
-    async def atomical_get_evt_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
+    async def atomical_get_event_history(self, compact_atomical_id_or_atomical_number, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_evt_history(compact_atomical_id, Verbose)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event_history(compact_atomical_id, Verbose)} 
 
     async def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
@@ -1367,6 +1367,7 @@ class ElectrumX(SessionBase):
         found_atomical_id = await self.db.get_effective_subrealm(atomical_id_parent, name)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
 
+    # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
         atomical_id = self.db.get_ticker(self, ticker)
         if not atomical_id:
@@ -1830,7 +1831,7 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.get_location': self.atomicals_get_location,
             'blockchain.atomicals.get': self.atomicals_get,
             'blockchain.atomicals.get_modify_history': self.atomical_get_mod_history,
-            'blockchain.atomicals.get_event_history': self.atomical_get_evt_history,
+            'blockchain.atomicals.get_event_history': self.atomical_get_event_history,
             'blockchain.atomicals.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomicals.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomicals.get_by_subrealm': self.atomicals_get_by_subrealm,

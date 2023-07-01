@@ -1475,7 +1475,7 @@ class DB:
     # From the event history, clients can play back all of the events emitted for an Atomical.
     # This is very similar to the "mod" operation, but the semantics are different and follow an emit/event like pattern
     # ...whereas the "mod" operation is intended to modify stable state.
-    def populate_extended_evt_state_atomical_info(self, atomical_id, atomical):
+    def populate_extended_event_state_atomical_info(self, atomical_id, atomical):
         prefix = b'evt' + atomical_id
         history = []
         for db_key, db_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
