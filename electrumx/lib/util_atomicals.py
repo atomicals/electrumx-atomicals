@@ -83,7 +83,7 @@ def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomic
     # ... unless the 'x' extract operation is used to reassign the Atomical from the 1'st output to the 0'th output.
     # Allow the extract operation only from the 1'st input because it will place the atomical to the 0'th output
     # There should be a key in the dictionary with the key value being the Atomical id to move
-    extract_atomical = atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 0 and atomicals_operations_found['payload'].get(atomical_id)
+    extract_atomical = atomicals_operations_found and atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 0 and atomicals_operations_found['payload'].get(atomical_id)
     # If it was an extract Atomical, then move it to the second position
     if extract_atomical:
         expected_output_index = 1
@@ -102,7 +102,7 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
     # Essentially this makes it possible to "split" out multiple FT's located at the same input
     # If any of the inputs has the skip operation, then it will apply for the atomical token generally across all inputs and the first output will be skipped
     skip_first_output = False
-    if atomicals_operations_found.get('op') == 'y' and atomicals_operations_found.get('input_index') == 0 and atomicals_operations_found.get('payload') and atomicals_operations_found.get('payload').get(atomical_id):
+    if atomicals_operations_found and atomicals_operations_found.get('op') == 'y' and atomicals_operations_found.get('input_index') == 0 and atomicals_operations_found.get('payload') and atomicals_operations_found.get('payload').get(atomical_id):
         skip_first_output = True 
 
     is_skipped = False  # Used to track if we skipped the first output
@@ -209,6 +209,8 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
 
 # Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
+    if not op_found_struct:
+        return
     # Builds the base mint information that's common to all minted Atomicals
     def build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index):
         # The first output is always imprinted
@@ -608,7 +610,6 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'first_location_txid': tx_hash,
                 'first_location_index': 0 # Always assume the first output is the first location
             }
-
         txin_idx = txin_idx + 1
     return None
 

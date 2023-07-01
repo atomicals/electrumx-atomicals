@@ -914,6 +914,9 @@ class BlockProcessor:
 
     # Detect and apply updates-related like operations for an atomical such as mod/evt/crt/sl
     def apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
+        if not apply_state_like_updates:
+            return 
+
         put_general_data = self.general_data_cache.__setitem__
         if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'mod' and operations_found_at_inputs.get('input_index') == 0:
             self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
@@ -962,7 +965,7 @@ class BlockProcessor:
                 self.apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height)
                 is_sealed = b'00'
                 # Only allow the NFT collection subtype to be sealed
-                if operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('input_index') == 0:
+                if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('input_index') == 0:
                     is_sealed = b'01'
                 self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + is_sealed)
             
@@ -995,6 +998,8 @@ class BlockProcessor:
  
     # Create a distributed mint output as long as the rules are satisfied
     def create_distmint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
+        if not atomicals_operations_found_at_inputs:
+            return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, atomicals_operations_found_at_inputs)
         if not dmt_valid:
             return None
