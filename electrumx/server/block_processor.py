@@ -913,7 +913,7 @@ class BlockProcessor:
             raise IndexError('color_atomicals_outputs: Unknown type. Index Error.')
         return expected_output_indexes
     # Detect and apply updates-related like operations for an atomical such as mod/evt/crt/sl
-    def apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
+    def apply_state_like_updates(self, operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
         if not apply_state_like_updates:
             return 
 
