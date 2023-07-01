@@ -610,7 +610,7 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
-                'commit_location': prev_tx_hash + prev_idx,
+                'commit_location': prev_tx_hash + pack_le_uint32(prev_idx),
                 'first_location_txid': tx_hash,
                 'first_location_index': 0 # Always assume the first output is the first location
             }
