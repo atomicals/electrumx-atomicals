@@ -1473,14 +1473,9 @@ class ElectrumX(SessionBase):
                 atomical_id_ref = atomical_id_basic_info['id']
                 if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
                     return_struct['atomicals'][atomical_id_ref] = {
-                        'id': atomical_id_basic_info['id'],
-                        'number': atomical_id_basic_info['number'],
-                        'realm': atomical_id_basic_info.get('realm', None),
-                        'subrealm': atomical_id_basic_info.get('subrealm', None),
-                        'container': atomical_id_basic_info.get('container', None),
-                        'ticker': atomical_id_basic_info.get('ticker', None),
+                        'atomical_id': atomical_id_basic_info['atomical_id'],
+                        'atomical_number': atomical_id_basic_info['atomical_number'],
                         'type': atomical_id_basic_info['type'],
-                        'subtype': atomical_id_basic_info['subtype'],
                         'confirmed': 0
                     } 
                 if returned_utxo['height'] <= 0:
