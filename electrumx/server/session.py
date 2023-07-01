@@ -1470,7 +1470,7 @@ class ElectrumX(SessionBase):
         }
         for returned_utxo in returned_utxos: 
             for atomical_id_basic_info in returned_utxo['atomicals']:
-                atomical_id_ref = atomical_id_basic_info['id']
+                atomical_id_ref = atomical_id_basic_info['atomical_id']
                 if return_struct['atomicals'].get(atomical_id_ref, None) == None: 
                     return_struct['atomicals'][atomical_id_ref] = {
                         'atomical_id': atomical_id_basic_info['atomical_id'],
