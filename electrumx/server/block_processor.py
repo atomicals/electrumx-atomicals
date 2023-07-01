@@ -793,7 +793,7 @@ class BlockProcessor:
 
     # Create the subrealm entry if requested correctly
     def create_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs): 
-        parent_realm_id, payment_tx_outpoint = self.get_subrealm_payment_parent_realm_info(mint_info, atomicals_spent_at_inputs)
+        parent_realm_id, payment_tx_outpoint = self.get_subrealm_parent_realm_payment_info(mint_info, atomicals_spent_at_inputs)
         if parent_realm_id:
             self.put_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, is_valid_subrealm_string_name, b'srlm', parent_realm_id)
 
@@ -801,7 +801,7 @@ class BlockProcessor:
     # Be careful to determine if it was created with the parent realm or not
     # Because if it was creatd with the parent realm then there will be no future payment and the tx itself is considered the payment
     def delete_subrealm_entry_if_requested(self, mint_info, atomicals_spent_at_inputs):
-        parent_realm_id, payment_tx_outpoint = self.get_subrealm_payment_parent_realm_info(mint_info, atomicals_spent_at_inputs)
+        parent_realm_id, payment_tx_outpoint = self.get_subrealm_parent_realm_payment_info(mint_info, atomicals_spent_at_inputs)
         if parent_realm_id:
             self.delete_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
 
