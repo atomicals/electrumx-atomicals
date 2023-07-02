@@ -347,7 +347,7 @@ class MemPool:
                 self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool {hash_to_hex_str(tx_hash)}') 
                 atomical_id = mint_info['id']
                 atomicals_updates_map[atomical_id] = {
-                    'atomical_id':  atomical_id,
+                    'atomical_id':  location_id_bytes_to_compact(atomical_id),
                     'atomical_number': -1,
                     'type': mint_info['type'],
                     'subtype': mint_info['subtype'],

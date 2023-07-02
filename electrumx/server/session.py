@@ -1210,6 +1210,8 @@ class ElectrumX(SessionBase):
         if Verbose:
             merkle = await self.transaction_merkle(reveal_location_txid, atomical['mint_info']['reveal_location_height'])
             atomical['mint_info']['reveal_location_merkle'] = merkle 
+        
+
         self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
         self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical
