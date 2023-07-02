@@ -978,6 +978,147 @@ class BlockProcessor:
                 return candidate_entry['value']
         return None 
  
+    # Get the atomical details base info
+    # Does not retrieve the active b'a' locations in this method because there could be many thousands (in the case of FTs)
+    # Another method is provided to layer on the active location and gives the user control over whether to retrieve them
+    def get_base_mint_info_by_atomical_id(self, atomical_id):
+        # Get Mint general info
+        atomical_mint_info_key = b'mi' + atomical_id
+        atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
+        if not atomical_mint_info_value:
+            return None
+
+        init_mint_info = pickle.loads(atomical_mint_info_value)
+
+        # Get Atomical number and check match
+        atomical_number = init_mint_info['number']
+        atomical_number_key = b'n' + pack_be_uint64(atomical_number)
+        atomical_number_value = self.utxo_db.get(atomical_number_key)
+        if not atomical_number_value:
+            raise IndexError(f'atomical number not found. IndexError. {atomical_number}')
+        
+        assert(atomical_number_value == atomical_id)
+
+        atomical = {
+            'atomical_id': atomical_id,
+            'atomical_number': atomical_number,
+            'type': init_mint_info['type'],
+            'mint_info': {
+                'commit_txid': init_mint_info['commit_txid'],
+                'commit_index': init_mint_info['commit_index'],
+                'commit_location': init_mint_info['commit_location'],
+                'commit_tx_num': init_mint_info['commit_tx_num'],
+                'commit_height': init_mint_info['commit_height'],
+                'reveal_location_txid': init_mint_info['reveal_location_txid'],
+                'reveal_location_index': init_mint_info['reveal_location_index'],
+                'reveal_location': init_mint_info['reveal_location'],
+                'reveal_location_tx_num': init_mint_info['reveal_location_tx_num'],
+                'reveal_location_height': init_mint_info['reveal_location_height'],
+                'reveal_location_header': init_mint_info['reveal_location_header'],
+                'reveal_location_blockhash': self.coin.header_hash(init_mint_info['reveal_location_header']),
+                'reveal_location_scripthash': init_mint_info['reveal_location_scripthash'],
+                'reveal_location_script': init_mint_info['reveal_location_script'],
+                'reveal_location_value': init_mint_info['reveal_location_value'],
+                'args': init_mint_info['args'],
+                'meta': init_mint_info['meta'],
+                'ctx': init_mint_info['ctx']
+            }
+        }
+
+        # Attach the type specific information
+        if atomical['type'] == 'NFT':
+            # Attach any auxillary information that was already successfully parsed before
+            request_realm = init_mint_info.get('$request_realm')
+            if request_realm:
+                atomical['mint_info']['$request_realm'] = request_realm
+            
+            request_subrealm = init_mint_info.get('$request_subrealm')
+            if request_subrealm:
+                atomical['mint_info']['$request_subrealm'] = request_subrealm
+                # The pid is known to be set
+                atomical['mint_info']['$pid_bytes'] = init_mint_info['$pid_bytes']
+                atomical['mint_info']['$pid'] = init_mint_info['$pid']
+
+            request_container = init_mint_info.get('$request_container')
+            if request_container:
+                atomical['mint_info']['$request_container'] = request_container
+        elif atomical['type'] == 'FT':
+            subtype = init_mint_info.get('subtype')
+            atomical['subtype'] = subtype
+            if subtype == 'distributed':
+                atomical['$max_supply'] = init_mint_info['$max_supply']
+                atomical['$mint_height'] = init_mint_info['$mint_height']
+                atomical['$mint_amount'] = init_mint_info['$mint_amount']
+                atomical['$max_mints'] = init_mint_info['$max_mints']
+            else: 
+                atomical['$max_supply'] = init_mint_info['$max_supply']
+            request_ticker = init_mint_info.get('$request_ticker')
+            if request_ticker:
+                atomical['mint_info']['$request_ticker'] = request_ticker
+
+        # Resolve any name like details such as realms, subrealms, containers and tickers
+        self.populate_extended_atomical_subtype_info(atomical)
+        return atomical
+
+    # Get the atomical details base info async
+    async def get_base_mint_info_by_atomical_id_async(self, atomical_id):
+        that = self
+        def read_atomical():
+            return that.get_base_mint_info_by_atomical_id(atomical_id)
+        return await run_in_thread(read_atomical)
+
+    # Populate the subtype information such as realms, subrealms, containers and tickers
+    # An atomical can have a naming element if it passed all the validity checks of the assignment
+    # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
+    def populate_extended_atomical_subtype_info(self, atomical):
+        
+        # Check if the effective realm is for the current atomical
+        request_realm = atomical['mint_info'].get('$request_realm')
+        if request_realm: 
+            found_realm_atomical_id = self.get_effective_realm(request_realm)
+            if found_realm_atomical_id and found_realm_atomical_id == atomical['atomical_id']:
+                atomical['subtype'] = 'realm'
+                atomical['$realm'] = request_realm
+                atomical['$fullrealm'] = request_realm
+                return atomical
+
+        # Check if the effective container is for the current atomical
+        request_container = atomical['mint_info'].get('$request_container')
+        if request_container: 
+            found_container_atomical_id = self.get_effective_container(request_container)
+            if found_container_atomical_id and found_container_atomical_id == atomical['atomical_id']:
+                atomical['subtype'] = 'container'
+                atomical['$container'] = request_container
+                return atomical
+
+        # Check if the effective ticker is for the current atomical
+        request_ticker = atomical['mint_info'].get('$request_ticker')
+        if request_ticker: 
+            found_ticker_atomical_id = self.get_effective_ticker(request_ticker)
+            if found_ticker_atomical_id and found_ticker_atomical_id == atomical['atomical_id']:
+                atomical['$ticker'] = request_ticker
+                return atomical
+   
+        # Check if the effective subrealm is for the current atomical and also resolve it's parent
+        request_subrealm = atomical['mint_info'].get('$request_subrealm')
+        if request_subrealm: 
+            pid = atomical['mint_info']['$pid_bytes']
+            pid_compact = atomical['mint_info']['$pid']
+            found_subrealm_atomical_id = self.get_effective_subrealm(pid, request_subrealm)
+            if found_subrealm_atomical_id and found_subrealm_atomical_id == atomical['atomical_id']:
+                atomical['subtype'] = 'subrealm'
+                atomical['$subrealm'] = request_subrealm
+                atomical['$pid_bytes'] = pid_bytes.hex()
+                atomical['$pid'] = pid_compact
+                # Resolve the parent realm to get the parent realm path and construct the fullrealm
+                parent_realm = self.get_base_mint_info_by_atomical_id(pid)
+                if not parent_realm:
+                    atomical_id = atomical['mint_info']['id']
+                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
+                atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + request_subrealm
+                return atomical
+        return atomical 
+
     # Create a distributed mint output as long as the rules are satisfied
     def create_distmint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
         if not atomicals_operations_found_at_inputs:
@@ -987,7 +1128,7 @@ class BlockProcessor:
             return None
 
         # get the potential dmt (distributed mint) atomical_id from the ticker given
-        potential_dmt_atomical_id = self.get_effective_name_template(b'tick', dmt_return_struct['$mint_ticker'], height, self.ticker_data_cache)
+        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
         if not potential_dmt_atomical_id:
             self.logger.info(f'potential_dmt_atomical_id not found for dmt operation in {tx_hash}. Attempt was made for a non-existant ticker mint info. Ignoring...')
             return None 
@@ -1273,7 +1414,7 @@ class BlockProcessor:
             ticker = dmt_return_struct['$mint_ticker']
             self.logger.info(f'rollback_distmint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
             # get the potential dmt (distributed mint) atomical_id from the ticker given
-            potential_dmt_atomical_id = self.get_effective_name_template(dmt_return_struct['$mint_ticker'])
+            potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
             if potential_dmt_atomical_id:
                 self.logger.info(f'rollback_distmint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
                 output_index_packed = pack_le_uint32(idx)

@@ -1196,7 +1196,7 @@ class ElectrumX(SessionBase):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.db.get_base_mint_info_by_atomical_id_async(atomical_id)
+        atomical = await self.bp.get_base_mint_info_by_atomical_id_async(atomical_id)
         self.logger.info(f'atomical_id_get {atomical}')
         if atomical == None:
             # Check mempool
@@ -1211,7 +1211,6 @@ class ElectrumX(SessionBase):
             merkle = await self.transaction_merkle(reveal_location_txid, atomical['mint_info']['reveal_location_height'])
             atomical['mint_info']['reveal_location_merkle'] = merkle 
         
-
         self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
         self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical

@@ -1147,19 +1147,28 @@ class DB:
             })
         return entries
  
-    TODO: Refactor this to correctly return the effective subrealm
+    def get_earliest_subrealm_payment(self, atomical_id):
+        spay_key_atomical_id = b'spay' + atomical_id
+        payments = []
+        for subrealmpay_key, subrealmpay_value in self.utxo_db.iterator(prefix=spay_key_atomical_id):
+            tx_numb = subrealmpay_key[:-8]
+            tx_num, = unpack_le_uint64(tx_numb)
+            payments.append({
+                'tx_num': tx_num,
+                'payment_tx_outpoint': subrealmpay_value
+            })
+        payments.sort(key=lambda x: x.tx_num)
+        return None 
+    
     # Returns the valid subrealm and atomical by the earliest valid registration
-    # TODO: critical that we validate that if the payment is not made, then we get to the next entry
-    # If you see this message, then the LOGIC IS NOT DONE AND NOT VALIDATED. Verify and fix it!
     def get_effective_subrealm(self, parent_atomical_id, subrealm):
         subrealm_key_prefix = b'srlm' + parent_atomical_id + subrealm
         entries = []
         for subrealm_key, subrealm_value in self.utxo_db.iterator(prefix=subrealm_key_prefix):
             tx_numb = subrealm_key[:-8]
-            atomical_id = subrealm_value
-            spay_key_atomical_id = b'spay' + atomical_id
-            spay_tx_outpoint_value = self.utxo_db.get(spay_key_atomical_id)
             tx_num, = unpack_le_uint64(tx_numb)
+            atomical_id = subrealm_value
+            spay_tx_outpoint_value = self.get_earliest_subrealm_payment(atomical_id)  
             entries.append({
                 'atomical_id': atomical_id,
                 'tx_num': tx_num,
@@ -1172,7 +1181,7 @@ class DB:
                     return entry['atomical_id'], entries
         return None, []
 
-    TODO: Create a 'latest state' for modpath and mod
+    # TODO: Create a 'latest state' for modpath and mod (nice to have)
     # Query all the contract crt properties and return them sorted descending by height
     def get_modpath_history(self, atomical_id, path_string):
         PREFIX_BYTE_LEN = 7 # modpath
@@ -1231,96 +1240,6 @@ class DB:
         else:
             return self.get_atomicals_by_location(location)
 
-    # Get the atomical details base info
-    # Does not retrieve the active b'a' locations in this method because there could be many thousands (in the case of FTs)
-    # Another method is provided to layer on the active location and gives the user control over whether to retrieve them
-    def get_base_mint_info_by_atomical_id(self, atomical_id):
-        # Get Mint general info
-        atomical_mint_info_key = b'mi' + atomical_id
-        atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
-        if not atomical_mint_info_value:
-            return None
-
-        init_mint_info = pickle.loads(atomical_mint_info_value)
-
-        # Get Atomical number and check match
-        atomical_number = init_mint_info['number']
-        atomical_number_key = b'n' + pack_be_uint64(atomical_number)
-        atomical_number_value = self.utxo_db.get(atomical_number_key)
-        if not atomical_number_value:
-            raise IndexError(f'atomical number not found. IndexError. {atomical_number}')
-        
-        assert(atomical_number_value == atomical_id)
-
-        atomical = {
-            'atomical_id': atomical_id,
-            'atomical_number': atomical_number,
-            'type': init_mint_info['type'],
-            'mint_info': {
-                'commit_txid': init_mint_info['commit_txid'],
-                'commit_index': init_mint_info['commit_index'],
-                'commit_location': init_mint_info['commit_location'],
-                'commit_tx_num': init_mint_info['commit_tx_num'],
-                'commit_height': init_mint_info['commit_height'],
-                'reveal_location_txid': init_mint_info['reveal_location_txid'],
-                'reveal_location_index': init_mint_info['reveal_location_index'],
-                'reveal_location': init_mint_info['reveal_location'],
-                'reveal_location_tx_num': init_mint_info['reveal_location_tx_num'],
-                'reveal_location_height': init_mint_info['reveal_location_height'],
-                'reveal_location_header': init_mint_info['reveal_location_header'],
-                'reveal_location_blockhash': self.coin.header_hash(init_mint_info['reveal_location_header']),
-                'reveal_location_scripthash': init_mint_info['reveal_location_scripthash'],
-                'reveal_location_script': init_mint_info['reveal_location_script'],
-                'reveal_location_value': init_mint_info['reveal_location_value'],
-                'args': init_mint_info['args'],
-                'meta': init_mint_info['meta'],
-                'ctx': init_mint_info['ctx']
-            }
-        }
-
-        # Attach the type specific information
-        if atomical['type'] == 'NFT':
-            # Attach any auxillary information that was already successfully parsed before
-            request_realm = init_mint_info.get('$request_realm')
-            if request_realm:
-                atomical['mint_info']['$request_realm'] = request_realm
-            
-            request_subrealm = init_mint_info.get('$request_subrealm')
-            if request_subrealm:
-                atomical['mint_info']['$request_subrealm'] = request_subrealm
-                # The pid is known to be set
-                atomical['mint_info']['$pid_bytes'] = init_mint_info['$pid_bytes']
-                atomical['mint_info']['$pid'] = init_mint_info['$pid']
-
-            request_container = init_mint_info.get('$request_container')
-            if request_container:
-                atomical['mint_info']['$request_container'] = request_container
-        elif atomical['type'] == 'FT':
-            subtype = init_mint_info.get('subtype')
-            atomical['subtype'] = subtype
-            if subtype == 'distributed':
-                atomical['$max_supply'] = init_mint_info['$max_supply']
-                atomical['$mint_height'] = init_mint_info['$mint_height']
-                atomical['$mint_amount'] = init_mint_info['$mint_amount']
-                atomical['$max_mints'] = init_mint_info['$max_mints']
-            else: 
-                atomical['$max_supply'] = init_mint_info['$max_supply']
-            request_ticker = init_mint_info.get('$request_ticker')
-            if request_ticker:
-                atomical['mint_info']['$request_ticker'] = request_ticker
-
-        # Resolve any name like details such as realms, subrealms, containers and tickers
-        # todo: put this into the layer above to get the information in the cache too?
-        self.populate_extended_atomical_subtype_info(atomical)
-        return atomical
-
-    # Get the atomical details base info async
-    async def get_base_mint_info_by_atomical_id_async(self, atomical_id):
-        that = self
-        def read_atomical():
-            return that.get_base_mint_info_by_atomical_id(atomical_id)
-        return await run_in_thread(read_atomical)
-
     # Populates a summary of the mint data fields for informational purposes
     def populate_extended_field_summary_atomical_info(self, atomical_id, atomical):
         # Get Mint data fields
@@ -1333,58 +1252,6 @@ class DB:
                 atomical['mint_data']['fields'] = unpacked_data_summary
             else: 
                 atomical['mint_data']['fields'] = {}
-        return atomical 
-
-    # Populate the subtype information such as realms, subrealms, containers and tickers
-    # An atomical can have a naming element if it passed all the validity checks of the assignment
-    # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
-
-    todo move this function into the block processor
-    def populate_extended_atomical_subtype_info(self, atomical):
-        request_realm = atomical['mint_info'].get('$request_realm')
-        if request_realm: 
-            found_realm = self.db.get_effective_realm(request_realm)
-            if found_realm:
-                assert(found_realm == request_realm)
-                atomical['subtype'] = 'realm'
-                atomical['$realm'] = found_realm
-                atomical['$fullrealm'] = found_realm
-                return atomical
-        
-        request_subrealm = atomical['mint_info'].get('$request_subrealm')
-        if request_subrealm: 
-            pid = atomical['mint_info']['$pid_bytes']
-            pid_compact = atomical['mint_info']['$pid']
-            found_subrealm = self.db.get_effective_subrealm(pid, request_subrealm)
-            if found_subrealm:
-                assert(found_subrealm == request_subrealm)
-                atomical['subtype'] = 'subrealm'
-                atomical['$subrealm'] = found_subrealm
-                atomical['$pid_bytes'] = pid_bytes.hex()
-                atomical['$pid'] = pid_compact
-                parent_realm = self.get_base_mint_info_by_atomical_id(pid)
-                if not parent_realm:
-                    atomical_id = atomical['mint_info']['id']
-                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
-                atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + found_subrealm
-                return atomical
-
-        request_container = atomical['mint_info'].get('$request_container')
-        if request_container: 
-            found_container = self.db.get_effective_container(request_container)
-            if found_container:
-                assert(found_container == request_container)
-                atomical['subtype'] = 'container'
-                atomical['$container'] = found_container
-                return atomical
-
-        request_ticker = atomical['mint_info'].get('$request_ticker')
-        if request_ticker: 
-            found_ticker = self.db.get_effective_ticker(request_ticker)
-            if found_ticker:
-                assert(found_ticker == request_ticker)
-                atomical['$ticker'] = found_ticker
-                return atomical
         return atomical 
 
     # Get the atomical details with location information added
