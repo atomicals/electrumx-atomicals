@@ -229,6 +229,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'atomical_id': atomical_id,
             'commit_txid': commit_txid,
             'commit_index': commit_index,
+            'commit_location': commit_txid + pack_le_uint32(commit_index),
             'first_location_txid': first_location_txid,
             'first_location_index': first_location_index,
             'first_location': location,
@@ -610,7 +611,6 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
-                'commit_location': prev_tx_hash + pack_le_uint32(prev_idx),
                 'first_location_txid': tx_hash,
                 'first_location_index': 0 # Always assume the first output is the first location
             }
