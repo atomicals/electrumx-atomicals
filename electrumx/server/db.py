@@ -74,18 +74,19 @@ class FlushData:
     atomicals_adds = attr.ib()          # type: Dict[bytes, Dict[bytes, { value: bytes, deleted: Boolean}] ] 
     # general_adds is a general purpose storage for key-value, used for the majority of atomicals data
     general_adds = attr.ib()            # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    # realm_adds map realm names to commit_tx_num ints, which then map onto an atomical_id
+    # realm_adds map realm names to tx_num ints, which then map onto an atomical_id
     # The purpose is to track the earliest appearance of a realm name claim request in the order of the commit tx number
     realm_adds = attr.ib()              # type: Dict[bytes, Dict[int, bytes]
-    # container_adds map container names to commit_tx_num ints, which then map onto an atomical_id
+    # container_adds map container names to tx_num ints, which then map onto an atomical_id
     # The purpose is to track the earliest appearance of a container name claim request in the order of the commit tx number
     container_adds = attr.ib()          # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    # ticker_adds map ticker names to commit_tx_num ints, which then map onto an atomical_id
+    # ticker_adds map ticker names to tx_num ints, which then map onto an atomical_id
     # The purpose is to track the earliest appearance of a ticker name claim request in the order of the commit tx number
     ticker_adds = attr.ib()             # type: List[Tuple[Sequence[bytes], Sequence[bytes]]]
-    # subrealm_adds maps parent_realm_id + subrealm name to commit_tx_num ints, which then map onto an atomical_id+payment_outpoint
-    # When there is no valid payment, then the payment_outpoint is 36 null bytes zeroes
+    # subrealm_adds maps parent_realm_id + subrealm name to tx_num ints, which then map onto an atomical_id
     subrealm_adds = attr.ib()           # type: Dict[bytes, Dict[int, bytes]
+    # subrealmpay_adds maps atomical_id to tx_num ints, which then map onto payment_outpoints
+    subrealmpay_adds = attr.ib()           # type: Dict[bytes, Dict[int, bytes]
     # distmint_adds tracks the b'gi' which is the initial distributed mint location tracked to determine if any more mints are allowed
     # It maps atomical_id (of the dft deploy token mint) to location_ids and then the details of the scripthash+value_sats of the mint        
     distmint_adds = attr.ib()           # type: Dict[bytes, Dict[bytes, bytes]
@@ -188,12 +189,12 @@ class DB:
         # "maps top level realm name and commit tx number to atomical id"
         # ---
         # Key: b'srlm' + parent_realm(atomical_id) + name + commit_tx_num
-        # Value: atomical_id bytes + payment_tx_hash (added only if payment is made)
+        # Value: atomical_id bytes
         # "maps parent realm atomical id and sub-name and commit tx number to the atomical_id"
         # ---
-        # Key: b'spay' + atomical_id (of potential subrealm in the value of b'srlm')
-        # Value: tx_outpoint (txhash+idx) of the payment
-        # "maps potential subrealm atomical id to the payment outpoint"
+        # Key: b'spay' + atomical_id (of potential subrealm in the value of the b'srlm' index) + payment_tx_outpoint 
+        # Value: satoshi value of the payment
+        # "maps atomical id and payment outpoint to the satoshi value. Used with b'srlm' to associate payments"
         # ---
         # Key: b'tick' + tick bytes + tx_num
         # Value: atomical_id bytes
@@ -348,6 +349,7 @@ class DB:
         assert not flush_data.ticker_adds
         assert not flush_data.realm_adds
         assert not flush_data.subrealm_adds
+        assert not flush_data.subrealmpay_adds
         assert not flush_data.container_adds
         assert not flush_data.distmint_adds
         assert not flush_data.deletes
@@ -491,8 +493,8 @@ class DB:
         # The earliest commit_tx_num is the first-seen registration of the name
         batch_put = batch.put
         for key, v in flush_data.realm_adds.items():
-            for commit_tx_num, atomical_id in v.items():
-                batch_put(b'rlm' + key + pack_le_uint64(commit_tx_num), atomical_id)
+            for tx_num, atomical_id in v.items():
+                batch_put(b'rlm' + key + pack_le_uint64(tx_num), atomical_id)
         flush_data.realm_adds.clear()
 
         # container data adds
@@ -509,9 +511,16 @@ class DB:
         # The earliest commit_tx_num is the first-seen registration of the name
         batch_put = batch.put
         for key, v in flush_data.subrealm_adds.items():
-            for tx_num, atomical_id_suffix in v.items():
-                batch_put(b'srlm' + key + pack_le_uint64(tx_num), atomical_id_suffix)
+            for tx_num, atomical_id in v.items():
+                batch_put(b'srlm' + key + pack_le_uint64(tx_num), atomical_id)
         flush_data.subrealm_adds.clear()
+
+        # subrealm pay data adds
+        batch_put = batch.put
+        for key, v in flush_data.subrealmpay_adds.items():
+            for tx_num, pay_outpoint in v.items():
+                batch_put(b'spay' + key + pack_le_uint64(tx_num), pay_outpoint)
+        flush_data.subrealmpay_adds.clear()
 
         # New UTXOs
         batch_put = batch.put
@@ -1125,57 +1134,20 @@ class DB:
             return unpacked_tx_num, unpacked_height
         return None
 
-    # Returns the valid realm and atomical by the earliest valid registration
-    def get_effective_realm(self, realm):
-        realm_key_prefix = b'rlm' + realm
+    def get_name_entries_template(self, db_prefix, subject_encoded):
+        db_key_prefix = db_prefix + subject_encoded
         entries = []
-        for realm_key, realm_value in self.utxo_db.iterator(prefix=realm_key_prefix):
-            tx_numb = realm_key[:-8]
-            atomical_id = realm_value
+        for db_key, db_value in self.utxo_db.iterator(prefix=db_key_prefix):
+            tx_numb = db_key[:-8]
+            atomical_id = db_value
             tx_num, = unpack_le_uint64(tx_numb)
             entries.append({
-                'atomical_id': atomical_id,
+                'value': db_value,
                 'tx_num': tx_num
             })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            return entries[0]['atomical_id'], entries
-        return None, []
+        return entries
  
-    # Returns the valid container and atomical by the earliest valid registration
-    def get_effective_container(self, container):
-        container_key_prefix = b'co' + container
-        entries = []
-        for container_key, container_value in self.utxo_db.iterator(prefix=container_key_prefix):
-            tx_numb = container_key[:-8]
-            atomical_id = container_value
-            tx_num, = unpack_le_uint64(tx_numb)
-            entries.append({
-                'atomical_id': atomical_id,
-                'tx_num': tx_num
-            })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            return entries[0]['atomical_id'], entries
-        return None, []
-
-    # Returns the valid ticker and atomical by the earliest valid registration
-    def get_effective_ticker(self, ticker):
-        ticker_key_prefix = b'tick' + ticker
-        entries = []
-        for ticker_key, ticker_value in self.utxo_db.iterator(prefix=ticker_key_prefix):
-            tx_numb = ticker_key[:-8]
-            atomical_id = ticker_value
-            tx_num, = unpack_le_uint64(tx_numb)
-            entries.append({
-                'atomical_id': atomical_id,
-                'tx_num': tx_num
-            })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            return entries[0]['atomical_id'], entries
-        return None, []
-
+    TODO: Refactor this to correctly return the effective subrealm
     # Returns the valid subrealm and atomical by the earliest valid registration
     # TODO: critical that we validate that if the payment is not made, then we get to the next entry
     # If you see this message, then the LOGIC IS NOT DONE AND NOT VALIDATED. Verify and fix it!
@@ -1184,21 +1156,23 @@ class DB:
         entries = []
         for subrealm_key, subrealm_value in self.utxo_db.iterator(prefix=subrealm_key_prefix):
             tx_numb = subrealm_key[:-8]
-            atomical_id = subrealm_value[: ATOMICAL_ID_LEN]
-            payment_tx_hash = subrealm_value[ATOMICAL_ID_LEN : ]
+            atomical_id = subrealm_value
+            spay_key_atomical_id = b'spay' + atomical_id
+            spay_tx_outpoint_value = self.utxo_db.get(spay_key_atomical_id)
             tx_num, = unpack_le_uint64(tx_numb)
             entries.append({
                 'atomical_id': atomical_id,
                 'tx_num': tx_num,
-                'payment_tx_hash': payment_tx_hash
+                'payment_tx_outpoint': spay_tx_outpoint_value
             })
         entries.sort(key=lambda x: x.tx_num)
         if len(entries) > 0:
             for entry in entries:
-                if entry['payment_tx_hash'] != b'000000000000000000000000000000000000000000000000000000000000000000000000':
+                if entry.get('payment_tx_outpoint'):
                     return entry['atomical_id'], entries
         return None, []
 
+    TODO: Create a 'latest state' for modpath and mod
     # Query all the contract crt properties and return them sorted descending by height
     def get_modpath_history(self, atomical_id, path_string):
         PREFIX_BYTE_LEN = 7 # modpath
@@ -1318,10 +1292,6 @@ class DB:
                 atomical['mint_info']['$pid_bytes'] = init_mint_info['$pid_bytes']
                 atomical['mint_info']['$pid'] = init_mint_info['$pid']
 
-            request_ticker = init_mint_info.get('$request_ticker')
-            if request_ticker:
-                atomical['mint_info']['$request_ticker'] = request_ticker
-            
             request_container = init_mint_info.get('$request_container')
             if request_container:
                 atomical['mint_info']['$request_container'] = request_container
@@ -1335,6 +1305,9 @@ class DB:
                 atomical['$max_mints'] = init_mint_info['$max_mints']
             else: 
                 atomical['$max_supply'] = init_mint_info['$max_supply']
+            request_ticker = init_mint_info.get('$request_ticker')
+            if request_ticker:
+                atomical['mint_info']['$request_ticker'] = request_ticker
 
         # Resolve any name like details such as realms, subrealms, containers and tickers
         # todo: put this into the layer above to get the information in the cache too?
@@ -1365,6 +1338,8 @@ class DB:
     # Populate the subtype information such as realms, subrealms, containers and tickers
     # An atomical can have a naming element if it passed all the validity checks of the assignment
     # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
+
+    todo move this function into the block processor
     def populate_extended_atomical_subtype_info(self, atomical):
         request_realm = atomical['mint_info'].get('$request_realm')
         if request_realm: 
