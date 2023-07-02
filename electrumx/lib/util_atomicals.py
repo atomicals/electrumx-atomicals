@@ -230,13 +230,13 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'commit_txid': commit_txid,
             'commit_index': commit_index,
             'commit_location': commit_txid + pack_le_uint32(commit_index),
-            'first_location_txid': first_location_txid,
-            'first_location_index': first_location_index,
-            'first_location': location,
-            'first_location_scripthash': scripthash,
-            'first_location_hashX': hashX,
-            'first_location_value': txout.value,
-            'first_location_script': txout.pk_script,
+            'reveal_location_txid': first_location_txid,
+            'reveal_location_index': first_location_index,
+            'reveal_location': location,
+            'reveal_location_scripthash': scripthash,
+            'reveal_location_hashX': hashX,
+            'reveal_location_value': txout.value,
+            'reveal_location_script': txout.pk_script,
             # The following fields will be added at a different level of processing
             # 'number': atomical_num,  
             # 'header': header, 
@@ -268,8 +268,8 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     input_index = op_found_struct['input_index']
     commit_txid = op_found_struct['commit_txid']
     commit_index = op_found_struct['commit_index']
-    first_location_txid = op_found_struct['first_location_txid']
-    first_location_index = op_found_struct['first_location_index']
+    first_location_txid = op_found_struct['reveal_location_txid']
+    first_location_index = op_found_struct['reveal_location_index']
 
     # Create the base mint information structure
     mint_info = build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index)
@@ -349,12 +349,12 @@ def convert_db_mint_info_to_rpc_mint_info_format(header_hash, mint_info):
     mint_info['atomical_id'] = location_id_bytes_to_compact(mint_info['atomical_id'])
     mint_info['mint_info']['commit_txid'] = hash_to_hex_str(mint_info['mint_info']['commit_txid'])
     mint_info['mint_info']['commit_location'] = location_id_bytes_to_compact(mint_info['mint_info']['commit_location'])
-    mint_info['mint_info']['first_location_txid'] = hash_to_hex_str(mint_info['mint_info']['first_location_txid'])
-    mint_info['mint_info']['first_location'] = location_id_bytes_to_compact(mint_info['mint_info']['first_location'])
-    mint_info['mint_info']['first_location_blockhash'] = header_hash(mint_info['mint_info']['first_location_header']).hex()
-    mint_info['mint_info']['first_location_header'] = mint_info['mint_info']['first_location_header'].hex()
-    mint_info['mint_info']['first_location_scripthash'] = hash_to_hex_str(mint_info['mint_info']['first_location_scripthash'])
-    mint_info['mint_info']['first_location_script'] = mint_info['mint_info']['first_location_script'].hex()
+    mint_info['mint_info']['reveal_location_txid'] = hash_to_hex_str(mint_info['mint_info']['reveal_location_txid'])
+    mint_info['mint_info']['reveal_location'] = location_id_bytes_to_compact(mint_info['mint_info']['reveal_location'])
+    mint_info['mint_info']['reveal_location_blockhash'] = header_hash(mint_info['mint_info']['reveal_location_header']).hex()
+    mint_info['mint_info']['reveal_location_header'] = mint_info['mint_info']['reveal_location_header'].hex()
+    mint_info['mint_info']['reveal_location_scripthash'] = hash_to_hex_str(mint_info['mint_info']['reveal_location_scripthash'])
+    mint_info['mint_info']['reveal_location_script'] = mint_info['mint_info']['reveal_location_script'].hex()
     return mint_info 
 
 # A valid ticker string must be at least 3 characters and max 10 with a-z0-9
@@ -611,8 +611,8 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
-                'first_location_txid': tx_hash,
-                'first_location_index': 0 # Always assume the first output is the first location
+                'reveal_location_txid': tx_hash,
+                'reveal_location_index': 0 # Always assume the first output is the first location
             }
         txin_idx = txin_idx + 1
     return None

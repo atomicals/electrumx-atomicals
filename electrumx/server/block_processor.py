@@ -712,10 +712,10 @@ class BlockProcessor:
         if not mint_info or not isinstance(mint_info, dict):
             return False
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
-        value_sats = pack_le_uint64(mint_info['first_location_value'])
+        value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
         is_sealed = b'00'
-        self.put_atomicals_utxo(mint_info['first_location'], mint_info['id'], mint_info['first_location_hashX'] + mint_info['first_location_scripthash'] + value_sats + is_sealed)
+        self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + is_sealed)
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create NFT in reveal tx {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
         return True
@@ -724,11 +724,11 @@ class BlockProcessor:
     def validate_and_create_ft_mint_utxo(self, mint_info, tx_hash):
         self.logger.info(f'validate_and_create_ft_mint_utxo: tx_hash={hash_to_hex_str(tx_hash)}')
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
-        value_sats = pack_le_uint64(mint_info['first_location_value'])
+        value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'distributed':
             is_sealed = b'00'
-            self.put_atomicals_utxo(mint_info['first_location_location'], mint_info['id'], mint_info['first_location_hashX'] + mint_info['first_location_scripthash'] + value_sats + is_sealed)
+            self.put_atomicals_utxo(mint_info['reveal_location_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
         self.logger.info(f'Atomicals Create FT in reveal tx {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
         return True
@@ -788,7 +788,7 @@ class BlockProcessor:
         payment_tx_outpoint = b'000000000000000000000000000000000000000000000000000000000000000000000000'
         if initiated_by_parent:
             # However if it was initiated by the parent, therefore simply assign the payment tx hash as the reveal (first_location_txid) of the subrealm nft mint
-            payment_tx_outpoint = mint_info['first_location_txid'] + pack_le_uint32(0)
+            payment_tx_outpoint = mint_info['reveal_location_txid'] + pack_le_uint32(0)
         return parent_realm_id, payment_tx_outpoint
 
     # Create the subrealm entry if requested correctly
@@ -806,10 +806,10 @@ class BlockProcessor:
             self.delete_name_element_template(mint_info['id'] + payment_tx_outpoint, mint_info.get('$request_subrealm'), mint_info['commit_tx_num'], self.subrealm_data_cache, b'srlm', parent_realm_id)
 
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
-        return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
+        return mint_info['commit_height'] >= mint_info['reveal_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
 
     def is_within_acceptable_blocks_for_subrealm_payment(self, mint_info):
-        return mint_info['commit_height'] >= mint_info['first_location_height'] - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
+        return mint_info['commit_height'] >= mint_info['reveal_location_height'] - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
 
     # Check whether to create an atomical NFT/FT 
     # Validates the format of the detected input operation and then checks the correct extra data is valid
@@ -841,9 +841,9 @@ class BlockProcessor:
         # The mint tx num is used to determine precedence for names like tickers, realms, containers
         mint_info['commit_tx_num'] = commit_tx_num 
         mint_info['commit_height'] = commit_tx_height 
-        mint_info['first_location_header'] = header 
-        mint_info['first_location_height'] = height 
-        mint_info['first_location_tx_num'] = tx_num 
+        mint_info['reveal_location_header'] = header 
+        mint_info['reveal_location_height'] = height 
+        mint_info['reveal_location_tx_num'] = tx_num 
         
         if valid_create_op_type == 'NFT':
             if not self.validate_and_create_nft_mint_utxo(mint_info, txout, height, tx_hash):
@@ -877,7 +877,7 @@ class BlockProcessor:
         put_general_data(b'n' + atomical_count_numb, atomical_id)
         # Save the output script of the atomical commit and reveal mint outputs to lookup at a future point for resolving address script
         put_general_data(b'po' + atomical_id, txout.pk_script)
-        put_general_data(b'po' + mint_info['first_location'], txout.pk_script)
+        put_general_data(b'po' + mint_info['reveal_location'], txout.pk_script)
         return atomical_id
 
     # Build a map of atomical id to the type, value, and input indexes
@@ -1127,8 +1127,8 @@ class BlockProcessor:
                 operation_input_index = atomicals_operations_found_at_inputs['input_index']
                 commit_txid = atomicals_operations_found_at_inputs['commit_txid']
                 commit_index = atomicals_operations_found_at_inputs['commit_index']
-                first_location_txid = atomicals_operations_found_at_inputs['first_location_txid']
-                first_location_index = atomicals_operations_found_at_inputs['first_location_index']
+                first_location_txid = atomicals_operations_found_at_inputs['reveal_location_txid']
+                first_location_index = atomicals_operations_found_at_inputs['reveal_location_index']
                 self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, commit_txid={hash_to_hex_str(commit_txid)}, commit_index={commit_index}, first_location_txid={hash_to_hex_str(first_location_txid)}, first_location_index={first_location_index}')
 
             # Add the new UTXOs
@@ -1217,10 +1217,10 @@ class BlockProcessor:
                     # Delete or create he record based on whether we are reorg rollback or creating new
                     # todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
                     if Delete:
-                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
-                    else: 
                         self.delete_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
-    
+                    else: 
+                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
+                        
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
 
@@ -1349,7 +1349,7 @@ class BlockProcessor:
             assert('Invalid mint developer error fatal')
         
         if was_mint_found:
-            self.delete_atomical_mint_data_info(atomical_id, mint_info['first_location'], atomical_num)
+            self.delete_atomical_mint_data_info(atomical_id, mint_info['reveal_location'], atomical_num)
 
         self.logger.info(f'delete_atomical_mint return values atomical_id={atomical_id.hex()}, atomical_num={atomical_num}, was_mint_found={was_mint_found}')
         return was_mint_found  
