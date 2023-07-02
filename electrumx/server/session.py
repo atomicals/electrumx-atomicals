@@ -1390,7 +1390,7 @@ class ElectrumX(SessionBase):
             response_struct['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints']
             response_struct['$mint_count'] = mint_count
             response_struct['$minted_supply'] = mint_info['$mint_amount'] * mint_count
-        elif response_struct['subtype'] == 'base':
+        elif response_struct['subtype'] == 'direct':
             # The base token is all minted up front
             response_struct['$max_supply'] = mint_info['value']
             response_struct['$minted_supply'] = mint_info['value']
