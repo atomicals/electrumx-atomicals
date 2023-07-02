@@ -488,7 +488,7 @@ class BlockProcessor:
                 # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
                 # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
                 if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info):
-                    # The first_location_height (mint/reveal height) is too old and this payment came in far too late
+                    # The reveal_location_height (mint/reveal height) is too old and this payment came in far too late
                     # Ignore the payment therefore.
                     return None
                 # The parent realm id is in a compact form string to make it easier for users and developers
@@ -787,7 +787,7 @@ class BlockProcessor:
         # By default the payment hash is all zeroes, awaiting a payment to be made later
         payment_tx_outpoint = b'000000000000000000000000000000000000000000000000000000000000000000000000'
         if initiated_by_parent:
-            # However if it was initiated by the parent, therefore simply assign the payment tx hash as the reveal (first_location_txid) of the subrealm nft mint
+            # However if it was initiated by the parent, therefore simply assign the payment tx hash as the reveal (reveal_location_txid) of the subrealm nft mint
             payment_tx_outpoint = mint_info['reveal_location_txid'] + pack_le_uint32(0)
         return parent_realm_id, payment_tx_outpoint
 
@@ -1127,9 +1127,9 @@ class BlockProcessor:
                 operation_input_index = atomicals_operations_found_at_inputs['input_index']
                 commit_txid = atomicals_operations_found_at_inputs['commit_txid']
                 commit_index = atomicals_operations_found_at_inputs['commit_index']
-                first_location_txid = atomicals_operations_found_at_inputs['reveal_location_txid']
-                first_location_index = atomicals_operations_found_at_inputs['reveal_location_index']
-                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, commit_txid={hash_to_hex_str(commit_txid)}, commit_index={commit_index}, first_location_txid={hash_to_hex_str(first_location_txid)}, first_location_index={first_location_index}')
+                reveal_location_txid = atomicals_operations_found_at_inputs['reveal_location_txid']
+                reveal_location_index = atomicals_operations_found_at_inputs['reveal_location_index']
+                self.logger.info(f'atomicals_operations_found_at_inputs - operation_found={operation_found}, operation_input_index={operation_input_index}, size_payload={size_payload}, tx_hash={hash_to_hex_str(tx_hash)}, commit_txid={hash_to_hex_str(commit_txid)}, commit_index={commit_index}, reveal_location_txid={hash_to_hex_str(reveal_location_txid)}, reveal_location_index={reveal_location_index}')
 
             # Add the new UTXOs
             for idx, txout in enumerate(tx.outputs):

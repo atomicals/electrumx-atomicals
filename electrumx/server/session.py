@@ -1204,11 +1204,11 @@ class ElectrumX(SessionBase):
             if atomical_in_mempool == None: 
                 raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
             return atomical_in_mempool
-        first_location_txid = atomical['mint_info']['reveal_location_txid']
+        reveal_location_txid = atomical['mint_info']['reveal_location_txid']
         convert_db_mint_info_to_rpc_mint_info_format(self.coin.header_hash, atomical)
         self.logger.info(f'convert_db_mint_info_to_rpc_mint_info_format {atomical}')
         if Verbose:
-            merkle = await self.transaction_merkle(first_location_txid, atomical['mint_info']['reveal_location_height'])
+            merkle = await self.transaction_merkle(reveal_location_txid, atomical['mint_info']['reveal_location_height'])
             atomical['mint_info']['reveal_location_merkle'] = merkle 
         self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
         self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')

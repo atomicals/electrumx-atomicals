@@ -213,7 +213,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     if not op_found_struct:
         return
     # Builds the base mint information that's common to all minted Atomicals
-    def build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index):
+    def build_base_mint_info(commit_txid, commit_index, reveal_location_txid, reveal_location_index):
         # The first output is always imprinted
         expected_output_index = 0
         txout = tx.outputs[expected_output_index]
@@ -221,7 +221,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         hashX = script_hashX(txout.pk_script)
         output_idx_le = pack_le_uint32(expected_output_index) 
         atomical_id = commit_txid + pack_le_uint32(commit_index)
-        location = first_location_txid + pack_le_uint32(first_location_index)
+        location = reveal_location_txid + pack_le_uint32(reveal_location_index)
         value_sats = pack_le_uint64(txout.value)
         # Create the general mint information
         return {
@@ -230,8 +230,8 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'commit_txid': commit_txid,
             'commit_index': commit_index,
             'commit_location': commit_txid + pack_le_uint32(commit_index),
-            'reveal_location_txid': first_location_txid,
-            'reveal_location_index': first_location_index,
+            'reveal_location_txid': reveal_location_txid,
+            'reveal_location_index': reveal_location_index,
             'reveal_location': location,
             'reveal_location_scripthash': scripthash,
             'reveal_location_hashX': hashX,
@@ -268,11 +268,11 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     input_index = op_found_struct['input_index']
     commit_txid = op_found_struct['commit_txid']
     commit_index = op_found_struct['commit_index']
-    first_location_txid = op_found_struct['reveal_location_txid']
-    first_location_index = op_found_struct['reveal_location_index']
+    reveal_location_txid = op_found_struct['reveal_location_txid']
+    reveal_location_index = op_found_struct['reveal_location_index']
 
     # Create the base mint information structure
-    mint_info = build_base_mint_info(commit_txid, commit_index, first_location_txid, first_location_index)
+    mint_info = build_base_mint_info(commit_txid, commit_index, reveal_location_txid, reveal_location_index)
     if not populate_args_meta(mint_info, op_found_struct['payload']):
         print(f'get_mint_info_op_factory - not populate_args_meta {hash_to_hex_str(tx_hash)}')
         return None, None
