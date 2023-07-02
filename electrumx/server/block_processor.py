@@ -480,7 +480,7 @@ class BlockProcessor:
             # Check that $request_subrealm was set because it will only be set if the basic validation succeeded
             # If it's not set, then the atomical subrealm mint was not valid on a basic level and must be rejected
             if not request_subrealm:
-                return None
+                return None, None, None
             # Sanity check
             assert(args_subrealm == request_subrealm)
             # More sanity checks on the formats and validity
@@ -490,7 +490,7 @@ class BlockProcessor:
                 if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info):
                     # The reveal_location_height (mint/reveal height) is too old and this payment came in far too late
                     # Ignore the payment therefore.
-                    return None
+                    return None, None, None
                 # The parent realm id is in a compact form string to make it easier for users and developers
                 # Only store the details if the pid is also set correctly
                 request_parent_realm_id_compact = mint_info['args'].get('pid')
@@ -508,10 +508,10 @@ class BlockProcessor:
                         # One or both was empty and therefore didn't pass the basic checks
                         # Someone apparently made a payment marker for an invalid parent realm id. They made a mistake, ignoring it..
                         if not args_realm or not request_subrealm: 
-                            return None
+                            return None, None, None
                         # Make sure it's the right type and format checks pass again just in case
                         if not isinstance(request_realm, str) or not is_valid_realm_string_name(request_realm):
-                            return None 
+                            return None, None, None
                         # At this point we know we have a valid parent, but because realm allocation is delayed by MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
                         # ... we do not actually know if the parent was awarded the realm or not until the required heights are met
                         # Nonetheless, someone DID make a payment and referenced the parent by the specific atomical id and therefore we will try to apply to payment
@@ -520,10 +520,29 @@ class BlockProcessor:
                         matched_price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_atomical_id, request_subrealm, current_height)
                         if matched_price_point:
                             return matched_price_point, parent_atomical_id, request_subrealm
-        return None
+        return None, None, None
 
     # Save the subrealm payment
     def put_subrealm_payment(self, parent_atomical_id, atomical_id, subrealm_name, tx_hash_idx_of_payment): 
+        # todo refactor to use b'spay' index
+        
+        subrealm_namfe_enc = subrealm_name.encode()
+        record_key = b'srlm' + parent_atomical_id + subrealm_name_enc
+        found_subrealm_in_cache = self.subrealm_data_cache.get(record_key)
+        if found_subrealm_in_cache:
+            if found_subrealm_in_cache == atomical_id + b'000000000000000000000000000000000000000000000000000000000000000000000000':
+                self.logger.info(f'put_subrealm_payment found_subrealm_in_cache {found_subrealm_in_cache} applying payment of {tx_hash_idx_of_payment}')
+                self.subrealm_data_cache[record_key] = atomical_id + tx_hash_idx_of_payment
+            else: 
+                self.logger.info(f'put_subrealm_payment found_subrealm_in_cache {found_subrealm_in_cache} found different than empty null and NOT applying payment of {tx_hash_idx_of_payment}')
+            
+             
+        # subject_prefix_key is the potential parent realm id for subrealms only, empty for everything else
+        name_data_cache[record_key][commit_tx_num] = atomical_id_value
+
+
+
+
         # Retrieve the subrealm index record first
         # subject_enc = subject.encode() 
         # Check if it's located in the cache first
@@ -1157,7 +1176,7 @@ class BlockProcessor:
                 append_hashX(double_sha256(atomical_id))
             
             # Check if there were any payments for subrealms in thtx
-            self.create_or_delete_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs)
+            self.create_or_delete_subrealm_payment_output_if_valid(tx_hash, tx, height, atomicals_spent_at_inputs)
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
@@ -1183,7 +1202,7 @@ class BlockProcessor:
 
     # Check for for output markers for a payment for a subrealm
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
-    def create_or_delete_subrealm_payment_output_if_valid(self, tx, height, atomicals_spent_at_inputs, Delete=False):
+    def create_or_delete_subrealm_payment_output_if_valid(self, tx_hash, tx, height, atomicals_spent_at_inputs, Delete=False):
         # Add the new UTXOs
         found_atomical_id = None
         for idx, txout in enumerate(tx.outputs):
@@ -1217,9 +1236,9 @@ class BlockProcessor:
                     # Delete or create he record based on whether we are reorg rollback or creating new
                     # todo and ensure a payment cannot overwrite another payment and cannot overwrite the parent realm issuance record
                     if Delete:
-                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
+                        self.delete_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx_hash + pack_le_uint32(idx))
                     else: 
-                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx.hash + pack_le_uint32(idx))
+                        self.put_subrealm_payment(parent_realm_id, found_atomical_id, request_subrealm_name, tx_hash + pack_le_uint32(idx))
                         
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.
@@ -1588,7 +1607,7 @@ class BlockProcessor:
                 atomicals_minted += 1
             
             # Rollback any subrealm payments
-            self.create_or_delete_subrealm_payment_output_if_valid(tx, height, atomicals_spent_at_inputs, True)
+            self.create_or_delete_subrealm_payment_output_if_valid(tx_hash, tx, height, atomicals_spent_at_inputs, True)
 
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)

@@ -211,7 +211,7 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
 # Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     if not op_found_struct:
-        return
+        return None
     # Builds the base mint information that's common to all minted Atomicals
     def build_base_mint_info(commit_txid, commit_index, reveal_location_txid, reveal_location_index):
         # The first output is always imprinted
@@ -237,11 +237,6 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'reveal_location_hashX': hashX,
             'reveal_location_value': txout.value,
             'reveal_location_script': txout.pk_script,
-            # The following fields will be added at a different level of processing
-            # 'number': atomical_num,  
-            # 'header': header, 
-            # 'height': height, 
-            # 'tx_num': tx_num
         }
     
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
@@ -310,16 +305,14 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'base'
         ticker = mint_info['args'].get('request_ticker', None)
-        if not is_valid_ticker_string(ticker):
-            return None, None
-        mint_info['$request_ticker'] = ticker
+        if isinstance(ticker, str) and is_valid_ticker_string(ticker):
+            mint_info['$request_ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
         mint_info['subtype'] = 'distributed'
         ticker = mint_info['args'].get('request_ticker', None)
-        if not is_valid_ticker_string(ticker):
-            return None, None
-        mint_info['$request_ticker'] = ticker
+        if isinstance(ticker, str) and is_valid_ticker_string(ticker):
+            mint_info['$request_ticker'] = ticker
         mint_height = mint_info['args'].get('mint_height', None)
         if not isinstance(mint_height, int) or mint_height < 0 or mint_height > 10000000:
             print(f'DFT mint has invalid mint_height {tx_hash}, {mint_height}. Skipping...')

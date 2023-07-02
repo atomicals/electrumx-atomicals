@@ -191,6 +191,10 @@ class DB:
         # Value: atomical_id bytes + payment_tx_hash (added only if payment is made)
         # "maps parent realm atomical id and sub-name and commit tx number to the atomical_id"
         # ---
+        # Key: b'spay' + atomical_id (of potential subrealm in the value of b'srlm')
+        # Value: tx_outpoint (txhash+idx) of the payment
+        # "maps potential subrealm atomical id to the payment outpoint"
+        # ---
         # Key: b'tick' + tick bytes + tx_num
         # Value: atomical_id bytes
         # "maps name to atomical id (FT)"
