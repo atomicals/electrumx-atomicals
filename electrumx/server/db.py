@@ -1157,7 +1157,7 @@ class DB:
                 'tx_num': tx_num,
                 'payment_tx_outpoint': subrealmpay_value
             })
-        payments.sort(key=lambda x: x.tx_num)
+        payments.sort(key=lambda x: x['tx_num'])
         if len(payments) > 0:
             return payments[0]
         return None 

@@ -627,6 +627,7 @@ class BlockProcessor:
 
     # Delete the name cache and db element
     def delete_name_element_template(self, db_delete_prefix, subject, tx_num, expected_entry_value, name_data_cache): 
+        self.logger.info(f'delete_name_element_template: db_delete_prefix={db_delete_prefix}, subject={subject}, tx_num={tx_num}, expected_entry_value={expected_entry_value.hex()}')
         subject_enc = subject.encode() 
         record_key = db_delete_prefix + subject_enc
         # Check if it's located in the cache first
@@ -965,7 +966,7 @@ class BlockProcessor:
                     'tx_num': tx_num
                 })
         all_entries.extend(db_entries)
-        all_entries.sort(key=lambda x: x.tx_num)
+        all_entries.sort(key=lambda x: x['tx_num'])
         # For each entry ensure that it is 
         for entry in all_entries:
             atomical_id = candidate_entry['value']
@@ -995,7 +996,7 @@ class BlockProcessor:
                 })
         all_entries.extend(db_entries)
         # sort by the earliest tx number because it was the first one committed
-        all_entries.sort(key=lambda x: x.tx_num)
+        all_entries.sort(key=lambda x: x['tx_num'])
         if len(all_entries) > 0:
             candidate_entry = all_entries[0]
             atomical_id = candidate_entry['value']
