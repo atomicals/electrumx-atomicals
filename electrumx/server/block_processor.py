@@ -1012,7 +1012,7 @@ class BlockProcessor:
     def get_base_mint_info_by_atomical_id(self, atomical_id):
         # Get Mint general info
         atomical_mint_info_key = b'mi' + atomical_id
-        atomical_mint_info_value = self.utxo_db.get(atomical_mint_info_key)
+        atomical_mint_info_value = self.db.utxo_db.get(atomical_mint_info_key)
         if not atomical_mint_info_value:
             return None
 
@@ -1021,7 +1021,7 @@ class BlockProcessor:
         # Get Atomical number and check match
         atomical_number = init_mint_info['number']
         atomical_number_key = b'n' + pack_be_uint64(atomical_number)
-        atomical_number_value = self.utxo_db.get(atomical_number_key)
+        atomical_number_value = self.db.utxo_db.get(atomical_number_key)
         if not atomical_number_value:
             raise IndexError(f'atomical number not found. IndexError. {atomical_number}')
         
