@@ -1348,21 +1348,27 @@ class ElectrumX(SessionBase):
 
     async def atomicals_get_by_ticker(self, ticker):
         found_atomical_id = self.session_mgr.bp.get_effective_ticker(ticker)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+        if not found_atomical_id:
+            raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
+        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
     
     async def atomicals_get_by_container(self, container):
         found_atomical_id = self.session_mgr.bp.get_effective_container(container)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+        if not found_atomical_id:
+            raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
+        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
 
     async def atomicals_get_by_realm(self, name):
         found_atomical_id = self.session_mgr.bp.get_effective_realm(name)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+        if not found_atomical_id:
+            raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
+        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
     
     async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
         compact_atomical_id_parent = await self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
         atomical_id_parent = compact_to_location_id_bytes(compact_atomical_id_parent)
         found_atomical_id = self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
-        return {'result': location_id_bytes_to_compact(found_atomical_id)} 
+        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
 
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
