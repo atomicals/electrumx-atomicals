@@ -350,7 +350,7 @@ class MemPool:
                     'atomical_id':  location_id_bytes_to_compact(atomical_id),
                     'atomical_number': -1,
                     'type': mint_info['type'],
-                    'subtype': mint_info.get('subtype']),
+                    'subtype': mint_info.get('subtype'),
                     'confirmed': False
                 }
 
