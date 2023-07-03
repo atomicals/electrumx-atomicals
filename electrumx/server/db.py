@@ -1161,7 +1161,7 @@ class DB:
         if len(payments) > 0:
             return payments[0]
         return None 
-
+    
     # TODO: Create a 'latest state' for modpath and mod (nice to have)
     # Query all the contract crt properties and return them sorted descending by height
     def get_modpath_history(self, atomical_id, path_string):
