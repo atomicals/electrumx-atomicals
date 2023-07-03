@@ -488,7 +488,7 @@ class BlockProcessor:
             if isinstance(request_subrealm, str) and is_valid_subrealm_string_name(request_subrealm):
                 # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
                 # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
-                if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info):
+                if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info, current_height):
                     # The reveal_location_height (mint/reveal height) is too old and this payment came in far too late
                     # Ignore the payment therefore.
                     return None, None, None
@@ -771,11 +771,13 @@ class BlockProcessor:
         if initiated_by_parent:
             self.delete_name_element_template(b'spay', mint_info['id'], mint_info['reveal_location_tx_num'], mint_info['reveal_location'], self.subrealmpay_data_cache)
     
+    # A realm, ticker, or container reveal is valid as long as it is within MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS of the reveal and commit
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['reveal_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
 
-    def is_within_acceptable_blocks_for_subrealm_payment(self, mint_info):
-        return mint_info['commit_height'] >= mint_info['reveal_location_height'] - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
+    # A payment for a subrealm is acceptable as long as it is within MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS of the reveal_location_height 
+    def is_within_acceptable_blocks_for_subrealm_payment(self, mint_info, current_height):
+        return current_height <= mint_info['reveal_location_height'] + MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
 
     # Check whether to create an atomical NFT/FT 
     # Validates the format of the detected input operation and then checks the correct extra data is valid
@@ -940,23 +942,48 @@ class BlockProcessor:
     
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):
-        return self.get_effective_name_template(b'rlm', realm_name, self.height, self.realm_data_cache)
+        return self.get_effective_name_template(b'rlm', realm_name, self.realm_data_cache)
 
     # Get the effective container considering cache and database
     def get_effective_container(self, container_name):
-        return self.get_effective_name_template(b'co', container_name, self.height, self.container_data_cache)
+        return self.get_effective_name_template(b'co', container_name, self.container_data_cache)
     
     # Get the effective ticker considering cache and database
     def get_effective_ticker(self, ticker_name):
-        return self.get_effective_name_template(b'tick', ticker_name, self.height, self.ticker_data_cache)
+        return self.get_effective_name_template(b'tick', ticker_name, self.ticker_data_cache)
     
      # Get the effective subrealm considering cache and database
     def get_effective_subrealm(self, parent_realm_id, subrealm_name):
-        i = 'get the effective subrealm taking into accoun tpayments'
-        # return self.get_effective_name_template(b'tick', ticker_name, self.height, self.ticker_data_cache)
+        current_height = self.height
+        # Get the effective name entries from the database
+        all_entries = []
+        db_entries = self.db.get_name_entries_template(b'srlm', parent_realm_id + subrealm_name.encode())
+        for key, v in self.subrealm_data_cache.items():
+            for tx_num, value in v.items():
+                all_entries.append({
+                    'value': value,
+                    'tx_num': tx_num
+                })
+        all_entries.extend(db_entries)
+        all_entries.sort(key=lambda x: x.tx_num)
+        # For each entry ensure that it is 
+        for entry in all_entries:
+            atomical_id = candidate_entry['value']
+            mint_info = self.get_atomicals_id_mint_info(atomical_id)
+            # Sanity check to make sure it matches
+            assert(mint_info['commit_tx_num'] == candidate_entry['tx_num'])
+            # Only consider it an effective subrealm if the elapsed MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS has been met from the first revealed
+            if mint_info['reveal_location_height'] <= current_height - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS:
+                # It could potentially be the valid subrealm, check to see if the payment was made
+                payment_entry = self.db.get_earliest_subrealm_payment(atomical_id)
+                if payment_entry:
+                    # payment_tx_outpoint = payment_entry['payment_tx_outpoint']
+                    return atomical_id 
+        return None
 
     # Get the effective name for realms, containers, and tickers. Does NOT work for subrealms, use the get_effective_subrealm method directly
-    def get_effective_name_template(self, db_prefix, subject, current_height, name_data_cache):
+    def get_effective_name_template(self, db_prefix, subject, name_data_cache):
+        current_height = self.height
         # Get the effective name entries from the database
         all_entries = []
         db_entries = self.db.get_name_entries_template(db_prefix, subject.encode())
@@ -971,11 +998,12 @@ class BlockProcessor:
         all_entries.sort(key=lambda x: x.tx_num)
         if len(all_entries) > 0:
             candidate_entry = all_entries[0]
-            tx_num_found, tx_height = self.get_tx_num_height_from_tx_hash(candidate_entry['value'])
+            atomical_id = candidate_entry['value']
+            mint_info = self.get_atomicals_id_mint_info(atomical_id)
             # Sanity check to make sure it matches
-            assert(tx_num_found == candidate_entry['tx_num'])
-            if tx_height <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
-                return candidate_entry['value']
+            assert(mint_info['commit_tx_num'] == candidate_entry['tx_num'])
+            if mint_info['reveal_location_height'] <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
+                return atomical_id
         return None 
  
     # Get the atomical details base info

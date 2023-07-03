@@ -1158,28 +1158,9 @@ class DB:
                 'payment_tx_outpoint': subrealmpay_value
             })
         payments.sort(key=lambda x: x.tx_num)
+        if len(payments) > 0:
+            return payments[0]
         return None 
-    
-    # Returns the valid subrealm and atomical by the earliest valid registration
-    def get_effective_subrealm(self, parent_atomical_id, subrealm):
-        subrealm_key_prefix = b'srlm' + parent_atomical_id + subrealm
-        entries = []
-        for subrealm_key, subrealm_value in self.utxo_db.iterator(prefix=subrealm_key_prefix):
-            tx_numb = subrealm_key[:-8]
-            tx_num, = unpack_le_uint64(tx_numb)
-            atomical_id = subrealm_value
-            spay_tx_outpoint_value = self.get_earliest_subrealm_payment(atomical_id)  
-            entries.append({
-                'atomical_id': atomical_id,
-                'tx_num': tx_num,
-                'payment_tx_outpoint': spay_tx_outpoint_value
-            })
-        entries.sort(key=lambda x: x.tx_num)
-        if len(entries) > 0:
-            for entry in entries:
-                if entry.get('payment_tx_outpoint'):
-                    return entry['atomical_id'], entries
-        return None, []
 
     # TODO: Create a 'latest state' for modpath and mod (nice to have)
     # Query all the contract crt properties and return them sorted descending by height

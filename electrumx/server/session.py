@@ -1366,68 +1366,68 @@ class ElectrumX(SessionBase):
 
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
-        atomical_id = self.db.get_ticker(self, ticker)
-        if not atomical_id:
-            raise RPCError(BAD_REQUEST, f'unknown ticker: {ticker}')
-        mint_info = self.session_mgr.bp.get_atomicals_id_mint_info(atomical_id)
-        mint_atomical_id = mint_info['id']
-        if atomical_id != mint_atomical_id:
-            raise RPCError(BAD_REQUEST, f'ticker atomical id mismatch: {mint_atomical_id}')
-
-        response_struct = {
-            'atomical_id': location_id_bytes_to_compact(mint_atomical_id),
-            'mint_info': mint_info
-        }
-
-        if response_struct['subtype'] == 'distributed':
-            mint_count = self.dp.get_distmints_count_by_atomical_id(mint_atomical_id)
-            response_struct['$mint_height'] = mint_info['$mint_height']
-            response_struct['$max_mints'] = mint_info['$max_mints']
-            response_struct['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints']
-            response_struct['$mint_count'] = mint_count
-            response_struct['$minted_supply'] = mint_info['$mint_amount'] * mint_count
-        elif response_struct['subtype'] == 'direct':
-            # The base token is all minted up front
-            response_struct['$max_supply'] = mint_info['value']
-            response_struct['$minted_supply'] = mint_info['value']
-
-        prefix = b'a' + mint_atomical_id
-        accum_value = 0
-        unique_address_map = {}
-        locations = []
-        for atomical_a_db_key, atomical_a_db_value in self.db.utxo_db.iterator(prefix=prefix):
-            location_value, = unpack_le_uint64(atomical_a_db_value[-8:])
-            hashX = atomical_a_db_value[ : HASHX_LEN]
-            unique_address_map[hashX] = True
-            accum_value += location_value
-            locations.append({
-                'scripthash': atomical_a_db_value[ HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN].hex(),
-                'value': location_value
-            })  
-        response_struct['addresses'] = len(unique_address_map.keys())
-        response_struct['actual_supply'] = accum_value
-        unique_mint_address_map = {}
-        if Verbose:
-            response_struct['locations'] = locations
-            # Also add the locations of the initial mints for the case of distributed mints
-            if response_struct['subtype'] == 'distributed':
-                prefix = b'gi' + mint_atomical_id
-                mint_accum_value = 0
-                unique_mint_address_map = {}
-                mint_locations = []
-                for atomical_gi_db_key, atomical_gi_db_value in self.db.utxo_db.iterator(prefix=prefix):
-                    location_value, = unpack_le_uint64(atomical_gi_db_value[-8:])
-                    scripthash = atomical_gi_db_value[ : SCRIPTHASH_LEN]
-                    unique_mint_address_map[scripthash] = True
-                    mint_accum_value += location_value
-                    mint_locations.append({
-                        'scripthash': scripthash.hex(),
-                        'value': location_value
-                    })  
-                    # Sanity check to ensure that the accumulated mint value is equal to the known minted supply
-                    if mint_accum_value != response_struct['$minted_supply']:
-                        raise RPCError(BAD_REQUEST, f'minted supply does not match gi entry for ticker {ticker}')
-        return {'result': response_struct} 
+        #atomical_id = self.db.get_ticker(self, ticker)
+        #if not atomical_id:
+        #    raise RPCError(BAD_REQUEST, f'unknown ticker: {ticker}')
+        #mint_info = self.session_mgr.bp.get_atomicals_id_mint_info(atomical_id)
+        #mint_atomical_id = mint_info['id']
+        #if atomical_id != mint_atomical_id:
+        #    raise RPCError(BAD_REQUEST, f'ticker atomical id mismatch: {mint_atomical_id}')
+        #
+        #response_struct = {
+        #    'atomical_id': location_id_bytes_to_compact(mint_atomical_id),
+        #    'mint_info': mint_info
+        #}
+        #
+        #if response_struct['subtype'] == 'distributed':
+        #    mint_count = self.dp.get_distmints_count_by_atomical_id(mint_atomical_id)
+        #    response_struct['$mint_height'] = mint_info['$mint_height']
+        #    response_struct['$max_mints'] = mint_info['$max_mints']
+        #    response_struct['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints']
+        #    response_struct['$mint_count'] = mint_count
+        #    response_struct['$minted_supply'] = mint_info['$mint_amount'] * mint_count
+        #elif response_struct['subtype'] == 'direct':
+        #    # The base token is all minted up front
+        #    response_struct['$max_supply'] = mint_info['value']
+        #    response_struct['$minted_supply'] = mint_info['value']
+#
+        #prefix = b'a' + mint_atomical_id
+        #accum_value = 0
+        #unique_address_map = {}
+        #locations = []
+        #for atomical_a_db_key, atomical_a_db_value in self.db.utxo_db.iterator(prefix=prefix):
+        #    location_value, = unpack_le_uint64(atomical_a_db_value[-8:])
+        #    hashX = atomical_a_db_value[ : HASHX_LEN]
+        #    unique_address_map[hashX] = True
+        #    accum_value += location_value
+        #    locations.append({
+        #        'scripthash': atomical_a_db_value[ HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN].hex(),
+        #        'value': location_value
+        #    })  
+        #response_struct['addresses'] = len(unique_address_map.keys())
+        #response_struct['actual_supply'] = accum_value
+        #unique_mint_address_map = {}
+        #if Verbose:
+        #    response_struct['locations'] = locations
+        #    # Also add the locations of the initial mints for the case of distributed mints
+        #    if response_struct['subtype'] == 'distributed':
+        #        prefix = b'gi' + mint_atomical_id
+        #        mint_accum_value = 0
+        #        unique_mint_address_map = {}
+        #        mint_locations = []
+        #        for atomical_gi_db_key, atomical_gi_db_value in self.db.utxo_db.iterator(prefix=prefix):
+        #            location_value, = unpack_le_uint64(atomical_gi_db_value[-8:])
+        #            scripthash = atomical_gi_db_value[ : SCRIPTHASH_LEN]
+        #            unique_mint_address_map[scripthash] = True
+        #            mint_accum_value += location_value
+        #            mint_locations.append({
+        #                'scripthash': scripthash.hex(),
+        #                'value': location_value
+        #            })  
+        #            # Sanity check to ensure that the accumulated mint value is equal to the known minted supply
+        #            if mint_accum_value != response_struct['$minted_supply']:
+        #                raise RPCError(BAD_REQUEST, f'minted supply does not match gi entry for ticker {ticker}')
+        return {'result': 'foobar'} 
 
     async def atomicals_at_location(self, compact_location_id):
         '''Return the Atomicals at a specific location id```
