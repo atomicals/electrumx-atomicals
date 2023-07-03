@@ -1099,7 +1099,6 @@ class BlockProcessor:
     # An atomical can have a naming element if it passed all the validity checks of the assignment
     # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
     def populate_extended_atomical_subtype_info(self, atomical):
-        
         # Check if the effective realm is for the current atomical
         request_realm = atomical['mint_info'].get('$request_realm')
         if request_realm: 

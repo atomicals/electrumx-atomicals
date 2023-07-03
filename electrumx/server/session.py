@@ -1196,7 +1196,7 @@ class ElectrumX(SessionBase):
         '''Return the list of UTXOs of a script hash, including mempool
         effects.'''
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
-        atomical = await self.bp.get_base_mint_info_by_atomical_id_async(atomical_id)
+        atomical = await self.session_mgr.bp.get_base_mint_info_by_atomical_id_async(atomical_id)
         self.logger.info(f'atomical_id_get {atomical}')
         if atomical == None:
             # Check mempool
@@ -1347,21 +1347,21 @@ class ElectrumX(SessionBase):
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_tx_history(compact_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
-        found_atomical_id = await self.bp.get_effective_ticker(ticker)
+        found_atomical_id = await self.session_mgr.bp.get_effective_ticker(ticker)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
     
     async def atomicals_get_by_container(self, container):
-        found_atomical_id = await self.bp.get_effective_container(container)
+        found_atomical_id = await self.session_mgr.bp.get_effective_container(container)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
 
     async def atomicals_get_by_realm(self, name):
-        found_atomical_id = await self.bp.get_effective_realm(name)
+        found_atomical_id = await self.session_mgr.bp.get_effective_realm(name)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
     
     async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
         compact_atomical_id_parent = await self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
         atomical_id_parent = compact_to_location_id_bytes(compact_atomical_id_parent)
-        found_atomical_id = await self.bp.get_effective_subrealm(atomical_id_parent, name)
+        found_atomical_id = await self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
         return {'result': location_id_bytes_to_compact(found_atomical_id)} 
 
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
