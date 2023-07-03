@@ -360,7 +360,7 @@ def is_valid_ticker_string(ticker):
     return False 
 
 # Check that the base requirement is satisfied
-def is_valid_realmbase_string_name(realm_or_subrealm_name):
+def is_valid_namebase_string_name(realm_or_subrealm_name):
     if not realm_or_subrealm_name:
         return False 
 
@@ -376,9 +376,9 @@ def is_valid_realmbase_string_name(realm_or_subrealm_name):
     return True
 
 # A valid realm string must begin with a-z and have up to 63 characters after it 
-# Including a-z0-9 and hypohen's "-"
+# Including a-z0-9 and hyphen's "-"
 def is_valid_realm_string_name(realm_name):
-    if not is_valid_realmbase_string_name(realm_name):
+    if not is_valid_namebase_string_name(realm_name):
         return False
     # Realm names must start with an alphabetical character
     m = re.compile(r'^[a-z][a-z0-9\-]{0,63}$')
@@ -386,10 +386,10 @@ def is_valid_realm_string_name(realm_name):
         return True
     return False 
 
-# A valid subrealm string must begin with a-z and have up to 63 characters after it 
-# Including a-z0-9 and hypohen's "-"
+# A valid subrealm string must begin with a-z0-9 and have up to 63 characters after it 
+# Including a-z0-9 and hyphen's "-"
 def is_valid_subrealm_string_name(subrealm_name):
-    if not is_valid_realmbase_string_name(subrealm_name):
+    if not is_valid_namebase_string_name(subrealm_name):
         return False
     # SubRealm names can start with a number also, unlike top-level-realms 
     m = re.compile(r'^[a-z0-9]|[a-z0-9\-]{0,63}$')
@@ -397,10 +397,11 @@ def is_valid_subrealm_string_name(subrealm_name):
         return True
     return False 
 
-# Collections must be at least 1 letter and max 64 with a-z0-9 and hyphen's "-"
+# A valid container string must begin with a-z0-9 and have up to 63 characters after it 
+# Including a-z0-9 and hyphen's "-"
 def is_valid_container_string_name(container_name):
-    if not container_name:
-        return False 
+    if not is_valid_namebase_string_name(container_name):
+        return False
     tolower = container_name.lower()
     # Collection names can start with any type of character except the hyphen "-"
     m = re.compile(r'^[a-z0-9][a-z0-9\-]{0,63}$')
