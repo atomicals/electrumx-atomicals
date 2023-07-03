@@ -987,7 +987,7 @@ class BlockProcessor:
         # Get the effective name entries from the database
         all_entries = []
         db_entries = self.db.get_name_entries_template(db_prefix, subject.encode())
-        for key, v in self.name_data_cache.items():
+        for key, v in name_data_cache.items():
             for tx_num, value in v.items():
                 all_entries.append({
                     'value': value,
