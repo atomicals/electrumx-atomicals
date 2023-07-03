@@ -484,7 +484,7 @@ class DB:
         batch_put = batch.put
         for key, v in flush_data.ticker_adds.items():
             for tx_num, atomical_id in v.items():
-                batch_put(b'tick' + key + pack_le_uint64(tx_num), atomical_id)
+                batch_put(key + pack_le_uint64(tx_num), atomical_id)
 
         flush_data.ticker_adds.clear()
 
@@ -494,7 +494,7 @@ class DB:
         batch_put = batch.put
         for key, v in flush_data.realm_adds.items():
             for tx_num, atomical_id in v.items():
-                batch_put(b'rlm' + key + pack_le_uint64(tx_num), atomical_id)
+                batch_put(key + pack_le_uint64(tx_num), atomical_id)
         flush_data.realm_adds.clear()
 
         # container data adds
@@ -503,7 +503,7 @@ class DB:
         batch_put = batch.put
         for key, v in flush_data.container_adds.items():
             for tx_num, atomical_id in v.items():
-                batch_put(b'co' + key + pack_le_uint64(tx_num), atomical_id)
+                batch_put(key + pack_le_uint64(tx_num), atomical_id)
         flush_data.container_adds.clear()
 
         # subrealm data adds
@@ -512,14 +512,14 @@ class DB:
         batch_put = batch.put
         for key, v in flush_data.subrealm_adds.items():
             for tx_num, atomical_id in v.items():
-                batch_put(b'srlm' + key + pack_le_uint64(tx_num), atomical_id)
+                batch_put(key + pack_le_uint64(tx_num), atomical_id)
         flush_data.subrealm_adds.clear()
 
         # subrealm pay data adds
         batch_put = batch.put
         for key, v in flush_data.subrealmpay_adds.items():
             for tx_num, pay_outpoint in v.items():
-                batch_put(b'spay' + key + pack_le_uint64(tx_num), pay_outpoint)
+                batch_put(key + pack_le_uint64(tx_num), pay_outpoint)
         flush_data.subrealmpay_adds.clear()
 
         # New UTXOs
