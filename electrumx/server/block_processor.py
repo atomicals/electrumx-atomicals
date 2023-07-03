@@ -1717,7 +1717,7 @@ class BlockProcessor:
                 # Get the hashX
                 cache_value = spend_utxo(tx_hash, idx)
                 hashX = cache_value[:HASHX_LEN]
-                txout_value = cache_value[:-8] 
+                txout_value = cache_value[-8:] 
                 touched.add(hashX)
                 # Rollback the atomicals that were created at the output
                 hashXs_spent, spent_atomicals = self.rollback_spend_atomicals(tx_hash, idx, tx, tx_numb)

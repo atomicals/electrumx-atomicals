@@ -1138,7 +1138,7 @@ class DB:
         db_key_prefix = db_prefix + subject_encoded
         entries = []
         for db_key, db_value in self.utxo_db.iterator(prefix=db_key_prefix):
-            tx_numb = db_key[:-8]
+            tx_numb = db_key[-8:]
             atomical_id = db_value
             tx_num, = unpack_le_uint64(tx_numb)
             entries.append({
@@ -1151,7 +1151,7 @@ class DB:
         spay_key_atomical_id = b'spay' + atomical_id
         payments = []
         for subrealmpay_key, subrealmpay_value in self.utxo_db.iterator(prefix=spay_key_atomical_id):
-            tx_numb = subrealmpay_key[:-8]
+            tx_numb = subrealmpay_key[-8:]
             tx_num, = unpack_le_uint64(tx_numb)
             payments.append({
                 'tx_num': tx_num,
