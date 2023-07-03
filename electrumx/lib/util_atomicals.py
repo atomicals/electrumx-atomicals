@@ -631,8 +631,11 @@ def check_unpack_field_data(db_mint_value):
                         value_decoded_dump = dumps(value)
                         serialized_object_size = sys.getsizeof(value_decoded_dump)
                         fieldset[key]['content-length'] = serialized_object_size
-                        if serialized_object_size <= 1024:
-                            fieldset[key]['data'] = value_decoded_dump
+                        try:
+                            if serialized_object_size <= 1024:
+                                fieldset[key]['data'] = value_decoded_dump.hex()
+                        except Exception as e:
+                            pass
                     if value.get('$d'):
                         fieldset[key]['content-length'] = sys.getsizeof(value['$d'])
                 else: 
