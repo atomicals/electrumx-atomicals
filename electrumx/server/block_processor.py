@@ -1156,7 +1156,8 @@ class BlockProcessor:
             return None
 
         # get the potential dmt (distributed mint) atomical_id from the ticker given
-        potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
+        ticker = dmt_return_struct['$mint_ticker']
+        potential_dmt_atomical_id = self.get_effective_ticker(ticker)
         if not potential_dmt_atomical_id:
             self.logger.info(f'potential_dmt_atomical_id not found for dmt operation in {tx_hash}. Attempt was made for a non-existant ticker mint info. Ignoring...')
             return None 
