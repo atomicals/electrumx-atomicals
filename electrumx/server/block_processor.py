@@ -1200,6 +1200,7 @@ class BlockProcessor:
                 
             if distributed_mints < max_mints:
                 self.logger.info(f'create_distmint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
+                put_general_data = self.general_data_cache.__setitem__
                 put_general_data(b'po' + location, txout.pk_script)
                 is_sealed = b'00' # FT outputs can never be sealed
                 self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats + is_sealed)
