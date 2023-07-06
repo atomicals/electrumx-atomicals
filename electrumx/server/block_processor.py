@@ -1195,9 +1195,9 @@ class BlockProcessor:
             # Count the number of existing b'gi' entries and ensure it is strictly less than max_mints
             distributed_mints = self.get_distmints_count_by_atomical_id(potential_dmt_atomical_id)
             if distributed_mints > max_mints:
-                raise IndexError(f'create_distmint_outputs Fatal IndexError distributed_max_mints > max_mints for {atomical}. Too many mints detected in db')
+                raise IndexError(f'create_distmint_outputs Fatal IndexError distributed_mints > max_mints for {atomical}. Too many mints detected in db')
                 
-            if distributed_max_mints < max_mints:
+            if distributed_mints < max_mints:
                 self.logger.info(f'create_distmint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
                 put_general_data(b'po' + location, txout.pk_script)
                 is_sealed = b'00' # FT outputs can never be sealed
