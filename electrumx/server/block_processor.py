@@ -1169,14 +1169,15 @@ class BlockProcessor:
             self.logger.info(f'create_distmint_outputs Detected invalid mint attempt in {tx_hash} for ticker {ticker} which is not a distributed mint type. Ignoring...')
             return None 
 
+        self.logger.info(f'mint_info_for_ticker {mint_info_for_ticker} potential_dmt_atomical_id {potential_dmt_atomical_id}')
         max_mints = mint_info_for_ticker['$max_mints']
         mint_amount = mint_info_for_ticker['$mint_amount']
         mint_height = mint_info_for_ticker['$mint_height']
-        mint_ticker = mint_info_for_ticker['$mint_ticker']
+        # mint_ticker = mint_info_for_ticker['$mint_ticker']
 
-        if mint_ticker != dmt_return_struct['$mint_ticker']:
-            dmt_ticker = dmt_return_struct['$mint_ticker']
-            raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
+        # if mint_ticker != dmt_return_struct['$mint_ticker']:
+        #    dmt_ticker = dmt_return_struct['$mint_ticker']
+        #    raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
         
         if height < mint_height:
             self.logger.info(f'create_distmint_outputs found premature mint operation in {tx_hash} for {ticker} in {height} before {mint_height}. Ignoring...')
