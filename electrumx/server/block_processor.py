@@ -1172,7 +1172,7 @@ class BlockProcessor:
         max_mints = mint_info_for_ticker['$max_mints']
         mint_amount = mint_info_for_ticker['$mint_amount']
         mint_height = mint_info_for_ticker['$mint_height']
-        mint_ticker = mint_info_for_ticker['$ticker']
+        mint_ticker = mint_info_for_ticker['$mint_ticker']
 
         if mint_ticker != dmt_return_struct['$mint_ticker']:
             dmt_ticker = dmt_return_struct['$mint_ticker']
