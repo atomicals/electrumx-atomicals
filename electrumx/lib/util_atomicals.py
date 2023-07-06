@@ -333,7 +333,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         mint_info['$mint_amount'] = mint_amount
         mint_info['$max_mints'] = max_mints
     
-    if not mint_info:
+    if not mint_info or not mint_info.get('type'):
         return None, None
     return mint_info['type'], mint_info
     
