@@ -196,13 +196,17 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
     if not isinstance(metadata, dict):
         return False, {}
     args = payload_data.get('args', {})
-    if not isinstance(params, dict):
+    if not isinstance(args, dict):
         return False, {}
-    ticker = params.get('mint_ticker', None)
+    ctx = payload_data.get('ctx', {})
+    if not isinstance(ctx, dict):
+        return False, {}
+    ticker = args.get('mint_ticker', None)
     if is_valid_ticker_string(ticker):
         return True, {
             'payload': payload_data,
             'meta': metadata,
+            'ctx': ctx,
             'args': args,
             '$mint_ticker': ticker
         }
