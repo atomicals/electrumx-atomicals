@@ -1285,7 +1285,7 @@ class DB:
             tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
             state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
             out_idx_packed = db_key[ 3 + ATOMICAL_ID_LEN + TXNUM_LEN: 3 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
-            out_idx = unpack_le_uint32(out_idx_packed)
+            out_idx, = unpack_le_uint32(out_idx_packed)
             entry = {
                 'tx_num': tx_num_padded, 
                 'height': state_height, 
@@ -1316,7 +1316,7 @@ class DB:
             tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
             state_tx_hash, state_height = self.fs_tx_hash(tx_num_padded)
             out_idx_packed = db_key[ 3 + ATOMICAL_ID_LEN + TXNUM_LEN: 3 + ATOMICAL_ID_LEN + TXNUM_LEN + 4]
-            out_idx = unpack_le_uint32(out_idx_packed)
+            out_idx, = unpack_le_uint32(out_idx_packed)
             entry = {
                 'tx_num': tx_num_padded, 
                 'height': state_height, 
@@ -1335,7 +1335,7 @@ class DB:
     async def get_atomicals_list(self, limit, offset, asc = False):
         if limit > 50:
             limit = 50
-
+        atomical_number_tip = self.db_atomical_count - 1
         def read_atomical_list():   
             atomical_ids = []
             search_starting_at_atomical_number = 0
