@@ -1032,6 +1032,7 @@ class BlockProcessor:
             'atomical_id': atomical_id,
             'atomical_number': atomical_number,
             'type': init_mint_info['type'],
+            'confirmed': True,
             'mint_info': {
                 'commit_txid': init_mint_info['commit_txid'],
                 'commit_index': init_mint_info['commit_index'],
@@ -1174,12 +1175,7 @@ class BlockProcessor:
         max_mints = mint_info_for_ticker['$max_mints']
         mint_amount = mint_info_for_ticker['$mint_amount']
         mint_height = mint_info_for_ticker['$mint_height']
-        # mint_ticker = mint_info_for_ticker['$mint_ticker']
 
-        # if mint_ticker != dmt_return_struct['$mint_ticker']:
-        #    dmt_ticker = dmt_return_struct['$mint_ticker']
-        #    raise IndexError(f'create_distmint_outputs Fatal developer error with incorrect storage and retrieval of mint ticker for {tx_hash} {dmt_ticker}')
-        
         if height < mint_height:
             self.logger.info(f'create_distmint_outputs found premature mint operation in {tx_hash} for {ticker} in {height} before {mint_height}. Ignoring...')
             return None
