@@ -860,10 +860,8 @@ class BlockProcessor:
         # Check if there was any proof of work attached to the mint
         has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_proof_of_work(operations_found_at_inputs)
         if has_valid_pow:
-            mint_info['$pow'] = {
-                'score': pow_score,
-                'prefix': pow_prefix
-            }
+            self.logger.info(f'adding pow {pow_prefix}')
+            mint_info['$pow'] = pow_prefix
         # Save mint data fields
         put_general_data = self.general_data_cache.__setitem__
         put_general_data(b'md' + atomical_id, operations_found_at_inputs['payload_bytes'])
