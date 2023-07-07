@@ -1368,7 +1368,7 @@ class DB:
         if limit > 50:
             limit = 50
         # Todo: update the logic to correctly list
-        atomical_number_tip = self.db_atomical_count - 1
+        atomical_number_tip = self.db_atomical_count
         def read_atomical_list():   
             atomical_ids = []
             # If no offset provided, then assume we want to start from the highest one
