@@ -244,7 +244,7 @@ def has_proof_of_work(operations_found_at_inputs):
     pow_score = len(pow_prefix)
     # Check that the pow_prefix matches the first hex bytes of the printed hex string
     txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
-    if txid.startsWith(pow_prefix):
+    if txid.startswith(pow_prefix):
         return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['reveal_location_txid']
 
     print(f'has_proof_of_work {txid} {pow_prefix} ended')
