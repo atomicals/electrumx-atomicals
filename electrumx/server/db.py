@@ -1280,7 +1280,7 @@ class DB:
             for prop, value in element['data'].items():
                 latest_state[prop] = {
                     'height': element['height'],
-                    'txid': txid,
+                    'txid': element['txid'],
                     'value': value
                 }
         atomical['state'] = {

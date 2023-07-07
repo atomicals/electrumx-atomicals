@@ -1211,7 +1211,7 @@ class ElectrumX(SessionBase):
         self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical
 
-    async def atomical_id_get_state_history(self, compact_atomical_id, path):
+    async def atomical_id_get_state_history(self, compact_atomical_id):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id)
         self.db.populate_extended_mod_state_history_atomical_info(atomical_id, atomical)
@@ -1317,9 +1317,9 @@ class ElectrumX(SessionBase):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
  
-    async def atomical_get_state_history(self, compact_atomical_id_or_atomical_number, path):
+    async def atomical_get_state_history(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state_history(compact_atomical_id, path)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state_history(compact_atomical_id)} 
 
     async def atomical_get_state(self, compact_atomical_id_or_atomical_number, path):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
