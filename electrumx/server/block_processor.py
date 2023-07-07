@@ -24,7 +24,7 @@ from electrumx.lib.util import (
 from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
-from electrumx.lib.util_atomicals import is_valid_container_string_name, is_unspendable_payment_marker_atomical_id, pad_bytes64, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
+from electrumx.lib.util_atomicals import pad_bytes_n, has_pow, is_valid_container_string_name, is_unspendable_payment_marker_atomical_id, pad_bytes64, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, is_valid_dmt_op_format, is_compact_atomical_id, is_atomical_id_long_form_string, unpack_mint_info, parse_protocols_operations_from_witness_array, get_expected_output_index_of_atomical_nft, get_expected_output_indexes_of_atomical_ft, location_id_bytes_to_compact, is_valid_subrealm_string_name, is_valid_realm_string_name, is_valid_ticker_string, get_mint_info_op_factory
 
 if TYPE_CHECKING:
     from electrumx.lib.coins import Coin
@@ -836,6 +836,13 @@ class BlockProcessor:
         else: 
             raise IndexError(f'Fatal index error Create Invalid')
         
+        # Check if there was any proof of work attached to the mint
+        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_pow(operations_found_at_inputs)
+        if has_valid_pow:
+            mint_info['$pow'] = {
+                'score': pow_score,
+                'prefix': pow_prefix
+            }
         # Save mint data fields
         put_general_data = self.general_data_cache.__setitem__
         put_general_data(b'md' + atomical_id, operations_found_at_inputs['payload_bytes'])
@@ -844,8 +851,8 @@ class BlockProcessor:
         # Track the atomical number for the newly minted atomical
         atomical_count_numb = pack_be_uint64(atomical_num)
         put_general_data(b'n' + atomical_count_numb, atomical_id)
-        # Save the output script of the atomical commit and reveal mint outputs to lookup at a future point for resolving address script
-        put_general_data(b'po' + atomical_id, txout.pk_script)
+        # Save the output script of the atomical reveal mint outputs to lookup at a future point for resolving address script
+        # put_general_data(b'po' + atomical_id, mint_info['commit_script'])
         put_general_data(b'po' + mint_info['reveal_location'], txout.pk_script)
         return atomical_id
 
@@ -943,8 +950,37 @@ class BlockProcessor:
     
     # Apply the rules to color the outputs of the atomicals
     def create_or_delete_data_location(self, tx_hash, operations_found_at_inputs, Delete=False):
-        put_general_data = self.general_data_cache.__setitem__
-        put_general_data(b'dat' + tx_hash + pack_le_uint32(0), operations_found_at_inputs['payload_bytes'])
+        if Delete:
+            self.db_deletes.append(b'dat' + tx_hash + pack_le_uint32(0))
+        else: 
+            put_general_data = self.general_data_cache.__setitem__
+            put_general_data(b'dat' + tx_hash + pack_le_uint32(0), operations_found_at_inputs['payload_bytes'])
+
+    # create or delete the proof of work records
+    def create_or_delete_pow_records(self, tx_hash, tx_num, height, operations_found_at_inputs, Delete=False):
+        # Sanity check, shoulld be the same
+        assert(tx_hash == operations_found_at_inputs['reveal_location_txid'])
+        # Check if there was any proof of work attached to the mint to create the index
+        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_pow(operations_found_at_inputs)
+        if not has_valid_pow:
+            return 
+
+        tx_numb = pack_le_uint64(tx_num)[:TXNUM_LEN]
+        pow_scoreb = pack_le_uint32(pow_score)
+        commit_txid = operations_found_at_inputs['commit_txid']
+        pow_prefix_padded = pad_bytes_n(pow_prefix, 32)
+        op_padded = pad_bytes_n(operations_found_at_inputs['op'].encode(), 3)
+
+        pb_key = b'pb' + pack_le_uint32(height) + pow_scoreb + op_padded + tx_hash + commit_txid
+        pr_key = b'pr' + pow_prefix_padded + pack_le_uint32(height) + op_padded + tx_hash + commit_txid + pow_scoreb
+
+        if Delete:
+            self.db_deletes.append(pb_key)
+            self.db_deletes.append(pr_key)
+        else:
+            put_general_data = self.general_data_cache.__setitem__
+            put_general_data(pb_key, operations_found_at_inputs['payload_bytes'])
+            put_general_data(pr_key, operations_found_at_inputs['payload_bytes'])
 
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):
@@ -1324,6 +1360,9 @@ class BlockProcessor:
           
             # Check if there were any regular 'dat' files definitions
             self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs)
+
+            # Create a proof of work record if there was valid proof of work attached
+            self.create_or_delete_pow_records(tx_hash, operations_found_at_inputs)
 
             append_hashXs(hashXs)
             update_touched(hashXs)
@@ -1753,6 +1792,9 @@ class BlockProcessor:
 
             # Check if there were any regular 'dat' files definitions to delete
             self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs, True)
+
+            # Check a proof of work record if there was valid proof of work attached to delete
+            self.create_or_delete_pow_records(tx_hash, operations_found_at_inputs, True)
 
             # Restore the inputs
             for txin in reversed(tx.inputs):

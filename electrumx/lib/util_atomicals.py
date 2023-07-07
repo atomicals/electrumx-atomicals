@@ -57,14 +57,17 @@ MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 12 # Magic number that requires a grace p
 # "atom" / "spr4" (beta testing)
 ATOMICALS_ENVELOPE_MARKER_BYTES = '0473707234'
 
-def pad_bytes64(val):
-    padlen = 64
+def pad_bytes_n(val, n):
+    padlen = n
     if len(val) > padlen:
-        raise ValueError('pad_bytes64 input val is out of range')
+        raise ValueError('pad_bytes_n input val is out of range')
     new_val = val 
     extra_bytes_needed = padlen - len(val)
     new_val = new_val + bytes(extra_bytes_needed)
     return new_val
+
+def pad_bytes64(val):
+    return pad_bytes_n(val, 64)
 
 # Atomical NFT/FT mint information is stored in the b'mi' index and is pickle encoded dictionary
 def unpack_mint_info(mint_info_value):
@@ -243,6 +246,38 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'reveal_location_script': txout.pk_script,
         }
     
+    # Validate that a string is a valid hex 
+    def is_validate_pow_prefix_string(pow_prefix):
+        if not pow_prefix:
+            return False 
+
+        m = re.compile(r'^[a-z0-9]{1,64}$', re.IGNORECASE)
+        if m.match(pow_prefix):
+            return True 
+
+        return False 
+
+    # check whether an Atomicals operation contains a proof of work argument
+    def has_pow(operations_found_at_inputs):
+        if not operations_found_at_inputs:
+            return None, None, None, None, None
+        payload_dict = op_found_struct['payload']
+        args = payload_dict.get('args') 
+        if not isinstance(args, dict):
+            return None, None, None, None, None
+
+        pow_prefix = args.get('powprefix')
+        if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
+            return None, None, None, None, None
+
+        pow_score = len(pow_prefix)
+        # Check that the pow_prefix matches the first hex bytes of the printed hex string
+        txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
+        if txid.startsWith(pow_prefix):
+            return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['reveal_location_txid']
+
+        return None, None, None, None, None
+
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
     # Enforces that both of these must be empty or a valid dictionary
     # This prevents a user from minting a big data blob into one of the fields
