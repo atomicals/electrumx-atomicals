@@ -215,6 +215,38 @@ def is_valid_dmt_op_format(tx_hash, dmt_op):
         }
     return False, {}
 
+# Validate that a string is a valid hex 
+def is_validate_pow_prefix_string(pow_prefix):
+    if not pow_prefix:
+        return False 
+
+    m = re.compile(r'^[a-z0-9]{1,64}$', re.IGNORECASE)
+    if m.match(pow_prefix):
+        return True 
+
+    return False 
+
+# check whether an Atomicals operation contains a proof of work argument
+def has_proof_of_work(operations_found_at_inputs):
+    if not operations_found_at_inputs:
+        return None, None, None, None, None
+    payload_dict = operations_found_at_inputs['payload']
+    args = payload_dict.get('args') 
+    if not isinstance(args, dict):
+        return None, None, None, None, None
+
+    pow_prefix = args.get('pow')
+    if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
+        return None, None, None, None, None
+
+    pow_score = len(pow_prefix)
+    # Check that the pow_prefix matches the first hex bytes of the printed hex string
+    txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
+    if txid.startsWith(pow_prefix):
+        return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['reveal_location_txid']
+
+    return None, None, None, None, None
+    
 # Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     if not op_found_struct:
@@ -245,38 +277,6 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             'reveal_location_value': txout.value,
             'reveal_location_script': txout.pk_script,
         }
-    
-    # Validate that a string is a valid hex 
-    def is_validate_pow_prefix_string(pow_prefix):
-        if not pow_prefix:
-            return False 
-
-        m = re.compile(r'^[a-z0-9]{1,64}$', re.IGNORECASE)
-        if m.match(pow_prefix):
-            return True 
-
-        return False 
-
-    # check whether an Atomicals operation contains a proof of work argument
-    def has_proof_of_work(operations_found_at_inputs):
-        if not operations_found_at_inputs:
-            return None, None, None, None, None
-        payload_dict = operations_found_at_inputs['payload']
-        args = payload_dict.get('args') 
-        if not isinstance(args, dict):
-            return None, None, None, None, None
-
-        pow_prefix = args.get('pow')
-        if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
-            return None, None, None, None, None
-
-        pow_score = len(pow_prefix)
-        # Check that the pow_prefix matches the first hex bytes of the printed hex string
-        txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
-        if txid.startsWith(pow_prefix):
-            return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['reveal_location_txid']
-
-        return None, None, None, None, None
 
     # Get the 'meta' and 'args' fields in the payload, or return empty dictionary if not set
     # Enforces that both of these must be empty or a valid dictionary
