@@ -258,7 +258,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         return False 
 
     # check whether an Atomicals operation contains a proof of work argument
-    def has_pow(operations_found_at_inputs):
+    def has_proof_of_work(operations_found_at_inputs):
         if not operations_found_at_inputs:
             return None, None, None, None, None
         payload_dict = op_found_struct['payload']

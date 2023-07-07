@@ -26,7 +26,7 @@ from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
 from electrumx.lib.util_atomicals import (
     pad_bytes_n, 
-    has_pow, 
+    has_proof_of_work, 
     is_valid_container_string_name, 
     is_unspendable_payment_marker_atomical_id, 
     pad_bytes64, 
@@ -858,7 +858,7 @@ class BlockProcessor:
             raise IndexError(f'Fatal index error Create Invalid')
         
         # Check if there was any proof of work attached to the mint
-        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_pow(operations_found_at_inputs)
+        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_proof_of_work(operations_found_at_inputs)
         if has_valid_pow:
             mint_info['$pow'] = {
                 'score': pow_score,
@@ -982,7 +982,7 @@ class BlockProcessor:
         # Sanity check, shoulld be the same
         assert(tx_hash == operations_found_at_inputs['reveal_location_txid'])
         # Check if there was any proof of work attached to the mint to create the index
-        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_pow(operations_found_at_inputs)
+        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_proof_of_work(operations_found_at_inputs)
         if not has_valid_pow:
             return 
 
