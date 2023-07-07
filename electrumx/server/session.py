@@ -1220,7 +1220,7 @@ class ElectrumX(SessionBase):
     async def atomical_id_get_state(self, compact_atomical_id, path):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id)
-        self.db.populate_extended_mod_state_path_latest_atomical_info(atomical_id, atomical)
+        self.db.populate_extended_mod_state_path_latest_atomical_info(atomical_id, atomical, path)
         return atomical
 
     async def atomical_id_get_event_history(self, compact_atomical_id):
