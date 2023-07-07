@@ -1254,7 +1254,7 @@ class DB:
             tx_numb = modpath_atomical_id_key[PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 : PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 + TXNUM_LEN]
             tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
             modpath_tx_hash, modpath_height = self.fs_tx_hash(tx_num_padded)
-            out_idx_packed = db_key[ PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 + TXNUM_LEN: PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 + TXNUM_LEN + 4]
+            out_idx_packed = modpath_atomical_id_key[ PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 + TXNUM_LEN: PREFIX_BYTE_LEN + ATOMICAL_ID_LEN + 64 + TXNUM_LEN + 4]
             out_idx, = unpack_le_uint32(out_idx_packed)
             height_le = modpath_atomical_id_key[-4:]
             height, = unpack_le_uint32(height_le)
