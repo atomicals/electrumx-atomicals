@@ -1151,6 +1151,11 @@ class BlockProcessor:
             if request_ticker:
                 atomical['mint_info']['$request_ticker'] = request_ticker
 
+        # Check if there is the $pow variable and bring it to the top
+        powprefix = init_mint_info.get('$pow')
+        if powprefix:
+            atomical['$pow'] = powprefix 
+
         # Resolve any name like details such as realms, subrealms, containers and tickers
         self.populate_extended_atomical_subtype_info(atomical)
         return atomical
