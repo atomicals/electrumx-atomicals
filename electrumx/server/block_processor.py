@@ -1520,17 +1520,17 @@ class BlockProcessor:
                 continue
             # Found a valid subrealm_mint_path entry
             # Get the subrealm_mint_path for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
-            if not modpath_item['payload'] or not isinstance(modpath_item['payload'], dict):
+            if not modpath_item['data'] or not isinstance(modpath_item['data'], dict):
                 self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
 
-            mod_path = modpath_item['payload'].get('path')
+            mod_path = modpath_item['data'].get('path')
             if mod_path != subrealm_mint_path:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height subrealm-mint path not found atomical_id={atomical_id.hex()}')
                 continue
 
             # It is at least a dictionary
-            regexes = modpath_item['payload'].get('prices', None)
+            regexes = modpath_item['data'].get('prices', None)
             if not regexes:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height prices value not found atomical_id={atomical_id.hex()}')
                 continue
