@@ -1265,7 +1265,7 @@ class DB:
                 'height': height,
                 'txid': hash_to_hex_str(modpath_tx_hash),
                 'index': out_idx,
-                'data': pickle.loads(modpath_atomical_id_value)
+                'data': loads(modpath_atomical_id_value)
             }
             modpath_results.append(obj)
         # Sort by descending tx_num
