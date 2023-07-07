@@ -1354,7 +1354,7 @@ class DB:
     # ...whereas the "mod" operation is intended to modify stable state.
     def populate_extended_event_history_atomical_info(self, atomical_id, atomical):
         atomical['event'] = {
-            'history': self.get_event_history(atomical_id, path, path)
+            'history': self.get_event_history(atomical_id)
         }
         return atomical
     
