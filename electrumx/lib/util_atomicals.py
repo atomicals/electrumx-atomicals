@@ -261,7 +261,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     def has_proof_of_work(operations_found_at_inputs):
         if not operations_found_at_inputs:
             return None, None, None, None, None
-        payload_dict = op_found_struct['payload']
+        payload_dict = operations_found_at_inputs['payload']
         args = payload_dict.get('args') 
         if not isinstance(args, dict):
             return None, None, None, None, None
