@@ -27,7 +27,7 @@ from electrumx.lib.util import (
     formatted_time, pack_be_uint16, pack_be_uint32, pack_le_uint64, pack_be_uint64, pack_le_uint32,
     unpack_le_uint32, unpack_be_uint32, unpack_le_uint64, unpack_be_uint64
 )
-from electrumx.lib.util_atomicals import get_tx_hash_index_from_location_id, location_id_bytes_to_compact, check_unpack_field_data
+from electrumx.lib.util_atomicals import pad_bytes64, get_tx_hash_index_from_location_id, location_id_bytes_to_compact, check_unpack_field_data
 from electrumx.server.storage import db_class, Storage
 from electrumx.server.history import History, TXNUM_LEN
 from electrumx.lib.script import SCRIPTHASH_LEN
