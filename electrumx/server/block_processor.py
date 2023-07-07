@@ -982,6 +982,8 @@ class BlockProcessor:
 
     # create or delete the proof of work records
     def create_or_delete_pow_records(self, tx_hash, tx_num, height, operations_found_at_inputs, Delete=False):
+        if not operations_found_at_inputs:
+            return
         # Sanity check, shoulld be the same
         assert(tx_hash == operations_found_at_inputs['reveal_location_txid'])
         # Check if there was any proof of work attached to the mint to create the index
