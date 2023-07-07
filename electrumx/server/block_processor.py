@@ -994,7 +994,7 @@ class BlockProcessor:
         tx_numb = pack_le_uint64(tx_num)[:TXNUM_LEN]
         pow_scoreb = pack_le_uint32(pow_score)
         commit_txid = operations_found_at_inputs['commit_txid']
-        pow_prefix_padded = pad_bytes_n(pow_prefix, 32)
+        pow_prefix_padded = pad_bytes_n(pow_prefix.encode(), 32)
         op_padded = pad_bytes_n(operations_found_at_inputs['op'].encode(), 3)
 
         pb_key = b'pb' + pack_le_uint32(height) + pow_scoreb + op_padded + tx_hash + commit_txid
