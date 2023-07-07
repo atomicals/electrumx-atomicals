@@ -896,7 +896,7 @@ class BlockProcessor:
             if mod_path and len(mod_path.encode()) <= 64:
                 mod_path_padded = pad_bytes64(mod_path.encode())
                 height_packed = pack_le_uint32(height)
-                put_general_data(b'modpath' + atomical_id + mod_path_padded + tx_numb + output_idx_le + height_packed, pickle.dumps(operations_found_at_inputs['payload']))
+                put_general_data(b'modpath' + atomical_id + mod_path_padded + tx_numb + output_idx_le + height_packed, operations_found_at_inputs['payload_bytes'])
         elif operations_found_at_inputs and operations_found_at_inputs.get('op') == 'evt' and operations_found_at_inputs.get('input_index') == 0:
             self.logger.info(f'apply_state_like_updates op=evt, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')
             put_general_data(b'evt' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
