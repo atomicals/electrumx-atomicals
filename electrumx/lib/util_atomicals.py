@@ -230,6 +230,7 @@ def is_validate_pow_prefix_string(pow_prefix):
 def has_proof_of_work(operations_found_at_inputs):
     if not operations_found_at_inputs:
         return None, None, None, None, None
+    print(f'has_proof_of_work {operations_found_at_inputs}')
     payload_dict = operations_found_at_inputs['payload']
     args = payload_dict.get('args') 
     if not isinstance(args, dict):
@@ -239,12 +240,14 @@ def has_proof_of_work(operations_found_at_inputs):
     if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
         return None, None, None, None, None
 
+    print(f'pow_prefix {pow_prefix}')
     pow_score = len(pow_prefix)
     # Check that the pow_prefix matches the first hex bytes of the printed hex string
     txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
     if txid.startsWith(pow_prefix):
         return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['reveal_location_txid']
 
+    print(f'has_proof_of_work {txid} {pow_prefix} ended')
     return None, None, None, None, None
     
 # Get the mint information structure if it's a valid mint event type
@@ -628,6 +631,13 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 if not isinstance(decoded_object, dict):
                     print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload is not a dict for {tx}. Skipping tx input...')
                     continue
+                
+                # Also enforce that if there are meta, args, or ctx fields that they must be dicts
+                # This is done to ensure that these fields are always easily parseable and do not contain unexpected data which could cause parsing problems later
+                if not isinstance(decoded_object.get('meta', {}), dict) or not isinstance(decoded_object.get('args', {}), dict) or not isinstance(decoded_object.get('ctx', {}), dict):
+                    print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx}. Skipping tx input...')
+                    continue
+                    
             except: 
                 print(f'parse_protocols_operations_from_witness_array found {op_name} but CBOR payload parsing failed for {tx}. Skipping tx input...')
                 continue
