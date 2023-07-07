@@ -973,7 +973,7 @@ class BlockProcessor:
     def create_or_delete_data_location(self, tx_hash, operations_found_at_inputs, Delete=False):
         if not operations_found_at_inputs or operations_found_at_inputs['op'] != 'dat':
             return 
-            
+
         if Delete:
             self.db_deletes.append(b'dat' + tx_hash + pack_le_uint32(0))
         else: 
@@ -1386,7 +1386,7 @@ class BlockProcessor:
             self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs)
 
             # Create a proof of work record if there was valid proof of work attached
-            self.create_or_delete_pow_records(tx_hash, operations_found_at_inputs)
+            self.create_or_delete_pow_records(tx_hash, atomicals_operations_found_at_inputs)
 
             append_hashXs(hashXs)
             update_touched(hashXs)
@@ -1815,7 +1815,7 @@ class BlockProcessor:
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
 
             # Check if there were any regular 'dat' files definitions to delete
-            self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs, True)
+            self.create_or_delete_data_location(tx_hash, operations_found_at_inputs, True)
 
             # Check a proof of work record if there was valid proof of work attached to delete
             self.create_or_delete_pow_records(tx_hash, operations_found_at_inputs, True)
