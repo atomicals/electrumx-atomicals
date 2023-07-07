@@ -1386,7 +1386,7 @@ class BlockProcessor:
             self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs)
 
             # Create a proof of work record if there was valid proof of work attached
-            self.create_or_delete_pow_records(tx_hash, atomicals_operations_found_at_inputs)
+            self.create_or_delete_pow_records(tx_hash, tx_num, height, atomicals_operations_found_at_inputs)
 
             append_hashXs(hashXs)
             update_touched(hashXs)
@@ -1818,7 +1818,8 @@ class BlockProcessor:
             self.create_or_delete_data_location(tx_hash, operations_found_at_inputs, True)
 
             # Check a proof of work record if there was valid proof of work attached to delete
-            self.create_or_delete_pow_records(tx_hash, operations_found_at_inputs, True)
+            
+            self.create_or_delete_pow_records(tx_hash, tx_num, height, operations_found_at_inputs, True)
 
             # Restore the inputs
             for txin in reversed(tx.inputs):
