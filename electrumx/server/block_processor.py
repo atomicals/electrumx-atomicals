@@ -941,6 +941,11 @@ class BlockProcessor:
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
     
+    # Apply the rules to color the outputs of the atomicals
+    def create_or_delete_data_location(self, tx_hash, operations_found_at_inputs, Delete=False):
+        put_general_data = self.general_data_cache.__setitem__
+        put_general_data(b'dat' + tx_hash + pack_le_uint32(0), operations_found_at_inputs['payload_bytes'])
+
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):
         return self.get_effective_name_template(b'rlm', realm_name, self.realm_data_cache)
@@ -1317,6 +1322,9 @@ class BlockProcessor:
                 append_hashX(double_sha256(atomical_id_of_distmint))
                 self.logger.info(f'create_distmint_output:atomical_id_of_distmint - atomical_id={atomical_id_of_distmint.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
           
+            # Check if there were any regular 'dat' files definitions
+            self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs)
+
             append_hashXs(hashXs)
             update_touched(hashXs)
 
@@ -1742,6 +1750,9 @@ class BlockProcessor:
 
             # If there were any distributed mint creation, then delete
             self.rollback_distmint_data(tx_hash, operations_found_at_inputs)
+
+            # Check if there were any regular 'dat' files definitions to delete
+            self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs, True)
 
             # Restore the inputs
             for txin in reversed(tx.inputs):

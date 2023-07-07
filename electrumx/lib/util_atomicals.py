@@ -478,6 +478,8 @@ def parse_operation_from_script(script, n):
             atom_op_decoded = 'evt'  # evt - Message response/reply
         elif atom_op == "03646d74": 
             atom_op_decoded = 'dmt'  # dmt - Mint tokens of distributed mint type (dft)
+        elif atom_op == "03646174": 
+            atom_op_decoded = 'dat'  # dat - Store data on a transaction (dat)
     
         if atom_op_decoded:
             return atom_op_decoded, parse_atomicals_data_definition_operation(script, n + three_letter_op_len)

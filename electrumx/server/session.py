@@ -1193,11 +1193,8 @@ class ElectrumX(SessionBase):
 
     # Get atomicals base information from db or placeholder information if mint is still in the mempool and unconfirmed
     async def atomical_id_get(self, compact_atomical_id):
-        '''Return the list of UTXOs of a script hash, including mempool
-        effects.'''
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.session_mgr.bp.get_base_mint_info_by_atomical_id_async(atomical_id)
-        self.logger.info(f'atomical_id_get {atomical}')
         if atomical == None:
             # Check mempool
             atomical_in_mempool = await self.mempool.get_atomical_mint(atomical_id)
@@ -1206,9 +1203,7 @@ class ElectrumX(SessionBase):
             return atomical_in_mempool
         reveal_location_txid = atomical['mint_info']['reveal_location_txid']
         convert_db_mint_info_to_rpc_mint_info_format(self.coin.header_hash, atomical)
-        self.logger.info(f'convert_db_mint_info_to_rpc_mint_info_format {atomical}')
         self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
-        self.logger.info(f'populate_extended_field_summary_atomical_info {atomical}')
         return atomical
 
     async def atomical_id_get_state_history(self, compact_atomical_id):

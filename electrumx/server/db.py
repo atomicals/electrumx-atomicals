@@ -203,6 +203,10 @@ class DB:
         # Key: b'gi' + atomical_id + location_id
         # Value: satoshis at the output 
         # "maps generated atomical mint and location to a value"
+        # ---
+        # Key: b'dat' + location_id
+        # Value: bytes of files data stored at location. Ideally cbor encoded blob
+        # "maps a location to files data"
         self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
