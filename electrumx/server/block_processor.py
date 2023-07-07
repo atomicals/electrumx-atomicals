@@ -969,8 +969,11 @@ class BlockProcessor:
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
     
-    # Apply the rules to color the outputs of the atomicals
+    # Create or delete data that was found at the location
     def create_or_delete_data_location(self, tx_hash, operations_found_at_inputs, Delete=False):
+        if not operations_found_at_inputs or operations_found_at_inputs['op'] != 'dat':
+            return 
+            
         if Delete:
             self.db_deletes.append(b'dat' + tx_hash + pack_le_uint32(0))
         else: 
