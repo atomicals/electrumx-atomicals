@@ -1371,17 +1371,18 @@ class DB:
         atomical_number_tip = self.db_atomical_count - 1
         def read_atomical_list():   
             atomical_ids = []
-            search_starting_at_atomical_number = 0
-            # If no offset provided, then assume we want to start from the highest
-            if offset == None or offset == 0: 
-                prefix = b'n'
-                for atomical_number_key, atomical_id_value in self.utxo_db.iterator(prefix=prefix, reverse=True):
-                    search_starting_at_atomical_number, = unpack_be_uint64(atomical_number_key[ 1 : 1 + 8])
-                    self.logger.info(f'search_starting_at_atomical_number {search_starting_at_atomical_number}')
-                    break
-            else:
+            # If no offset provided, then assume we want to start from the highest one
+            search_starting_at_atomical_number = atomical_number_tip
+            if offset >= 0
                 search_starting_at_atomical_number = offset
-            
+            elif offset < 0:
+                # if offset is negative, then we assume it is subtracted from the latest number
+                search_starting_at_atomical_number = atomical_number_tip + offset # adding a minus
+
+            # safety checking for less than 0   
+            if search_starting_at_atomical_number < 0:
+                search_starting_at_atomical_number = 0
+
             # Generate up to limit number of keys to search
             list_of_keys = []
             for x in range(limit):
