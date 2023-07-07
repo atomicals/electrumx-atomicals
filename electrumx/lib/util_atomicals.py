@@ -266,7 +266,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
         if not isinstance(args, dict):
             return None, None, None, None, None
 
-        pow_prefix = args.get('powprefix')
+        pow_prefix = args.get('pow')
         if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
             return None, None, None, None, None
 
