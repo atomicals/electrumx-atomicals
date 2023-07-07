@@ -1385,7 +1385,7 @@ class DB:
 
             # Generate up to limit number of keys to search
             list_of_keys = []
-            x = 1
+            x = 0
             while x < limit:
                 if asc:
                     current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number + x)
