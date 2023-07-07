@@ -1368,7 +1368,7 @@ class DB:
         if limit > 50:
             limit = 50
         # Todo: update the logic to correctly list
-        atomical_number_tip = self.db_atomical_count
+        atomical_number_tip = self.db_atomical_count - 1
         def read_atomical_list():   
             atomical_ids = []
             # If no offset provided, then assume we want to start from the highest one
@@ -1385,7 +1385,8 @@ class DB:
 
             # Generate up to limit number of keys to search
             list_of_keys = []
-            for x in range(limit):
+            x = 1
+            while x < limit:
                 if asc:
                     current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number + x)
                     list_of_keys.append(current_key)
@@ -1395,6 +1396,7 @@ class DB:
                         break 
                     current_key = b'n' + pack_be_uint64(search_starting_at_atomical_number - x)
                     list_of_keys.append(current_key)
+                x += 1
 
             # Get all of the atomicals in the order of the keys
             for search_key in list_of_keys:
