@@ -1657,7 +1657,7 @@ class BlockProcessor:
                 continue
 
             # It is at least a dictionary
-            regexes = modpath_item['data'].get('prices', None)
+            regexes = modpath_item['data'].get('rules')
             if not regexes:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height prices value not found atomical_id={atomical_id.hex()}')
                 continue
