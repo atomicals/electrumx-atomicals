@@ -25,6 +25,7 @@ from electrumx.lib.tx import Tx
 from electrumx.server.db import FlushData, COMP_TXID_LEN, DB
 from electrumx.server.history import TXNUM_LEN
 from electrumx.lib.util_atomicals import (
+    is_hex_string,
     pad_bytes_n, 
     has_proof_of_work, 
     is_valid_container_string_name, 
@@ -1676,23 +1677,23 @@ class BlockProcessor:
                 satoshis = regex_price.get('v', None)
                 # Output is the output script that must be paid to mint the subrealm
                 output = regex_price.get('o', None)
-                # If all three are set, th
+                # If all three are set then it could be valid...
                 if regex_pattern != None and satoshis != None and output != None:
                     # Check that value is greater than 0
                     if satoshis <= 0:
                         self.logger.info(f'get_subrealm_regex_price_list_from_height invalid satoshis atomical_id={atomical_id.hex()}')
                         continue
+                    if not is_hex_string(output):
+                        self.logger.info(f'get_subrealm_regex_price_list_from_height output o value is not a valid hex string atomical_id={atomical_id.hex()}')
+                        continue 
                     # Check that regex is a valid regex pattern
                     try:
                         valid_pattern = re.compile(rf"{regex_pattern}")
-                        if not isinstance(output, (bytes, bytearray)):
-                            self.logger.info(f'get_subrealm_regex_price_list_from_height output o value is not a byte sequence atomical_id={atomical_id.hex()}')
-                            continue
                         # After all we have finally validated this is a valid price point for minting subrealm...
                         price_point = {
                             'pattern': regex_pattern,
                             'value': satoshis,
-                            'output': output
+                            'output': output.decode('hex')
                         }
                         regex_price_list.append(price_point)
                     except Exception as e: 

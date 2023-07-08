@@ -124,8 +124,29 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
             break
     return expected_output_indexes
 
+# Check whether the value is hex string
+def is_hex_string(value):
+    if not value:
+        return False 
+
+    if not isinstance(value, str):
+        return False 
+
+    try:
+        int(value, 16) # Throws ValueError if it cannot be validated as hex string
+        return True
+    except (ValueError, TypeError):
+        pass
+    return False
+
 # Check whether the value is a 36 byte hex string
 def is_atomical_id_long_form_string(value):
+    if not value:
+        return False 
+
+    if not isinstance(value, str):
+        return False 
+        
     try:
         int(value, 16) # Throws ValueError if it cannot be validated as hex string
         return True
