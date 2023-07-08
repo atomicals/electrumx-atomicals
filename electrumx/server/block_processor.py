@@ -1005,18 +1005,17 @@ class BlockProcessor:
         tx_numb = pack_le_uint64(tx_num)[:TXNUM_LEN]
         pow_scoreb = pack_le_uint32(pow_score)
         commit_txid = operations_found_at_inputs['commit_txid']
+        commit_location = operations_found_at_inputs['commit_location']
+        reveal_location_txid = operations_found_at_inputs['reveal_location_txid']
+        pow_prefix_padded = pad_bytes_n(pow_prefix.encode(), 32)
+        op = operations_found_at_inputs['op']
+        op_padded = pad_bytes_n(op.encode(), 3)
 
         if validated_commit_txid_pow:
             assert(commit_txid == validated_commit_txid_pow)
 
         if validated_reveal_txid_pow:
             assert(reveal_location_txid == validated_reveal_txid_pow)
-
-        commit_location = operations_found_at_inputs['commit_location']
-        reveal_location_txid = operations_found_at_inputs['reveal_location_txid']
-        pow_prefix_padded = pad_bytes_n(pow_prefix.encode(), 32)
-        op = operations_found_at_inputs['op']
-        op_padded = pad_bytes_n(op.encode(), 3)
 
         # Save any commit tx proof of work (ie: by commit_txid)
         if validated_commit_txid_pow:
