@@ -1009,11 +1009,6 @@ class BlockProcessor:
         op = operations_found_at_inputs['op']
         op_padded = pad_bytes_n(op.encode(), 3)
 
-        Pwab block score atomicalID 
-        Pwar prefixpadded block atomicalID
-        Pwtb block score txhash
-        Pwtr prefixpadded block txhash
-
         # Save the Atomicals mint focused proof of work (ie: by commit_txid)
         if op == 'nft' or op == 'ft' or op == 'dft':
             atomical_id = commit_location
