@@ -127,25 +127,19 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
 # recursively check to ensure that a dict does not contain (bytes, bytearray) types
 # this is used to 'sanitize' a dictionary for intended to be serialized to JSON
 def is_sanitized_dict_no_bytes_like(d: dict):
-    if not d:
-        return False
     if not isinstance(d, dict):
         return False
     for k, v in d.items():
         if isinstance(v, dict):
-            return recursively_iterate(v)
+            return is_sanitized_dict_no_bytes_like(v)
         elif isinstance(v, (bytes, bytearray)):
             return False
     return True
 
 # Check whether the value is hex string
 def is_hex_string(value):
-    if not value:
-        return False 
-
     if not isinstance(value, str):
         return False 
-
     try:
         int(value, 16) # Throws ValueError if it cannot be validated as hex string
         return True
@@ -680,17 +674,16 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 if not isinstance(decoded_object, dict):
                     print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload is not a dict for {tx}. Skipping tx input...')
                     continue
-                
-                # Also enforce that if there are meta, args, or ctx fields that they must be dicts
-                # This is done to ensure that these fields are always easily parseable and do not contain unexpected data which could cause parsing problems later
-                # Ensure that they are not allowed to contain bytes like objects
-                if not is_sanitized_dict_no_bytes_like(decoded_object.get('meta', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('args', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('ctx', {})):
-                    print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx} {decoded_object}. Skipping tx input...')
-                    continue
-                    
             except: 
                 print(f'parse_protocols_operations_from_witness_array found {op_name} but CBOR payload parsing failed for {tx}. Skipping tx input...')
                 continue
+            
+            # Also enforce that if there are meta, args, or ctx fields that they must be dicts
+            # This is done to ensure that these fields are always easily parseable and do not contain unexpected data which could cause parsing problems later
+            # Ensure that they are not allowed to contain bytes like objects
+            if not is_sanitized_dict_no_bytes_like(decoded_object.get('meta', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('args', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('ctx', {})):
+                print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx} {decoded_object}. Skipping tx input...')
+                continue  
             # Return immediately at the first successful parse of the payload
             # It doesn't mean that it will be valid when processed, because most operations require the txin_idx=0 
             # Nonetheless we return it here and it can be checked uptstream
