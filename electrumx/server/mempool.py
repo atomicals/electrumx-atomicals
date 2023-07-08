@@ -343,10 +343,12 @@ class MemPool:
             def create_atomical_from_definition(operation_found_at_inputs, tx, tx_hash, atomicals_updates_map):
                 if not operation_found_at_inputs:
                     return 
+                op = operation_found_at_inputs['op']
+                self.logger.info(f'Found Atomicals operation in mempool transaction {hash_to_hex_str(tx_hash)}, op={op}') 
                 valid_create_op_type, mint_info = get_mint_info_op_factory(script_hashX, tx, tx_hash, operation_found_at_inputs)
                 if valid_create_op_type:
                     atomical_id = mint_info['id']
-                    self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool {location_id_bytes_to_compact(atomical_id)} in transaction {tx_hash}') 
+                    self.logger.info(f'Atomicals mint {valid_create_op_type} found in mempool transaction {tx_hash}, atomicalId={location_id_bytes_to_compact(atomical_id)}') 
                     atomicals_updates_map[atomical_id] = {
                         'atomical_id':  location_id_bytes_to_compact(atomical_id),
                         'atomical_number': -1,
