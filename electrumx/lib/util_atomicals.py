@@ -238,7 +238,7 @@ def has_proof_of_work(operations_found_at_inputs):
 
     pow_prefix = args.get('powprefix')
     if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
-    return None, None, None, None, None, None
+        return None, None, None, None, None, None
 
     print(f'pow_prefix {pow_prefix}')
     pow_score = len(pow_prefix)
