@@ -1313,9 +1313,9 @@ class ElectrumX(SessionBase):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state_history(compact_atomical_id)} 
 
-    async def atomical_get_state(self, compact_atomical_id_or_atomical_number, path):
+    async def atomical_get_state(self, compact_atomical_id_or_atomical_number, path, Verbose=False):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
-        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id, path)} 
+        return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id, path, Verbose)} 
 
     async def atomical_get_event_history(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
