@@ -1277,7 +1277,7 @@ class DB:
         return modpath_results
 
     # Populate the latest state of an atomical for a path
-    def populate_extended_mod_state_path_latest_atomical_info(self, atomical_id, atomical, path):
+    def populate_extended_mod_state_path_latest_atomical_info(self, atomical_id, atomical, path, Verbose=False):
         history_for_path = self.get_mod_path_history(atomical_id, path, False)
         latest_state = {}
         for element in history_for_path:
@@ -1287,9 +1287,15 @@ class DB:
                     'txid': element['txid'],
                     'value': value
                 }
+        # If in verbose mode, when we are done sort the list by descending
+        history_for_path.sort(key=lambda x: x['tx_num'], reverse=True)
         atomical['state'] = {
+            'path': path,
             'latest': latest_state
         }
+        if Verbose:
+            atomical['state']['history'] = history_for_path
+
         return atomical
  
     # Populate the history of state for an atomical
