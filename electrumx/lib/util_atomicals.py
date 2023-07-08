@@ -246,12 +246,12 @@ def has_proof_of_work(operations_found_at_inputs):
     commit_txid = hash_to_hex_str(operations_found_at_inputs['commit_txid'])
     validated_commit_txid_pow = None
     if commit_txid.startswith(pow_prefix):
-        validated_commit_txid_pow = commit_txid
+        validated_commit_txid_pow = operations_found_at_inputs['commit_txid']
     
     reveal_location_txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
     validated_reveal_location_txid_pow = None
     if reveal_location_txid.startswith(pow_prefix):
-        validated_reveal_location_txid_pow = reveal_location_txid
+        validated_reveal_location_txid_pow = operations_found_at_inputs['reveal_location_txid']
 
     if validated_commit_txid_pow or validated_reveal_location_txid_pow:
         return True, pow_score, pow_prefix, operations_found_at_inputs['op'], validated_commit_txid_pow, validated_reveal_location_txid_pow

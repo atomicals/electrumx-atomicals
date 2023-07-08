@@ -1015,6 +1015,7 @@ class BlockProcessor:
             assert(commit_txid == validated_commit_txid_pow)
 
         if validated_reveal_txid_pow:
+            self.logger.info(f'validated_reveal_txid_pow {validated_reveal_txid_pow} reveal_location_txid {reveal_location_txid}')
             assert(reveal_location_txid == validated_reveal_txid_pow)
 
         # Save any commit tx proof of work (ie: by commit_txid)
