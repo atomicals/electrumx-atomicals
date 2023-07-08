@@ -1671,7 +1671,7 @@ class BlockProcessor:
             regex_price_list = []
             for regex_price in regexes:
                 # regex is the first pattern that will be checked to match for minting a subrealm
-                regex_pattern = regex_price.get('r', None)
+                regex_pattern = regex_price.get('p', None)
                 # satoshi value is the price that must be paid to mint a subrealm
                 satoshis = regex_price.get('v', None)
                 # Output is the output script that must be paid to mint the subrealm
@@ -1690,7 +1690,7 @@ class BlockProcessor:
                             continue
                         # After all we have finally validated this is a valid price point for minting subrealm...
                         price_point = {
-                            'regex': regex_pattern,
+                            'pattern': regex_pattern,
                             'value': satoshis,
                             'output': output
                         }
@@ -1719,7 +1719,7 @@ class BlockProcessor:
         for regex_price_point in regex_price_point_list:
             self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height regex_price_point={regex_price_point} parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
             # Perform some sanity checks just in case
-            regex_pattern = regex_price_point.get('regex', None)
+            regex_pattern = regex_price_point.get('pattern', None)
             # satoshi value is the price that must be paid to mint a subrealm
             satoshis = regex_price_point.get('value', None)
             # Output is the output script that must be paid to mint the subrealm

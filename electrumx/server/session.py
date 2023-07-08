@@ -1353,13 +1353,13 @@ class ElectrumX(SessionBase):
     async def atomicals_get_by_container(self, container):
         found_atomical_id = self.session_mgr.bp.get_effective_container(container)
         if not found_atomical_id:
-            raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
+            raise RPCError(BAD_REQUEST, f'not found container: {container}')
         return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
 
     async def atomicals_get_by_realm(self, name):
         found_atomical_id = self.session_mgr.bp.get_effective_realm(name)
         if not found_atomical_id:
-            raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
+            raise RPCError(BAD_REQUEST, f'not found realm: {name}')
         return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
     
     async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):

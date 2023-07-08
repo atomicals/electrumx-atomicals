@@ -230,7 +230,7 @@ def is_validate_pow_prefix_string(pow_prefix):
 def has_proof_of_work(operations_found_at_inputs):
     if not operations_found_at_inputs:
         return None, None, None, None, None, None
-    print(f'has_proof_of_work {operations_found_at_inputs}')
+
     payload_dict = operations_found_at_inputs['payload']
     args = payload_dict.get('args') 
     if not isinstance(args, dict):
@@ -240,7 +240,6 @@ def has_proof_of_work(operations_found_at_inputs):
     if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
         return None, None, None, None, None, None
 
-    print(f'pow_prefix {pow_prefix}')
     pow_score = len(pow_prefix)
     # Check that the pow_prefix matches the first hex bytes of the printed hex string
     commit_txid = hash_to_hex_str(operations_found_at_inputs['commit_txid'])
@@ -256,7 +255,6 @@ def has_proof_of_work(operations_found_at_inputs):
     if validated_commit_txid_pow or validated_reveal_location_txid_pow:
         return True, pow_score, pow_prefix, operations_found_at_inputs['op'], validated_commit_txid_pow, validated_reveal_location_txid_pow
 
-    print(f'has_proof_of_work {txid} {pow_prefix} ended')
     return None, None, None, None, None, None
     
 # Get the mint information structure if it's a valid mint event type
