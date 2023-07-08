@@ -857,11 +857,22 @@ class BlockProcessor:
         else: 
             raise IndexError(f'Fatal index error Create Invalid')
         
-        # Check if there was any proof of work attached to the mint
-        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_proof_of_work(operations_found_at_inputs)
+        # Check if there was any proof of work attached to the commit or reveal mints
+        has_valid_pow, pow_score, pow_prefix, op_type, validated_commit_txid_pow, validated_reveal_txid_pow = has_proof_of_work(operations_found_at_inputs)
         if has_valid_pow:
             self.logger.info(f'adding pow {pow_prefix}')
-            mint_info['$pow'] = pow_prefix
+            commit_pow = False
+            reveal_pow = False
+            if validated_commit_txid_pow:
+                commit_pow = True
+            if validated_reveal_txid_pow:
+                reveal_pow = True
+            mint_info['$pow'] = {
+                'energy': len(pow_prefix),
+                'prefix': pow_prefix,
+                'commit': commit_pow,
+                'reveal': reveal_pow
+            }
         # Save mint data fields
         put_general_data = self.general_data_cache.__setitem__
         put_general_data(b'md' + atomical_id, operations_found_at_inputs['payload_bytes'])
@@ -992,19 +1003,39 @@ class BlockProcessor:
         tx_numb = pack_le_uint64(tx_num)[:TXNUM_LEN]
         pow_scoreb = pack_le_uint32(pow_score)
         commit_txid = operations_found_at_inputs['commit_txid']
+        commit_location = operations_found_at_inputs['commit_location']
+        reveal_location_txid = operations_found_at_inputs['reveal_location_txid']
         pow_prefix_padded = pad_bytes_n(pow_prefix.encode(), 32)
-        op_padded = pad_bytes_n(operations_found_at_inputs['op'].encode(), 3)
+        op = operations_found_at_inputs['op']
+        op_padded = pad_bytes_n(op.encode(), 3)
 
-        pb_key = b'pb' + pack_le_uint32(height) + pow_scoreb + op_padded + tx_hash + commit_txid
-        pr_key = b'pr' + pow_prefix_padded + pack_le_uint32(height) + op_padded + tx_hash + commit_txid + pow_scoreb
+        Pwab block score atomicalID 
+        Pwar prefixpadded block atomicalID
+        Pwtb block score txhash
+        Pwtr prefixpadded block txhash
 
+        # Save the Atomicals mint focused proof of work (ie: by commit_txid)
+        if op == 'nft' or op == 'ft' or op == 'dft':
+            atomical_id = commit_location
+            pwab_key = b'pwab' + pack_le_uint32(height) + pow_scoreb + atomical_id + op_padded
+            pwar_key = b'pwar' + pow_prefix_padded + pack_le_uint32(height) + atomical_id + op_padded
+            if Delete:
+                self.db_deletes.append(pwab_key)
+                self.db_deletes.append(pwar_key)
+            else:
+                put_general_data = self.general_data_cache.__setitem__
+                put_general_data(pwab_key, operations_found_at_inputs['payload_bytes'])
+                put_general_data(pwar_key, operations_found_at_inputs['payload_bytes'])
+        
+        pwtb_key = b'pwtb' + pack_le_uint32(height) + pow_scoreb + reveal_location_txid + op_padded
+        pwtr_key = b'pwtr' + pow_prefix_padded + pack_le_uint32(height) + reveal_location_txid + op_padded
         if Delete:
-            self.db_deletes.append(pb_key)
-            self.db_deletes.append(pr_key)
+            self.db_deletes.append(pwtb_key)
+            self.db_deletes.append(pwtr_key)
         else:
             put_general_data = self.general_data_cache.__setitem__
-            put_general_data(pb_key, operations_found_at_inputs['payload_bytes'])
-            put_general_data(pr_key, operations_found_at_inputs['payload_bytes'])
+            put_general_data(pwtb_key, operations_found_at_inputs['payload_bytes'])
+            put_general_data(pwtr_key, operations_found_at_inputs['payload_bytes'])
 
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):

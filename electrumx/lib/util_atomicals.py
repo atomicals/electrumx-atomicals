@@ -229,26 +229,35 @@ def is_validate_pow_prefix_string(pow_prefix):
 # check whether an Atomicals operation contains a proof of work argument
 def has_proof_of_work(operations_found_at_inputs):
     if not operations_found_at_inputs:
-        return None, None, None, None, None
+        return None, None, None, None, None, None
     print(f'has_proof_of_work {operations_found_at_inputs}')
     payload_dict = operations_found_at_inputs['payload']
     args = payload_dict.get('args') 
     if not isinstance(args, dict):
-        return None, None, None, None, None
+        return None, None, None, None, None, None
 
-    pow_prefix = args.get('pow')
+    pow_prefix = args.get('powprefix')
     if not args or not pow_prefix or not is_validate_pow_prefix_string(pow_prefix):
-        return None, None, None, None, None
+    return None, None, None, None, None, None
 
     print(f'pow_prefix {pow_prefix}')
     pow_score = len(pow_prefix)
     # Check that the pow_prefix matches the first hex bytes of the printed hex string
-    txid = hash_to_hex_str(operations_found_at_inputs['commit_txid'])
-    if txid.startswith(pow_prefix):
-        return True, pow_score, pow_prefix, operations_found_at_inputs['op'], operations_found_at_inputs['commit_txid']
+    commit_txid = hash_to_hex_str(operations_found_at_inputs['commit_txid'])
+    validated_commit_txid_pow = None
+    if commit_txid.startswith(pow_prefix):
+        validated_commit_txid_pow = commit_txid
+    
+    reveal_location_txid = hash_to_hex_str(operations_found_at_inputs['reveal_location_txid'])
+    validated_reveal_location_txid_pow = None
+    if reveal_location_txid.startswith(pow_prefix):
+        validated_reveal_location_txid_pow = reveal_location_txid
+
+    if validated_commit_txid_pow or validated_reveal_location_txid_pow:
+        return True, pow_score, pow_prefix, operations_found_at_inputs['op'], validated_commit_txid_pow, validated_reveal_location_txid_pow
 
     print(f'has_proof_of_work {txid} {pow_prefix} ended')
-    return None, None, None, None, None
+    return None, None, None, None, None, None
     
 # Get the mint information structure if it's a valid mint event type
 def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
@@ -305,6 +314,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     input_index = op_found_struct['input_index']
     commit_txid = op_found_struct['commit_txid']
     commit_index = op_found_struct['commit_index']
+
     reveal_location_txid = op_found_struct['reveal_location_txid']
     reveal_location_index = op_found_struct['reveal_location_index']
 
@@ -377,6 +387,12 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
     
     if not mint_info or not mint_info.get('type'):
         return None, None
+    
+    # Sanity check that the commit location was set correctly on the parsed input
+    # We check here at the end because if we got this far then a valid nft/dft/ft mint was found
+    commit_location = op_found_struct['commit_location']
+    assert(commit_location == commit_txid + pack_le_uint32(commit_index))
+
     return mint_info['type'], mint_info
     
 # Format the relevant byte fields in the mint raw data into strings to send on rpc calls well formatted
@@ -656,6 +672,7 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 'input_index': txin_idx,
                 'commit_txid': prev_tx_hash,
                 'commit_index': prev_idx,
+                'commit_location': prev_tx_hash + pack_le_uint32(prev_idx),
                 'reveal_location_txid': tx_hash,
                 'reveal_location_index': 0 # Always assume the first output is the first location
             }
