@@ -996,13 +996,20 @@ class BlockProcessor:
         # Sanity check, shoulld be the same
         assert(tx_hash == operations_found_at_inputs['reveal_location_txid'])
         # Check if there was any proof of work attached to the mint to create the index
-        has_valid_pow, pow_score, pow_prefix, op_type, tx_hash_of_op = has_proof_of_work(operations_found_at_inputs)
+        has_valid_pow, pow_score, pow_prefix, op_type, validated_commit_txid_pow, validated_reveal_txid_pow  = has_proof_of_work(operations_found_at_inputs)
         if not has_valid_pow:
             return 
 
         tx_numb = pack_le_uint64(tx_num)[:TXNUM_LEN]
         pow_scoreb = pack_le_uint32(pow_score)
         commit_txid = operations_found_at_inputs['commit_txid']
+
+        if validated_commit_txid_pow:
+            assert(commit_txid == validated_commit_txid_pow)
+
+        if validated_reveal_txid_pow:
+            assert(reveal_location_txid == validated_reveal_txid_pow)
+
         commit_location = operations_found_at_inputs['commit_location']
         reveal_location_txid = operations_found_at_inputs['reveal_location_txid']
         pow_prefix_padded = pad_bytes_n(pow_prefix.encode(), 32)
@@ -1010,6 +1017,7 @@ class BlockProcessor:
         op_padded = pad_bytes_n(op.encode(), 3)
 
         # Save the Atomicals mint focused proof of work (ie: by commit_txid)
+        # This is intended to provide a proof of work index to atomicals mints only
         if op == 'nft' or op == 'ft' or op == 'dft':
             atomical_id = commit_location
             pwab_key = b'pwab' + pack_le_uint32(height) + pow_scoreb + atomical_id + op_padded
@@ -1022,6 +1030,8 @@ class BlockProcessor:
                 put_general_data(pwab_key, operations_found_at_inputs['payload_bytes'])
                 put_general_data(pwar_key, operations_found_at_inputs['payload_bytes'])
         
+        # Save the transaction redveal focused proof of work (ie: by reveal_location_txid)
+        # This will index all reveals across all operations
         pwtb_key = b'pwtb' + pack_le_uint32(height) + pow_scoreb + reveal_location_txid + op_padded
         pwtr_key = b'pwtr' + pow_prefix_padded + pack_le_uint32(height) + reveal_location_txid + op_padded
         if Delete:
@@ -1031,6 +1041,8 @@ class BlockProcessor:
             put_general_data = self.general_data_cache.__setitem__
             put_general_data(pwtb_key, operations_found_at_inputs['payload_bytes'])
             put_general_data(pwtr_key, operations_found_at_inputs['payload_bytes'])
+
+        # Check to see if the user provided a "content"
 
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):
