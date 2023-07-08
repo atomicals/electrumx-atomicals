@@ -868,7 +868,6 @@ class BlockProcessor:
             if validated_reveal_txid_pow:
                 reveal_pow = True
             mint_info['$pow'] = {
-                'energy': len(pow_prefix),
                 'prefix': pow_prefix,
                 'commit': commit_pow,
                 'reveal': reveal_pow
@@ -1202,9 +1201,9 @@ class BlockProcessor:
                 atomical['mint_info']['$request_ticker'] = request_ticker
 
         # Check if there is the $pow variable and bring it to the top
-        powprefix = init_mint_info.get('$pow')
-        if powprefix:
-            atomical['$pow'] = powprefix 
+        pow_val = init_mint_info.get('$pow')
+        if pow_val:
+            atomical['$pow'] = pow_val
 
         # Resolve any name like details such as realms, subrealms, containers and tickers
         self.populate_extended_atomical_subtype_info(atomical)
