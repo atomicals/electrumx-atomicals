@@ -124,6 +124,22 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
             break
     return expected_output_indexes
 
+# recursively check to ensure that a dict does not contain (bytes, bytearray) types
+# this is used to 'sanitize' a dictionary for intended to be serialized to JSON
+def is_sanitized_dict_no_bytes_like(d: dict):
+    if not d:
+        return False
+
+    if not isinstance(d, dict):
+        return False
+
+    for k, v in d.items():
+        if isinstance(v, dict):
+            return recursively_iterate(v)
+        elif isinstance(v, (bytes, bytearray)):
+            return False
+    return True
+
 # Check whether the value is hex string
 def is_hex_string(value):
     if not value:
@@ -146,7 +162,7 @@ def is_atomical_id_long_form_string(value):
 
     if not isinstance(value, str):
         return False 
-        
+
     try:
         int(value, 16) # Throws ValueError if it cannot be validated as hex string
         return True
@@ -669,7 +685,8 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 
                 # Also enforce that if there are meta, args, or ctx fields that they must be dicts
                 # This is done to ensure that these fields are always easily parseable and do not contain unexpected data which could cause parsing problems later
-                if not isinstance(decoded_object.get('meta', {}), dict) or not isinstance(decoded_object.get('args', {}), dict) or not isinstance(decoded_object.get('ctx', {}), dict):
+                # Ensure that they are not allowed to contain bytes like objects
+                if not is_sanitized_dict_no_bytes_like(decoded_object.get('meta', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('args', {}) or not is_sanitized_dict_no_bytes_like(decoded_object.get('ctx', {})):
                     print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx}. Skipping tx input...')
                     continue
                     
