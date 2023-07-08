@@ -884,6 +884,8 @@ class BlockProcessor:
         # Save the output script of the atomical reveal mint outputs to lookup at a future point for resolving address script
         # put_general_data(b'po' + atomical_id, mint_info['commit_script'])
         put_general_data(b'po' + mint_info['reveal_location'], txout.pk_script)
+        # Save a lookup by first reveal location to atomical id
+        put_general_data(b'rloc' + mint_info['reveal_location'], atomical_id)
         return atomical_id
 
     # Build a map of atomical id to the type, value, and input indexes
@@ -993,6 +995,7 @@ class BlockProcessor:
     def create_or_delete_pow_records(self, tx_hash, tx_num, height, operations_found_at_inputs, Delete=False):
         if not operations_found_at_inputs:
             return
+        put_general_data = self.general_data_cache.__setitem__
         # Sanity check, shoulld be the same
         assert(tx_hash == operations_found_at_inputs['reveal_location_txid'])
         # Check if there was any proof of work attached to the mint to create the index
@@ -1016,34 +1019,43 @@ class BlockProcessor:
         op = operations_found_at_inputs['op']
         op_padded = pad_bytes_n(op.encode(), 3)
 
-        # Save the Atomicals mint focused proof of work (ie: by commit_txid)
-        # This is intended to provide a proof of work index to atomicals mints only
-        if op == 'nft' or op == 'ft' or op == 'dft':
-            atomical_id = commit_location
-            pwab_key = b'pwab' + pack_le_uint32(height) + pow_scoreb + atomical_id + op_padded
-            pwar_key = b'pwar' + pow_prefix_padded + pack_le_uint32(height) + atomical_id + op_padded
-            if Delete:
-                self.db_deletes.append(pwab_key)
-                self.db_deletes.append(pwar_key)
-            else:
-                put_general_data = self.general_data_cache.__setitem__
-                put_general_data(pwab_key, operations_found_at_inputs['payload_bytes'])
-                put_general_data(pwar_key, operations_found_at_inputs['payload_bytes'])
-        
-        # Save the transaction redveal focused proof of work (ie: by reveal_location_txid)
+        # Save any commit tx proof of work (ie: by commit_txid)
+        if validated_commit_txid_pow:
+            # Create the atomicals mint specific pow indexes
+            if op == 'nft' or op == 'ft' or op == 'dft':
+                atomical_id = commit_location
+                powcmb_key = b'powcmb' + pack_le_uint32(height) + pow_scoreb + atomical_id + op_padded
+                powcmr_key = b'powcmr' + pow_prefix_padded + pack_le_uint32(height) + atomical_id + op_padded
+                if Delete:
+                    self.db_deletes.append(powcmb_key)
+                    self.db_deletes.append(powcmr_key)
+                else:
+                    put_general_data(powcmb_key, operations_found_at_inputs['payload_bytes'])
+                    put_general_data(powcmr_key, operations_found_at_inputs['payload_bytes'])
+            else: 
+                # Create non-mint (other) operations
+                powcob_key = b'powcob' + pack_le_uint32(height) + pow_scoreb + commit_location + op_padded
+                powcor_key = b'powcor' + pow_prefix_padded + pack_le_uint32(height) + commit_location + op_padded
+                if Delete:
+                    self.db_deletes.append(powcob_key)
+                    self.db_deletes.append(powcor_key)
+                else:
+                    put_general_data(powcob_key, operations_found_at_inputs['payload_bytes'])
+                    put_general_data(powcor_key, operations_found_at_inputs['payload_bytes'])
+            
+        # Save the transaction reveal focused proof of work (ie: by reveal_location_txid)
         # This will index all reveals across all operations
-        pwtb_key = b'pwtb' + pack_le_uint32(height) + pow_scoreb + reveal_location_txid + op_padded
-        pwtr_key = b'pwtr' + pow_prefix_padded + pack_le_uint32(height) + reveal_location_txid + op_padded
-        if Delete:
-            self.db_deletes.append(pwtb_key)
-            self.db_deletes.append(pwtr_key)
-        else:
-            put_general_data = self.general_data_cache.__setitem__
-            put_general_data(pwtb_key, operations_found_at_inputs['payload_bytes'])
-            put_general_data(pwtr_key, operations_found_at_inputs['payload_bytes'])
-
-        # Check to see if the user provided a "content"
-
+        if validated_reveal_txid_pow:
+            # Create the atomicals mint specific pow indexes
+            powrb_key = b'powrb' + pack_le_uint32(height) + pow_scoreb + validated_reveal_txid_pow + op_padded
+            powrr_key = b'powrr' + pow_prefix_padded + pack_le_uint32(height) + validated_reveal_txid_pow + op_padded
+            if Delete:
+                self.db_deletes.append(powrb_key)
+                self.db_deletes.append(powrr_key)
+            else:
+                put_general_data(powrb_key, operations_found_at_inputs['payload_bytes'])
+                put_general_data(powrr_key, operations_found_at_inputs['payload_bytes'])
+   
     # Get the effective realm considering cache and database
     def get_effective_realm(self, realm_name):
         return self.get_effective_name_template(b'rlm', realm_name, self.realm_data_cache)
@@ -1581,6 +1593,8 @@ class BlockProcessor:
         # remove the script output for the commit and reveal mint
         self.db_deletes.append(b'po' + atomical_id)
         self.db_deletes.append(b'po' + location)
+        # Delete the reveal location to atomical
+        self.db_deletes.append(b'rloc' + location)
 
     # Delete atomical mint data and any associated realms, subrealms, containers and tickers
     def delete_atomical_mint(self, tx_hash, tx, atomical_num, atomicals_spent_at_inputs, operations_found_at_inputs):
