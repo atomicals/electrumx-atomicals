@@ -129,10 +129,8 @@ def get_expected_output_indexes_of_atomical_ft(mint_info, tx, atomical_id, atomi
 def is_sanitized_dict_no_bytes_like(d: dict):
     if not d:
         return False
-
     if not isinstance(d, dict):
         return False
-
     for k, v in d.items():
         if isinstance(v, dict):
             return recursively_iterate(v)
@@ -687,7 +685,7 @@ def parse_protocols_operations_from_witness_array(tx, tx_hash):
                 # This is done to ensure that these fields are always easily parseable and do not contain unexpected data which could cause parsing problems later
                 # Ensure that they are not allowed to contain bytes like objects
                 if not is_sanitized_dict_no_bytes_like(decoded_object.get('meta', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('args', {})) or not is_sanitized_dict_no_bytes_like(decoded_object.get('ctx', {})):
-                    print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx}. Skipping tx input...')
+                    print(f'parse_protocols_operations_from_witness_array found {op_name} but decoded CBOR payload has an args, meta, or ctx that is not a dict for {tx} {decoded_object}. Skipping tx input...')
                     continue
                     
             except: 
