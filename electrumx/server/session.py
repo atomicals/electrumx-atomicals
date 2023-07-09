@@ -1392,8 +1392,13 @@ class ElectrumX(SessionBase):
             level += 1
 
         joined_name = ''
+        is_first_name_part = True
         for name_element in realms_path:
-            joined_name += '.' + name_element['name_part']
+            if is_first_name_part:
+                is_first_name_part = False
+            else:
+                joined_name += '.'
+            joined_name +=  name_element['name_part']
         # Nothing was found
         realms_path_len = len(realms_path)
         if realms_path_len == 0:
