@@ -1323,7 +1323,7 @@ class ElectrumX(SessionBase):
 
     async def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
-        if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
+        if not isinstance(compact_atomical_id_or_atomical_number, int) and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
             assert_atomical_id(compact_atomical_id)
         else:
             found_atomical_id = await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number)
