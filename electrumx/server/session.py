@@ -1402,7 +1402,19 @@ class ElectrumX(SessionBase):
         # Nothing was found
         realms_path_len = len(realms_path)
         if realms_path_len == 0:
-            return {'result': { 'success': False, 'atomical_id': None, 'top_level_realm_atomical_id': None, 'top_level_realm_name': None, 'nearest_parent_realm_atomical_id': None, 'nearest_parent_realm_name': None } }
+            return {
+                'result': {
+                    'success': False, 
+                    'atomical_id': None, 
+                    'top_level_realm_atomical_id': None, 
+                    'top_level_realm_name': None, 
+                    'nearest_parent_realm_atomical_id': None, 
+                    'nearest_parent_realm_name': None, 
+                    'requested_full_realm_name': fullname, 
+                    'found_full_realm_name': None, 
+                    'missing_name_parts': fullname, 
+                }
+            }
         #
         #
         #
@@ -1430,7 +1442,9 @@ class ElectrumX(SessionBase):
                     'top_level_realm_name': top_level_realm_name, 
                     'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                     'nearest_parent_realm_name': nearest_parent_realm_name,
-                    'found_full_realm_name': joined_name
+                    'requested_full_realm_name': fullname,
+                    'found_full_realm_name': joined_name,
+                    'missing_name_parts': None
                 }
             }
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
@@ -1447,6 +1461,8 @@ class ElectrumX(SessionBase):
         elif realms_path_len == 1:
             nearest_parent_realm_atomical_id = top_level_realm
             nearest_parent_realm_name = top_level_realm_name
+
+        missing_name_parts = '.'.join(split_names[ len(realms_path) - 1:])
         return {
             'result': {
                 'success': False, 
@@ -1455,7 +1471,9 @@ class ElectrumX(SessionBase):
                 'top_level_realm_name': top_level_realm_name, 
                 'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                 'nearest_parent_realm_name': nearest_parent_realm_name,
-                'found_full_realm_name': joined_name
+                'requested_full_realm_name': fullname,
+                'found_full_realm_name': joined_name,
+                'missing_name_parts': missing_name_parts
             }
         }
 
