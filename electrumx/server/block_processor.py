@@ -1068,7 +1068,7 @@ class BlockProcessor:
     def get_effective_ticker(self, ticker_name):
         return self.get_effective_name_template(b'tick', ticker_name, self.ticker_data_cache)
     
-     # Get the effective subrealm considering cache and database
+    # Get the effective subrealm considering cache and database
     def get_effective_subrealm(self, parent_realm_id, subrealm_name):
         current_height = self.height
         # Get the effective name entries from the database
@@ -1096,6 +1096,11 @@ class BlockProcessor:
                     # payment_tx_outpoint = payment_entry['payment_tx_outpoint']
                     return atomical_id 
         return None
+ 
+    #
+    def get_effective_fullrealm(self, fullrealm_name): 
+
+        return False, closest
 
     # Get the effective name for realms, containers, and tickers. Does NOT work for subrealms, use the get_effective_subrealm method directly
     def get_effective_name_template(self, db_prefix, subject, name_data_cache):

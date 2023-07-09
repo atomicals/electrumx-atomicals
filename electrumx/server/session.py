@@ -1348,25 +1348,111 @@ class ElectrumX(SessionBase):
         found_atomical_id = self.session_mgr.bp.get_effective_ticker(ticker)
         if not found_atomical_id:
             raise RPCError(BAD_REQUEST, f'not found ticker: {ticker}')
-        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
+        return {'result': { 'success': True, 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
     
     async def atomicals_get_by_container(self, container):
         found_atomical_id = self.session_mgr.bp.get_effective_container(container)
         if not found_atomical_id:
             raise RPCError(BAD_REQUEST, f'not found container: {container}')
-        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
+        return {'result': { 'success': True, 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
 
     async def atomicals_get_by_realm(self, name):
         found_atomical_id = self.session_mgr.bp.get_effective_realm(name)
         if not found_atomical_id:
             raise RPCError(BAD_REQUEST, f'not found realm: {name}')
-        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
-    
+        return {'result': { 'success': True, 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
+
     async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
         compact_atomical_id_parent = await self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
         atomical_id_parent = compact_to_location_id_bytes(compact_atomical_id_parent)
         found_atomical_id = self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
-        return {'result': { 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
+        return {'result': { 'success': True,  'atomical_id': location_id_bytes_to_compact(found_atomical_id)}}
+
+    async def atomicals_resolve_full_realm(self, fullname):
+        if not fullname or not isinstance(fullname, str):
+            raise RPCError(BAD_REQUEST, f'invalid input fullname: {fullname}')
+        split_names = fullname.split('.')
+        total_name_parts = len(split_names)
+        level = 0
+        last_found_realm = None
+        realms_path = []
+        for name_part in split_names:
+            if level == 0:
+                last_found_realm = self.session_mgr.bp.get_effective_realm(name)
+            else: 
+                last_found_realm = self.session_mgr.bp.get_effective_subrealm(last_found_realm, name)
+            # stops when it does not found the realm component
+            if not last_found_realm:
+                break
+            # Add it to the list of paths
+            realms_path.append({
+                'atomical_id': location_id_bytes_to_compact(last_found_realm),
+                'name_part': name_part
+            })
+            level += 1
+
+        joined_name = ''
+        for name_part in realms_path:
+            joined_name += '.' + name_part
+        # Nothing was found
+        realms_path_len = len(realms_path)
+        if realms_path_len == 0:
+            return {'result': { 'success': False, 'atomical_id': None, 'top_level_realm_atomical_id': None, 'top_level_realm_name': None, 'nearest_parent_realm_atomical_id': None, 'nearest_parent_realm_name': None } }
+        #
+        #
+        #
+        # At least the top level realm was found if we got this far
+        #
+        #
+        #
+        # The number of realms returned and name components is equal, therefore the subrealm was found correctly
+        if realms_path_len == total_name_parts:
+            nearest_parent_realm_atomical_id = None 
+            nearest_parent_realm_name = None
+            top_level_realm = realms_path[0]['atomical_id']
+            top_level_realm_name = realms_path[0]['name_part']
+            if realms_path_len >= 2:
+                nearest_parent_realm_atomical_id = realms_path[-2]['atomical_id']
+                nearest_parent_realm_name = realms_path[-2]['name_part']
+            elif realms_path_len == 1:
+                nearest_parent_realm_atomical_id = top_level_realm
+                nearest_parent_realm_name = top_level_realm_name
+            return {
+                'result': {
+                    'success': True, 
+                    'atomical_id': realms_path[-1]['atomical_id'], 
+                    'top_level_realm_atomical_id': top_level_realm, 
+                    'top_level_realm_name': top_level_realm_name, 
+                    'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
+                    'nearest_parent_realm_name': nearest_parent_realm_name,
+                    'found_full_realm_name': joined_name
+                }
+            }
+        # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
+        # But the final subrealm does not exist yet
+        # if realms_path_len < total_name_parts:
+        # It is known if we got this far that realms_path_len < total_name_parts
+        nearest_parent_realm_atomical_id = None 
+        nearest_parent_realm_name = None
+        top_level_realm = realms_path[0]['atomical_id']
+        top_level_realm_name = realms_path[0]['name_part']
+        if realms_path_len >= 2:
+            nearest_parent_realm_atomical_id = realms_path[-1]['atomical_id']
+            nearest_parent_realm_name = realms_path[-1]['name_part']
+        elif realms_path_len == 1:
+            nearest_parent_realm_atomical_id = top_level_realm
+            nearest_parent_realm_name = top_level_realm_name
+        return {
+            'result': {
+                'success': False, 
+                'atomical_id': None, 
+                'top_level_realm_atomical_id': top_level_realm, 
+                'top_level_realm_name': top_level_realm_name, 
+                'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
+                'nearest_parent_realm_name': nearest_parent_realm_name,
+                'found_full_realm_name': joined_name
+            }
+        }
 
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
@@ -1837,6 +1923,7 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomicals.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomicals.get_by_subrealm': self.atomicals_get_by_subrealm,
+            'blockchain.atomicals.get_by_fullrealm': self.atomicals_resolve_full_realm,
             'blockchain.atomicals.get_by_ticker': self.atomicals_get_by_ticker,
             'blockchain.atomicals.get_by_container': self.atomicals_get_by_container,
             'blockchain.atomicals.get_ft_stats': self.atomicals_get_ft_stats,
