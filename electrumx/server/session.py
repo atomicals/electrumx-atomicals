@@ -1378,9 +1378,9 @@ class ElectrumX(SessionBase):
         realms_path = []
         for name_part in split_names:
             if level == 0:
-                last_found_realm = self.session_mgr.bp.get_effective_realm(name)
+                last_found_realm = self.session_mgr.bp.get_effective_realm(name_part)
             else: 
-                last_found_realm = self.session_mgr.bp.get_effective_subrealm(last_found_realm, name)
+                last_found_realm = self.session_mgr.bp.get_effective_subrealm(last_found_realm, name_part)
             # stops when it does not found the realm component
             if not last_found_realm:
                 break
