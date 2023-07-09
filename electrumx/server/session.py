@@ -1462,7 +1462,7 @@ class ElectrumX(SessionBase):
             nearest_parent_realm_atomical_id = top_level_realm
             nearest_parent_realm_name = top_level_realm_name
 
-        missing_name_parts = '.'.join(split_names[ len(realms_path) - 1:])
+        missing_name_parts = '.'.join(split_names[ len(realms_path):])
         return {
             'result': {
                 'success': False, 
