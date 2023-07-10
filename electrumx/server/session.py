@@ -1402,8 +1402,7 @@ class ElectrumX(SessionBase):
         # Nothing was found
         realms_path_len = len(realms_path)
         if realms_path_len == 0:
-            return {
-                'result': {
+            return {'result': {
                     'success': False, 
                     'atomical_id': None, 
                     'top_level_realm_atomical_id': None, 
@@ -1412,9 +1411,8 @@ class ElectrumX(SessionBase):
                     'nearest_parent_realm_name': None, 
                     'requested_full_realm_name': fullname, 
                     'found_full_realm_name': None, 
-                    'missing_name_parts': fullname, 
-                }get_atomical_id_by_atomical_number
-            }
+                    'missing_name_parts': fullname }
+                }
         #
         #
         #
@@ -1434,8 +1432,7 @@ class ElectrumX(SessionBase):
             elif realms_path_len == 1:
                 nearest_parent_realm_atomical_id = top_level_realm
                 nearest_parent_realm_name = top_level_realm_name
-            return {
-                'result': {
+            return {'result': {
                     'success': True, 
                     'atomical_id': realms_path[-1]['atomical_id'], 
                     'top_level_realm_atomical_id': top_level_realm, 
@@ -1444,9 +1441,8 @@ class ElectrumX(SessionBase):
                     'nearest_parent_realm_name': nearest_parent_realm_name,
                     'requested_full_realm_name': fullname,
                     'found_full_realm_name': joined_name,
-                    'missing_name_parts': None
+                    'missing_name_parts': None }
                 }
-            }
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
         # But the final subrealm does not exist yet
         # if realms_path_len < total_name_parts:
@@ -1463,8 +1459,7 @@ class ElectrumX(SessionBase):
             nearest_parent_realm_name = top_level_realm_name
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
-        return {
-            'result': {
+        return {'result': {
                 'success': False, 
                 'atomical_id': None, 
                 'top_level_realm_atomical_id': top_level_realm, 
@@ -1473,9 +1468,8 @@ class ElectrumX(SessionBase):
                 'nearest_parent_realm_name': nearest_parent_realm_name,
                 'requested_full_realm_name': fullname,
                 'found_full_realm_name': joined_name,
-                'missing_name_parts': missing_name_parts
+                'missing_name_parts': missing_name_parts }
             }
-        }
 
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
