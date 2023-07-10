@@ -924,7 +924,6 @@ class BlockProcessor:
     def apply_state_like_updates(self, operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height):
         if not operations_found_at_inputs:
             return 
-
         put_general_data = self.general_data_cache.__setitem__
         if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'mod' and operations_found_at_inputs.get('input_index') == 0:
             self.logger.info(f'apply_state_like_updates op=mod, height={height}, atomical_id={atomical_id.hex()}, tx_numb={tx_numb}')

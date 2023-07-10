@@ -1449,7 +1449,7 @@ class ElectrumX(SessionBase):
                 latest_state, _state_history = self.db.get_mod_state_path_latest(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), '/subrealm-mint')
                 nearest_parent_realm_subrealm_mint_allowed = False
                 subrealm_mint_rules = latest_state.get('rules')
-                if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+                if latest_state and subrealm_mint_rules and subrealm_mint_rules.get('value') and isinstance(subrealm_mint_rules.get('value'), list) and len(subrealm_mint_rules.get('value')):
                     nearest_parent_realm_subrealm_mint_allowed = True
                     return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
                 return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
@@ -1487,9 +1487,9 @@ class ElectrumX(SessionBase):
             nearest_parent_realm_subrealm_mint_allowed = False
             subrealm_mint_rules = latest_state.get('rules')
             self.logger.info(f'subrealm_mint_rules, {subrealm_mint_rules} latest state={latest_state}')
-            if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+            if latest_state and subrealm_mint_rules and subrealm_mint_rules.get('value') and isinstance(subrealm_mint_rules.get('value'), list) and len(subrealm_mint_rules.get('value')):
                 nearest_parent_realm_subrealm_mint_allowed = True
-                return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+                return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules.get('value')
             return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
 
         return {'result': return_struct}
