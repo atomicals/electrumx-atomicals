@@ -1478,8 +1478,6 @@ class ElectrumX(SessionBase):
                 'top_level_realm_name': top_level_realm_name, 
                 'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                 'nearest_parent_realm_name': nearest_parent_realm_name,
-                'nearest_parent_realm_subrealm_mint_allowed': nearest_parent_realm_subrealm_mint_allowed,
-                'nearest_parent_realm_subrealm_mint_rules': subrealm_mint_rules,
                 'requested_full_realm_name': fullname,
                 'found_full_realm_name': joined_name,
                 'missing_name_parts': missing_name_parts
