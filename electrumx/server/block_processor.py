@@ -31,6 +31,7 @@ from electrumx.lib.util_atomicals import (
     is_valid_container_string_name, 
     is_unspendable_payment_marker_atomical_id, 
     pad_bytes64, 
+    SUBREALM_MINT_PATH,
     MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, 
     MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, 
     MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, 
@@ -1682,14 +1683,14 @@ class BlockProcessor:
             valid_from_height = modpath_item['height'] + MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
             if height < valid_from_height:
                 continue
-            # Found a valid subrealm_mint_path entry
-            # Get the subrealm_mint_path for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
+            # Found a valid SUBREALM_MINT_PATH entry
+            # Get the SUBREALM_MINT_PATH for the array of the form: Array<{r: regex, p: satoshis, o: output script}>
             if not modpath_item['data'] or not isinstance(modpath_item['data'], dict):
                 self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
 
             mod_path = modpath_item['data'].get('$path')
-            if mod_path != subrealm_mint_path:
+            if mod_path != SUBREALM_MINT_PATH:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height subrealm-mint path not found atomical_id={atomical_id.hex()}')
                 continue
 
@@ -1746,8 +1747,7 @@ class BlockProcessor:
     # Recall that the 'modpath' (contract) values will take effect only after 6 blocks have passed after the height in
     # which the update 'modpath' operation was mined.
     def get_matched_price_point_for_subrealm_name_by_height(self, parent_atomical_id, proposed_subrealm_name, height):
-        subrealm_mint_path = '/subrealm-mint'
-        subrealm_mint_modpath_history = self.db.get_modpath_history(parent_atomical_id, subrealm_mint_path)
+        subrealm_mint_modpath_history = self.db.get_modpath_history(parent_atomical_id, SUBREALM_MINT_PATH)
         regex_price_point_list = self.get_subrealm_regex_price_list_from_height(parent_atomical_id, height, subrealm_mint_modpath_history)
         # Ensure there is a list of regex price list that is available for the atomical
         if not regex_price_point_list or len(regex_price_point_list) <= 0:

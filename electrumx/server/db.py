@@ -1303,7 +1303,6 @@ class DB:
                     # Because these are meta control properties names and we still want to maintain them for posterity and inspection
                     if prop != '$path' and prop != '$action':
                         latest_state.pop(prop, None)
-
         if Verbose: 
             # If in verbose mode, when we are done sort the list by descending
             history_for_path.sort(key=lambda x: x['tx_num'], reverse=True)

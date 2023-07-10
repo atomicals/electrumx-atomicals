@@ -31,7 +31,7 @@ from aiorpcx import (Event, JSONRPCAutoDetect, JSONRPCConnection,
 import electrumx
 import electrumx.lib.util as util
 from electrumx.lib.util import OldTaskGroup, unpack_le_uint64
-from electrumx.lib.util_atomicals import convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
+from electrumx.lib.util_atomicals import SUBREALM_MINT_PATH, convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
 from electrumx.lib.hash import (HASHX_LEN, Base58Error, hash_to_hex_str,
                                 hex_str_to_hash, sha256, double_sha256)
 from electrumx.lib.merkle import MerkleCache
@@ -1446,7 +1446,7 @@ class ElectrumX(SessionBase):
                 }
 
             if Verbose:
-                latest_state, _state_history = self.db.get_mod_state_path_latest(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), '/subrealm-mint')
+                latest_state, _state_history = self.db.get_mod_state_path_latest(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
                 nearest_parent_realm_subrealm_mint_allowed = False
                 subrealm_mint_rules = latest_state.get('rules')
                 if latest_state and subrealm_mint_rules and subrealm_mint_rules.get('value') and isinstance(subrealm_mint_rules.get('value'), list) and len(subrealm_mint_rules.get('value')):
@@ -1483,7 +1483,7 @@ class ElectrumX(SessionBase):
                 'missing_name_parts': missing_name_parts
             }
         if Verbose:
-            latest_state, _state_history = self.db.get_mod_state_path_latest(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), '/subrealm-mint')
+            latest_state, _state_history = self.db.get_mod_state_path_latest(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
             nearest_parent_realm_subrealm_mint_allowed = False
             subrealm_mint_rules = latest_state.get('rules')
             self.logger.info(f'subrealm_mint_rules, {subrealm_mint_rules} latest state={latest_state}')
