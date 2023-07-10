@@ -1445,7 +1445,7 @@ class ElectrumX(SessionBase):
                 }
 
             if Verbose:
-                latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+                latest_state, _state_history = self.db.get_mod_state_path_latest(nearest_parent_realm_atomical_id, '/subrealm-mint')
                 nearest_parent_realm_subrealm_mint_allowed = False
                 subrealm_mint_rules = latest_state.get('rules')
                 if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
@@ -1471,12 +1471,6 @@ class ElectrumX(SessionBase):
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
 
-        latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
-        nearest_parent_realm_subrealm_mint_allowed = False
-        subrealm_mint_rules = latest_state.get('rules')
-        if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
-            nearest_parent_realm_subrealm_mint_allowed = True
-
         return_struct = {
                 'success': False, 
                 'atomical_id': None, 
@@ -1491,7 +1485,7 @@ class ElectrumX(SessionBase):
                 'missing_name_parts': missing_name_parts
             }
         if Verbose:
-            latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+            latest_state, _state_history = self.db.get_mod_state_path_latest(nearest_parent_realm_atomical_id, '/subrealm-mint')
             nearest_parent_realm_subrealm_mint_allowed = False
             subrealm_mint_rules = latest_state.get('rules')
             if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
