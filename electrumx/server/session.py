@@ -1188,8 +1188,8 @@ class ElectrumX(SessionBase):
                 if (utxo.tx_hash, utxo.tx_pos) not in spends]
 
     # Get atomical_id from an atomical inscription number
-    async def get_atomical_id_by_atomical_number(self, atomical_number):
-        return await self.db.get_atomical_id_by_atomical_number(atomical_number)
+    def get_atomical_id_by_atomical_number(self, atomical_number):
+        return self.db.get_atomical_id_by_atomical_number(atomical_number)
 
     # Get atomicals base information from db or placeholder information if mint is still in the mempool and unconfirmed
     async def atomical_id_get(self, compact_atomical_id):
@@ -1302,31 +1302,31 @@ class ElectrumX(SessionBase):
         return await self.atomicals_list_get(offset, limit, asc)
 
     async def atomicals_get(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        compact_atomical_id = self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get(compact_atomical_id)} 
 
     async def atomicals_get_location(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        compact_atomical_id = self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_location(compact_atomical_id)} 
  
     async def atomical_get_state_history(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        compact_atomical_id = self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state_history(compact_atomical_id)} 
 
     async def atomical_get_state(self, compact_atomical_id_or_atomical_number, path, Verbose=False):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        compact_atomical_id = self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_state(compact_atomical_id, path, Verbose)} 
 
     async def atomical_get_event_history(self, compact_atomical_id_or_atomical_number):
-        compact_atomical_id = await self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
+        compact_atomical_id = self.atomical_resolve_id(compact_atomical_id_or_atomical_number)
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_event_history(compact_atomical_id)} 
 
-    async def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
+    def atomical_resolve_id(self, compact_atomical_id_or_atomical_number):
         compact_atomical_id = compact_atomical_id_or_atomical_number
         if not isinstance(compact_atomical_id_or_atomical_number, int) and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
             assert_atomical_id(compact_atomical_id)
         else:
-            found_atomical_id = await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number)
+            found_atomical_id = self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number)
             if not found_atomical_id:
                 raise RPCError(BAD_REQUEST, f'not found atomical: {compact_atomical_id_or_atomical_number}')
             compact_atomical_id = location_id_bytes_to_compact(found_atomical_id)
@@ -1341,7 +1341,7 @@ class ElectrumX(SessionBase):
         if isinstance(compact_atomical_id_or_atomical_number, int) != True and is_compact_atomical_id(compact_atomical_id_or_atomical_number):
             assert_atomical_id(compact_atomical_id)
         else:
-            compact_atomical_id = location_id_bytes_to_compact(await self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
+            compact_atomical_id = location_id_bytes_to_compact(self.get_atomical_id_by_atomical_number(compact_atomical_id_or_atomical_number))
         return {'global': await self.get_summary_info(), 'result': await self.atomical_id_get_tx_history(compact_atomical_id)} 
 
     async def atomicals_get_by_ticker(self, ticker):
@@ -1363,7 +1363,7 @@ class ElectrumX(SessionBase):
         return {'result': { 'success': True, 'atomical_id': location_id_bytes_to_compact(found_atomical_id)} }
 
     async def atomicals_get_by_subrealm(self, parent_compact_atomical_id_or_atomical_number, name):
-        compact_atomical_id_parent = await self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
+        compact_atomical_id_parent = self.atomical_resolve_id(parent_compact_atomical_id_or_atomical_number)
         atomical_id_parent = compact_to_location_id_bytes(compact_atomical_id_parent)
         found_atomical_id = self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
         return {'result': { 'success': True,  'atomical_id': location_id_bytes_to_compact(found_atomical_id)}}
@@ -1413,7 +1413,7 @@ class ElectrumX(SessionBase):
                     'requested_full_realm_name': fullname, 
                     'found_full_realm_name': None, 
                     'missing_name_parts': fullname, 
-                }
+                }get_atomical_id_by_atomical_number
             }
         #
         #

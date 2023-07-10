@@ -1230,47 +1230,79 @@ class BlockProcessor:
         request_realm = atomical['mint_info'].get('$request_realm')
         if request_realm: 
             found_realm_atomical_id = self.get_effective_realm(request_realm)
-            if found_realm_atomical_id and found_realm_atomical_id == atomical['atomical_id']:
-                atomical['subtype'] = 'realm'
-                atomical['$realm'] = request_realm
-                atomical['$fullrealm'] = request_realm
-                return atomical
+            if found_realm_atomical_id:
+                if found_realm_atomical_id == atomical['atomical_id']:
+                    atomical['subtype'] = 'realm'
+                    atomical['$realm'] = request_realm
+                    atomical['$fullrealm'] = request_realm
+                    return atomical
+                else:
+                    found_realm_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_realm_atomical_id))
+                    atomical['$first_valid_request_realm'] = {
+                        'atomical_id': location_id_bytes_to_compact(found_realm_atomical_id),
+                        'atomical_number': found_realm_atomical_number
+                    }
+                    return atomical
 
         # Check if the effective container is for the current atomical
         request_container = atomical['mint_info'].get('$request_container')
         if request_container: 
             found_container_atomical_id = self.get_effective_container(request_container)
-            if found_container_atomical_id and found_container_atomical_id == atomical['atomical_id']:
-                atomical['subtype'] = 'container'
-                atomical['$container'] = request_container
-                return atomical
+            if found_container_atomical_id:
+                if found_container_atomical_id == atomical['atomical_id']:
+                    atomical['subtype'] = 'container'
+                    atomical['$container'] = request_container
+                    return atomical
+                else:
+                    found_container_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_container_atomical_id))
+                    atomical['$first_valid_request_container'] = {
+                        'atomical_id': location_id_bytes_to_compact(found_container_atomical_id),
+                        'atomical_number': found_container_atomical_number
+                    }
+                    return atomical
 
         # Check if the effective ticker is for the current atomical
         request_ticker = atomical['mint_info'].get('$request_ticker')
         if request_ticker: 
             found_ticker_atomical_id = self.get_effective_ticker(request_ticker)
-            if found_ticker_atomical_id and found_ticker_atomical_id == atomical['atomical_id']:
-                atomical['$ticker'] = request_ticker
-                return atomical
-   
+            if found_ticker_atomical_id:
+                if found_ticker_atomical_id == atomical['atomical_id']:
+                    atomical['$ticker'] = request_ticker
+                    return atomical
+                else: 
+                    found_ticker_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_ticker_atomical_id))
+                    atomical['$first_valid_request_ticker'] = {
+                        'atomical_id': location_id_bytes_to_compact(found_ticker_atomical_id),
+                        'atomical_number': found_ticker_atomical_number
+                    }
+                    return atomical
+
         # Check if the effective subrealm is for the current atomical and also resolve it's parent
         request_subrealm = atomical['mint_info'].get('$request_subrealm')
         if request_subrealm: 
             pid = atomical['mint_info']['$pid_bytes']
             pid_compact = atomical['mint_info']['$pid']
             found_subrealm_atomical_id = self.get_effective_subrealm(pid, request_subrealm)
-            if found_subrealm_atomical_id and found_subrealm_atomical_id == atomical['atomical_id']:
-                atomical['subtype'] = 'subrealm'
-                atomical['$subrealm'] = request_subrealm
-                atomical['$pid_bytes'] = pid_bytes.hex()
-                atomical['$pid'] = pid_compact
-                # Resolve the parent realm to get the parent realm path and construct the fullrealm
-                parent_realm = self.get_base_mint_info_by_atomical_id(pid)
-                if not parent_realm:
-                    atomical_id = atomical['mint_info']['id']
-                    raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
-                atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + request_subrealm
-                return atomical
+            if found_subrealm_atomical_id:
+                if found_subrealm_atomical_id == atomical['atomical_id']:
+                    atomical['subtype'] = 'subrealm'
+                    atomical['$subrealm'] = request_subrealm
+                    atomical['$pid_bytes'] = pid_bytes.hex()
+                    atomical['$pid'] = pid_compact
+                    # Resolve the parent realm to get the parent realm path and construct the fullrealm
+                    parent_realm = self.get_base_mint_info_by_atomical_id(pid)
+                    if not parent_realm:
+                        atomical_id = atomical['mint_info']['id']
+                        raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
+                    atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + request_subrealm
+                    return atomical
+                else: 
+                    found_subrealm_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_subrealm_atomical_id))
+                    atomical['$first_valid_request_subrealm'] = {
+                        'atomical_id': location_id_bytes_to_compact(found_subrealm_atomical_id),
+                        'atomical_number': found_subrealm_atomical_number
+                    }
+                    return atomical
         return atomical 
 
     # Create a distributed mint output as long as the rules are satisfied

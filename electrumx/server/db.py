@@ -1119,16 +1119,14 @@ class DB:
         return mint_info_value_dump
     
     # Resolve the atomical id for a given atomical number
-    async def get_atomical_id_by_atomical_number(self, atomical_number):
-        def read_atomical_id():
-            atomical_num_key = b'n' + pack_be_uint64(int(atomical_number))
-            atomical_id_value = self.utxo_db.get(atomical_num_key)
-            if not atomical_id_value:
-                self.logger.error(f'get_atomical_id_by_atomical_number {atomical_number} atomical number not found')
-                return None
-            return atomical_id_value
-        return await run_in_thread(read_atomical_id)
- 
+    def get_atomical_id_by_atomical_number(self, atomical_number):
+        atomical_num_key = b'n' + pack_be_uint64(int(atomical_number))
+        atomical_id_value = self.utxo_db.get(atomical_num_key)
+        if not atomical_id_value:
+            self.logger.error(f'get_atomical_id_by_atomical_number {atomical_number} atomical number not found')
+            return None
+        return atomical_id_value
+    
     def get_tx_num_height_from_tx_hash(self, tx_hash):
         tx_hash_key = b'tx' + tx_hash
         tx_hash_value = self.utxo_db.get(tx_hash_key)
