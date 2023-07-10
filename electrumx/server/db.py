@@ -1279,12 +1279,31 @@ class DB:
         history_for_path = self.get_mod_path_history(atomical_id, path, False)
         latest_state = {}
         for element in history_for_path:
+            has_action_prop = element['data'].get('$action')
+            action_to_perform = 'set'
+            # We assume there is only the default $action (which can explicitly be indicated with 'set') and 'delete'
+            # If omitted we just assume 
+            if has_action_prop and has_action_prop == 'delete':
+                action_to_perform = 'delete'
+
+            # For each property apply the state set update or delete the key
+            # Take care below not to ever delete the $path or $action props
             for prop, value in element['data'].items():
-                latest_state[prop] = {
-                    'height': element['height'],
-                    'txid': element['txid'],
-                    'value': value
-                }
+                # Update the latest state, save metadata such as height, txid, tx_num, and location
+                if action_to_perform == 'set':
+                    latest_state[prop] = {
+                        'height': element['height'],
+                        'txid': element['txid'],
+                        'tx_num': element['tx_num'],
+                        'index': element['index'],
+                        'value': value
+                    }
+                elif action_to_perform == 'delete':
+                    # Take special care not to delete the $path or $action if they are provided
+                    # Because these are meta control properties names and we still want to maintain them for posterity and inspection
+                    if prop != '$path' and prop != '$action':
+                        latest_state.pop(prop, None)
+
         if Verbose: 
             # If in verbose mode, when we are done sort the list by descending
             history_for_path.sort(key=lambda x: x['tx_num'], reverse=True)
@@ -1296,7 +1315,7 @@ class DB:
     def populate_extended_mod_state_path_latest_atomical_info(self, atomical_id, atomical, path, Verbose=False):
         latest_state, history_for_path = self.get_mod_state_path_latest(atomical_id, path, Verbose)
         atomical['state'] = {
-            'path': path,
+            '$path': path,
             'latest': latest_state
         }
         if Verbose:

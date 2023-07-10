@@ -930,7 +930,7 @@ class BlockProcessor:
             put_general_data(b'mod' + atomical_id + tx_numb + output_idx_le, operations_found_at_inputs['payload_bytes'])
             # If the mod(ify) operation path was set to '/subrealm-mint' with prices field
             # Then validate they are in the correct format
-            mod_path = operations_found_at_inputs['payload'].get('path')
+            mod_path = operations_found_at_inputs['payload'].get('$path')
             if mod_path and len(mod_path.encode()) <= 64:
                 mod_path_padded = pad_bytes64(mod_path.encode())
                 height_packed = pack_le_uint32(height)
@@ -1584,7 +1584,7 @@ class BlockProcessor:
                 self.db_deletes.append(b'mod' + atomical_id + tx_numb + output_index_packed)
                 # If the mod(ify) operation path was set to '/subrealm-mint' with prices field
                 # Then validate they are in the correct format
-                mod_path = operations_found_at_inputs['payload'].get('path')
+                mod_path = operations_found_at_inputs['payload'].get('$path')
                 if mod_path and len(mod_path.encode()) <= 64:
                     mod_path_padded = pad_bytes64(mod_path.encode())
                     height_packed = pack_le_uint32(height)
@@ -1688,7 +1688,7 @@ class BlockProcessor:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
 
-            mod_path = modpath_item['data'].get('path')
+            mod_path = modpath_item['data'].get('$path')
             if mod_path != subrealm_mint_path:
                 self.logger.info(f'get_subrealm_regex_price_list_from_height subrealm-mint path not found atomical_id={atomical_id.hex()}')
                 continue
