@@ -1451,8 +1451,8 @@ class ElectrumX(SessionBase):
                 subrealm_mint_rules = latest_state.get('rules')
                 if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
                     nearest_parent_realm_subrealm_mint_allowed = True
-                    return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
                     return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
 
             return {'result': return_struct}
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
@@ -1488,9 +1488,9 @@ class ElectrumX(SessionBase):
             subrealm_mint_rules = latest_state.get('rules')
             if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
                 nearest_parent_realm_subrealm_mint_allowed = True
-                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
                 return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
-        
+            return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
+            
         return {'result': return_struct}
          
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
