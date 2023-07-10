@@ -1237,10 +1237,10 @@ class BlockProcessor:
                     atomical['$fullrealm'] = request_realm
                     return atomical
                 else:
-                    found_realm_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_realm_atomical_id))
+                    found_realm_atomical = self.get_atomicals_id_mint_info_basic_struct(found_realm_atomical_id)
                     atomical['$first_valid_request_realm'] = {
-                        'atomical_id': location_id_bytes_to_compact(found_realm_atomical_id),
-                        'atomical_number': found_realm_atomical_number
+                        'atomical_id': found_realm_atomical['atomical_id'],
+                        'atomical_number': found_realm_atomical['atomical_number']
                     }
                     return atomical
 
@@ -1254,10 +1254,10 @@ class BlockProcessor:
                     atomical['$container'] = request_container
                     return atomical
                 else:
-                    found_container_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_container_atomical_id))
+                    found_container_atomical = self.get_atomicals_id_mint_info_basic_struct(found_container_atomical_id)
                     atomical['$first_valid_request_container'] = {
-                        'atomical_id': location_id_bytes_to_compact(found_container_atomical_id),
-                        'atomical_number': found_container_atomical_number
+                        'atomical_id': found_container_atomical['atomical_id'],
+                        'atomical_number': found_container_atomical['atomical_number']
                     }
                     return atomical
 
@@ -1270,10 +1270,10 @@ class BlockProcessor:
                     atomical['$ticker'] = request_ticker
                     return atomical
                 else: 
-                    found_ticker_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_ticker_atomical_id))
+                    found_ticker_atomical = self.get_atomicals_id_mint_info_basic_struct(found_ticker_atomical_id)
                     atomical['$first_valid_request_ticker'] = {
-                        'atomical_id': location_id_bytes_to_compact(found_ticker_atomical_id),
-                        'atomical_number': found_ticker_atomical_number
+                        'atomical_id': found_ticker_atomical['atomical_id'],
+                        'atomical_number': found_ticker_atomical['atomical_number']
                     }
                     return atomical
 
@@ -1297,10 +1297,10 @@ class BlockProcessor:
                     atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + request_subrealm
                     return atomical
                 else: 
-                    found_subrealm_atomical_number, = unpack_le_uint32(self.db.get_atomical_id_by_atomical_number(found_subrealm_atomical_id))
+                    found_subrealm_atomical = self.get_atomicals_id_mint_info_basic_struct(found_subrealm_atomical_id)
                     atomical['$first_valid_request_subrealm'] = {
-                        'atomical_id': location_id_bytes_to_compact(found_subrealm_atomical_id),
-                        'atomical_number': found_subrealm_atomical_number
+                        'atomical_id': found_subrealm_atomical['atomical_id'],
+                        'atomical_number': found_subrealm_atomical['atomical_number']
                     }
                     return atomical
         return atomical 

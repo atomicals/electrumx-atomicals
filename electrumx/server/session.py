@@ -1432,6 +1432,8 @@ class ElectrumX(SessionBase):
             elif realms_path_len == 1:
                 nearest_parent_realm_atomical_id = top_level_realm
                 nearest_parent_realm_name = top_level_realm_name
+            
+            nearest_parent_realm_is_allowing_subrealm_mints = False
             return {'result': {
                     'success': True, 
                     'atomical_id': realms_path[-1]['atomical_id'], 
@@ -1439,9 +1441,10 @@ class ElectrumX(SessionBase):
                     'top_level_realm_name': top_level_realm_name, 
                     'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                     'nearest_parent_realm_name': nearest_parent_realm_name,
+                    'nearest_parent_realm_is_allowing_subrealm_mints': nearest_parent_realm_is_allowing_subrealm_mints,
                     'requested_full_realm_name': fullname,
                     'found_full_realm_name': joined_name,
-                    'missing_name_parts': None }
+                    'missing_name_parts': None}
                 }
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
         # But the final subrealm does not exist yet
