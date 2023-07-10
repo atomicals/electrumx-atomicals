@@ -1370,6 +1370,7 @@ class ElectrumX(SessionBase):
     async def atomicals_resolve_full_realm(self, fullname, Verbose=False):
         if not fullname or not isinstance(fullname, str):
             raise RPCError(BAD_REQUEST, f'invalid input fullname: {fullname}')
+        fullname = fullname.lower()
         split_names = fullname.split('.')
         total_name_parts = len(split_names)
         level = 0
@@ -1450,8 +1451,8 @@ class ElectrumX(SessionBase):
                 subrealm_mint_rules = latest_state.get('rules')
                 if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
                     nearest_parent_realm_subrealm_mint_allowed = True
-                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
-                return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+                    return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
+                    return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
 
             return {'result': return_struct}
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
@@ -1470,7 +1471,6 @@ class ElectrumX(SessionBase):
             nearest_parent_realm_name = top_level_realm_name
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
-
         return_struct = {
                 'success': False, 
                 'atomical_id': None, 
@@ -1488,8 +1488,8 @@ class ElectrumX(SessionBase):
             subrealm_mint_rules = latest_state.get('rules')
             if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
                 nearest_parent_realm_subrealm_mint_allowed = True
-            return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
-            return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
+                return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
         
         return {'result': return_struct}
          
