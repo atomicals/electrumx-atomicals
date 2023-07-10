@@ -1201,7 +1201,6 @@ class ElectrumX(SessionBase):
             if atomical_in_mempool == None: 
                 raise RPCError(BAD_REQUEST, f'"{compact_atomical_id}" is not found')
             return atomical_in_mempool
-        reveal_location_txid = atomical['mint_info']['reveal_location_txid']
         convert_db_mint_info_to_rpc_mint_info_format(self.coin.header_hash, atomical)
         self.db.populate_extended_field_summary_atomical_info(atomical_id, atomical)
         return atomical
@@ -1433,7 +1432,13 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_atomical_id = top_level_realm
                 nearest_parent_realm_name = top_level_realm_name
             
-            nearest_parent_realm_is_allowing_subrealm_mints = False
+            nearest_parent_realm_atomical = self.get_atom(nearest_parent_realm_atomical_id)
+            latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+            nearest_parent_realm_subrealm_mint_allowed = False
+            subrealm_mint_rules = latest_state.get('rules')
+            if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+                nearest_parent_realm_subrealm_mint_allowed = True
+
             return {'result': {
                     'success': True, 
                     'atomical_id': realms_path[-1]['atomical_id'], 
@@ -1441,7 +1446,8 @@ class ElectrumX(SessionBase):
                     'top_level_realm_name': top_level_realm_name, 
                     'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                     'nearest_parent_realm_name': nearest_parent_realm_name,
-                    'nearest_parent_realm_is_allowing_subrealm_mints': nearest_parent_realm_is_allowing_subrealm_mints,
+                    'nearest_parent_realm_subrealm_mint_allowed': nearest_parent_realm_subrealm_mint_allowed,
+                    'nearest_parent_realm_subrealm_mint_rules': subrealm_mint_rules,
                     'requested_full_realm_name': fullname,
                     'found_full_realm_name': joined_name,
                     'missing_name_parts': None}
@@ -1462,6 +1468,14 @@ class ElectrumX(SessionBase):
             nearest_parent_realm_name = top_level_realm_name
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
+
+        nearest_parent_realm_atomical = self.get_atom(nearest_parent_realm_atomical_id)
+        latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+        nearest_parent_realm_subrealm_mint_allowed = False
+        subrealm_mint_rules = latest_state.get('rules')
+        if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+            nearest_parent_realm_subrealm_mint_allowed = True
+
         return {'result': {
                 'success': False, 
                 'atomical_id': None, 
@@ -1469,6 +1483,8 @@ class ElectrumX(SessionBase):
                 'top_level_realm_name': top_level_realm_name, 
                 'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                 'nearest_parent_realm_name': nearest_parent_realm_name,
+                'nearest_parent_realm_subrealm_mint_allowed': nearest_parent_realm_subrealm_mint_allowed,
+                'nearest_parent_realm_subrealm_mint_rules': subrealm_mint_rules,
                 'requested_full_realm_name': fullname,
                 'found_full_realm_name': joined_name,
                 'missing_name_parts': missing_name_parts }
