@@ -1367,7 +1367,7 @@ class ElectrumX(SessionBase):
         found_atomical_id = self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
         return {'result': { 'success': True,  'atomical_id': location_id_bytes_to_compact(found_atomical_id)}}
 
-    async def atomicals_resolve_full_realm(self, fullname):
+    async def atomicals_resolve_full_realm(self, fullname, Verbose=False):
         if not fullname or not isinstance(fullname, str):
             raise RPCError(BAD_REQUEST, f'invalid input fullname: {fullname}')
         split_names = fullname.split('.')
@@ -1432,26 +1432,28 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_atomical_id = top_level_realm
                 nearest_parent_realm_name = top_level_realm_name
             
-            nearest_parent_realm_atomical = self.get_atom(nearest_parent_realm_atomical_id)
-            latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
-            nearest_parent_realm_subrealm_mint_allowed = False
-            subrealm_mint_rules = latest_state.get('rules')
-            if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
-                nearest_parent_realm_subrealm_mint_allowed = True
-
-            return {'result': {
+            return_struct = {
                     'success': True, 
                     'atomical_id': realms_path[-1]['atomical_id'], 
                     'top_level_realm_atomical_id': top_level_realm, 
                     'top_level_realm_name': top_level_realm_name, 
                     'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                     'nearest_parent_realm_name': nearest_parent_realm_name,
-                    'nearest_parent_realm_subrealm_mint_allowed': nearest_parent_realm_subrealm_mint_allowed,
-                    'nearest_parent_realm_subrealm_mint_rules': subrealm_mint_rules,
                     'requested_full_realm_name': fullname,
                     'found_full_realm_name': joined_name,
-                    'missing_name_parts': None}
+                    'missing_name_parts': None
                 }
+
+            if Verbose:
+                latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+                nearest_parent_realm_subrealm_mint_allowed = False
+                subrealm_mint_rules = latest_state.get('rules')
+                if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+                    nearest_parent_realm_subrealm_mint_allowed = True
+                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
+                return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+
+            return {'result': return_struct}
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
         # But the final subrealm does not exist yet
         # if realms_path_len < total_name_parts:
@@ -1469,14 +1471,13 @@ class ElectrumX(SessionBase):
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
 
-        nearest_parent_realm_atomical = self.get_atom(nearest_parent_realm_atomical_id)
         latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
         nearest_parent_realm_subrealm_mint_allowed = False
         subrealm_mint_rules = latest_state.get('rules')
         if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
             nearest_parent_realm_subrealm_mint_allowed = True
 
-        return {'result': {
+        return_struct = {
                 'success': False, 
                 'atomical_id': None, 
                 'top_level_realm_atomical_id': top_level_realm, 
@@ -1487,9 +1488,19 @@ class ElectrumX(SessionBase):
                 'nearest_parent_realm_subrealm_mint_rules': subrealm_mint_rules,
                 'requested_full_realm_name': fullname,
                 'found_full_realm_name': joined_name,
-                'missing_name_parts': missing_name_parts }
+                'missing_name_parts': missing_name_parts
             }
-
+        if Verbose:
+            latest_state, _state_history = self.db.get_mod_state_path_latest(atomical_id, '/subrealm-mint')
+            nearest_parent_realm_subrealm_mint_allowed = False
+            subrealm_mint_rules = latest_state.get('rules')
+            if latest_state and subrealm_mint_rules and isinstance(subrealm_mint_rules, list) and len(subrealm_mint_rules):
+                nearest_parent_realm_subrealm_mint_allowed = True
+            return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
+            return_struct['nearest_parent_realm_subrealm_mint_rules'] = subrealm_mint_rules
+        
+        return {'result': return_struct}
+         
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
     async def atomicals_get_ft_stats(self, ticker, Verbose=False):
         #atomical_id = self.db.get_ticker(self, ticker)
