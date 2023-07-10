@@ -1294,7 +1294,7 @@ class DB:
 
     # Populate the latest state of an atomical for a path
     def populate_extended_mod_state_path_latest_atomical_info(self, atomical_id, atomical, path, Verbose=False):
-        latest_state, history_for_path = self.get_mod_state_path_latest(atomical_id, Verbose)
+        latest_state, history_for_path = self.get_mod_state_path_latest(atomical_id, path, Verbose)
         atomical['state'] = {
             'path': path,
             'latest': latest_state
