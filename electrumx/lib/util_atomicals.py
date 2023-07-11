@@ -57,8 +57,8 @@ MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS = 18 # ~2 hours
 MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN_BLOCKS = 6 # Magic number that requires a grace period of 12 blocks ~2 hours
 
 # The Envelope is for the reveal script and also the op_return payment markers
-# "atom" / "spr4" (beta testing)
-ATOMICALS_ENVELOPE_MARKER_BYTES = '0473707234'
+# "atom" / "spr5" (beta testing)
+ATOMICALS_ENVELOPE_MARKER_BYTES = '0473707235'
 
 def pad_bytes_n(val, n):
     padlen = n
