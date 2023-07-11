@@ -31,7 +31,7 @@ from aiorpcx import (Event, JSONRPCAutoDetect, JSONRPCConnection,
 import electrumx
 import electrumx.lib.util as util
 from electrumx.lib.util import OldTaskGroup, unpack_le_uint64
-from electrumx.lib.util_atomicals import SUBREALM_MINT_PATH, convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
+from electrumx.lib.util_atomicals import SUBREALM_MINT_PATH, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
 from electrumx.lib.hash import (HASHX_LEN, Base58Error, hash_to_hex_str,
                                 hex_str_to_hash, sha256, double_sha256)
 from electrumx.lib.merkle import MerkleCache
@@ -1447,7 +1447,8 @@ class ElectrumX(SessionBase):
 
             if Verbose:
                 # Get the subrealm mint history that applies for the current height
-                active_block_height = self.session_mgr.bp.height
+                current_block_height = self.session_mgr.bp.height
+                active_block_height = current_block_height - MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
                 subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
                 regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
                 nearest_parent_realm_subrealm_mint_allowed = False
@@ -1456,6 +1457,7 @@ class ElectrumX(SessionBase):
                     nearest_parent_realm_subrealm_mint_allowed = True
                     return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
                         'active_rules': regex_price_point_list,
+                        'current_height': current_block_height,
                         'active_height': active_block_height,
                         'rules_history': subrealm_mint_modpath_history
                     }
@@ -1492,7 +1494,8 @@ class ElectrumX(SessionBase):
 
         if Verbose:
             # Get the subrealm mint history that applies for the current height
-            active_block_height = self.session_mgr.bp.height
+            current_block_height = self.session_mgr.bp.height
+            active_block_height = current_block_height - MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
             subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
             regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
             nearest_parent_realm_subrealm_mint_allowed = False
@@ -1501,6 +1504,7 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_subrealm_mint_allowed = True
                 return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
                     'active_rules': regex_price_point_list,
+                    'current_height': current_block_height,
                     'active_height': active_block_height,
                     'rules_history': subrealm_mint_modpath_history
                 }
