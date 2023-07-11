@@ -1447,7 +1447,7 @@ class ElectrumX(SessionBase):
 
             if Verbose:
                 # Get the subrealm mint history that applies for the current height
-                active_block_height = self.bp.height
+                active_block_height = self.session_mgr.bp.height
                 subrealm_mint_modpath_history = self.db.get_modpath_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
                 regex_price_point_list = self.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
                 # Ensure there is a list of regex price list that is available for the atomical
@@ -1455,7 +1455,7 @@ class ElectrumX(SessionBase):
                     nearest_parent_realm_subrealm_mint_allowed = True
                     return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
                         'active_rules': regex_price_point_list,
-                        'current_height': active_block_height,
+                        'active_height': active_block_height,
                         'rules_history': subrealm_mint_modpath_history
                     }
                 return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
@@ -1491,7 +1491,7 @@ class ElectrumX(SessionBase):
 
         if Verbose:
             # Get the subrealm mint history that applies for the current height
-            active_block_height = self.bp.height
+            active_block_height = self.session_mgr.bp.height
             subrealm_mint_modpath_history = self.db.get_modpath_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
             regex_price_point_list = self.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
             # Ensure there is a list of regex price list that is available for the atomical
@@ -1499,7 +1499,7 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_subrealm_mint_allowed = True
                 return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
                     'active_rules': regex_price_point_list,
-                    'current_height': active_block_height,
+                    'active_height': active_block_height,
                     'rules_history': subrealm_mint_modpath_history
                 }
             return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
