@@ -34,7 +34,7 @@ from electrumx.lib.util_atomicals import (
     SUBREALM_MINT_PATH,
     MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, 
     MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS, 
-    MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS, 
+    MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS, 
     is_valid_dmt_op_format, 
     is_compact_atomical_id, 
     is_atomical_id_long_form_string, 
@@ -493,14 +493,14 @@ class BlockProcessor:
         }
 
     # Get the expected payment amount and destination for an atomical subrealm
-    def get_expected_subrealm_payment_info(self, found_atomical_id, current_height):
+    def get_expected_subrealm_payment_info(self, found_atomical_id_for_potential_subrealm, current_height):
         # Lookup the subrealm atomical to obtain the details of which subrealm parent it is for
-        found_atomical_mint_info = self.get_atomicals_id_mint_info(found_atomical_id)
-        if found_atomical_mint_info:
+        found_atomical_mint_info_for_potential_subrealm = self.get_atomicals_id_mint_info(found_atomical_id_for_potential_subrealm)
+        if found_atomical_mint_info_for_potential_subrealm:
             # Found the mint information. Use the mint details to determine the parent realm id and name requested
             # Along with the price that was expected according to the mint reveal height
-            args_subrealm = found_atomical_mint_info['args'].get('request_subrealm')
-            request_subrealm = found_atomical_mint_info['$request_subrealm']
+            args_subrealm = found_atomical_mint_info_for_potential_subrealm['args'].get('request_subrealm')
+            request_subrealm = found_atomical_mint_info_for_potential_subrealm['$request_subrealm']
             # Check that $request_subrealm was set because it will only be set if the basic validation succeeded
             # If it's not set, then the atomical subrealm mint was not valid on a basic level and must be rejected
             if not request_subrealm:
@@ -509,7 +509,7 @@ class BlockProcessor:
             assert(args_subrealm == request_subrealm)
             # More sanity checks on the formats and validity
             if isinstance(request_subrealm, str) and is_valid_subrealm_string_name(request_subrealm):
-                # Validate that the current payment came in before MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
+                # Validate that the current payment came in before MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS after the mint reveal of the atomical
                 # This is done to ensure that payments must be made in a timely fashion or else someone else can claim the subrealm
                 if not self.is_within_acceptable_blocks_for_subrealm_payment(mint_info, current_height):
                     # The reveal_location_height (mint/reveal height) is too old and this payment came in far too late
@@ -541,7 +541,9 @@ class BlockProcessor:
                         # Nonetheless, someone DID make a payment and referenced the parent by the specific atomical id and therefore we will try to apply to payment
                         # It does not mean in the end that they actually get the subrealm if they paid the wrong parent. But that's their mistake and was easily avoided
                         # Here we go and check for the required payment amount and details now...
-                        matched_price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_atomical_id, request_subrealm, current_height)
+                        # We also use the commit_height of the subrealm to determine what price they should be paying
+                        expected_payment_height = found_atomical_mint_info_for_potential_subrealm['commit_height']
+                        matched_price_point = self.get_matched_price_point_for_subrealm_name_by_height(parent_atomical_id, request_subrealm, expected_payment_height)
                         if matched_price_point:
                             return matched_price_point, parent_atomical_id, request_subrealm
         return None, None, None
@@ -799,9 +801,9 @@ class BlockProcessor:
     def is_within_acceptable_blocks_for_name_reveal(self, mint_info):
         return mint_info['commit_height'] >= mint_info['reveal_location_height'] - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS
 
-    # A payment for a subrealm is acceptable as long as it is within MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS of the reveal_location_height 
+    # A payment for a subrealm is acceptable as long as it is within MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS of the commit_height 
     def is_within_acceptable_blocks_for_subrealm_payment(self, mint_info, current_height):
-        return current_height <= mint_info['reveal_location_height'] + MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS
+        return current_height <= mint_info['commit_height'] + MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS
 
     # Check whether to create an atomical NFT/FT 
     # Validates the format of the detected input operation and then checks the correct extra data is valid
@@ -1088,8 +1090,8 @@ class BlockProcessor:
             mint_info = self.get_atomicals_id_mint_info(atomical_id)
             # Sanity check to make sure it matches
             assert(mint_info['commit_tx_num'] == candidate_entry['tx_num'])
-            # Only consider it an effective subrealm if the elapsed MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS has been met from the first revealed
-            if mint_info['reveal_location_height'] <= current_height - MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS:
+            # Only consider it an effective subrealm if the elapsed MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS has been met from the commit height
+            if mint_info['commit_height'] <= current_height - MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS:
                 # It could potentially be the valid subrealm, check to see if the payment was made
                 payment_entry = self.db.get_earliest_subrealm_payment(atomical_id)
                 if payment_entry:
@@ -1498,15 +1500,15 @@ class BlockProcessor:
     # Same function is used for creating and rollback. Set Delete=True for rollback operation
     def create_or_delete_subrealm_payment_output_if_valid(self, tx_hash, tx, tx_num, height, atomicals_spent_at_inputs, Create=True):
         # Add the new UTXOs
-        found_atomical_id = None
+        found_atomical_id_for_potential_subrealm = None
         for idx, txout in enumerate(tx.outputs):
-            found_atomical_id = is_unspendable_payment_marker_atomical_id(txout.pk_script)
-            if found_atomical_id:
+            found_atomical_id_for_potential_subrealm = is_unspendable_payment_marker_atomical_id(txout.pk_script)
+            if found_atomical_id_for_potential_subrealm:
                 break
         # Payment atomical id marker was found
-        if found_atomical_id:
+        if found_atomical_id_for_potential_subrealm:
             # Get the details such as expected payment amount/output and which parent realm it belongs to
-            matched_price_point, parent_realm_id, request_subrealm_name = self.get_expected_subrealm_payment_info(found_atomical_id, height)
+            matched_price_point, parent_realm_id, request_subrealm_name = self.get_expected_subrealm_payment_info(found_atomical_id_for_potential_subrealm, height)
             # An expected payment amount might not be set if there is no valid subrealm minting rules, or something invalid was found
             if not matched_price_point:
                 return
@@ -1530,9 +1532,9 @@ class BlockProcessor:
                     # Delete or create he record based on whether we are reorg rollback or creating new
                     payment_outpoint = tx_hash + pack_le_uint32(idx)
                     if Create:
-                        self.put_name_element_template(b'spay', found_atomical_id, tx_num, payment_outpoint, self.subrealmpay_data_cache)
+                        self.put_name_element_template(b'spay', found_atomical_id_for_potential_subrealm, tx_num, payment_outpoint, self.subrealmpay_data_cache)
                     else:
-                        self.delete_name_element_template(b'spay', found_atomical_id, tx_num, payment_outpoint, self.subrealmpay_data_cache)
+                        self.delete_name_element_template(b'spay', found_atomical_id_for_potential_subrealm, tx_num, payment_outpoint, self.subrealmpay_data_cache)
 
     def backup_blocks(self, raw_blocks: Sequence[bytes]):
         '''Backup the raw blocks and flush.

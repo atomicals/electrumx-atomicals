@@ -47,7 +47,7 @@ SUBREALM_MINT_PATH = '/subrealm-mint'
 
 # The maximum height difference between the reveal transaction of the winning subrealm claim and the blocks to pay the necessary fee to the parent realm
 # It is intentionally made longer since it may take some time for the purchaser to get the funds together
-MINT_SUBREALM_REVEAL_PAYMENT_DELAY_BLOCKS = 12 # ~2 hours
+MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS = 12 # ~2 hours
 # The convention is that the data in b'modpath' only becomes valid exactly 12 blocks after the height
 # The reason for this is that a price list cannot be changed with active transactions.
 # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
