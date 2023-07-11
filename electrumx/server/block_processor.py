@@ -1224,7 +1224,7 @@ class BlockProcessor:
 
     # Populate the sealed status of an atomical
     def populate_sealed_status(self, atomical):
-        sealed_location = self.db.get(b'sealed' + atomical['atomical_id'])
+        sealed_location = self.db.get_sealed(atomical['atomical_id'])
         if sealed_location:
             atomical['$sealed'] = location_id_bytes_to_compact(sealed_location)
 

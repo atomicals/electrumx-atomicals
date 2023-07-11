@@ -1114,6 +1114,10 @@ class DB:
         hashX_pairs = await run_in_thread(lookup_hashXs)
         return await run_in_thread(lookup_utxos, hashX_pairs)
 
+    # Get the sealed location of an atomical (if it's sealed)
+    def get_sealed_location(self, atomical_id):
+        return self.utxo_db.get(b'sealed' + atomical_id)
+
     # Get the raw mint information for an atomical
     def get_atomical_mint_info_dump(self, atomical_id):
         mint_info_value_dump = self.utxo_db.get(b'mi' + atomical_id)
@@ -1312,6 +1316,7 @@ class DB:
             return latest_state, history_for_path
         else: 
             return latest_state, None
+
 
     # Populate the latest state of an atomical for a path
     def populate_extended_mod_state_path_latest_atomical_info(self, atomical_id, atomical, path, Verbose=False):
