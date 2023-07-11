@@ -54,7 +54,7 @@ MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS = 18 # ~2 hours
 # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
 # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
 # This is sufficient notice (about 2 hours) for apps to notice that the price list changed, and act accordingly.
-MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN)_BLOCKS = 12 # Magic number that requires a grace period of 12 blocks ~2 hours
+MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN_BLOCKS = 6 # Magic number that requires a grace period of 12 blocks ~2 hours
 
 # The Envelope is for the reveal script and also the op_return payment markers
 # "atom" / "spr4" (beta testing)
