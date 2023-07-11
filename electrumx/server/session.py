@@ -1227,6 +1227,8 @@ class ElectrumX(SessionBase):
         atomical_id = compact_to_location_id_bytes(compact_atomical_id)
         atomical = await self.atomical_id_get(compact_atomical_id)
         history = await self.scripthash_get_history(hash_to_hex_str(double_sha256(atomical_id)))
+        history.sort(key=lambda x: x['height'], reverse=True)
+
         atomical['tx'] = {
             'history': history
         }

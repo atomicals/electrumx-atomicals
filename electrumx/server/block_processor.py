@@ -678,17 +678,17 @@ class BlockProcessor:
         return cached_value or db_value
 
     # Delete the distributed mint data that is used to track how many mints were made
-    def delete_distributed_mint_data(self, atomical_id, location_id) -> bytes:
+    def delete_decentralized_mint_data(self, atomical_id, location_id) -> bytes:
         cache_map = self.distmint_data_cache.get(atomical_id, None)
         if cache_map != None:
             cache_map.pop(location_id, None)
-            self.logger.info(f'delete_distributed_mint_data.distmint_data_cache: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
+            self.logger.info(f'delete_decentralized_mint_data.distmint_data_cache: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
         gi_key = b'gi' + atomical_id + location_id
         gi_value = self.db.utxo_db.get(gi_key)
         if gi_value:
             # not do the i entry beuse it's deleted elsewhere 
             self.db_deletes.append(b'gi' + atomical_id + location_id)
-            self.logger.info(f'delete_distributed_mint_data.db_deletes: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
+            self.logger.info(f'delete_decentralized_mint_data.db_deletes: location_id={location_id.hex()}, atomical_id={atomical_id.hex()}')
 
     def log_subrealm_request(self, method, msg, status, subrealm, parent_realm_atomical_id, height):
         self.logger.info(f'{method} - {msg}, status={status} subrealm={subrealm}, parent_realm_atomical_id={parent_realm_atomical_id.hex()}, height={height}')
@@ -1309,7 +1309,7 @@ class BlockProcessor:
         return atomical 
 
     # Create a distributed mint output as long as the rules are satisfied
-    def create_distributed_mint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
+    def create_decentralized_mint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
         if not atomicals_operations_found_at_inputs:
             return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, atomicals_operations_found_at_inputs)
@@ -1325,10 +1325,10 @@ class BlockProcessor:
 
         mint_info_for_ticker = self.get_atomicals_id_mint_info(potential_dmt_atomical_id)
         if not mint_info_for_ticker:
-            raise IndexError(f'create_distributed_mint_outputs mint_info_for_ticker not found for expected atomical {atomical_id}')
+            raise IndexError(f'create_decentralized_mint_outputs mint_info_for_ticker not found for expected atomical {atomical_id}')
         
         if mint_info_for_ticker['subtype'] != 'decentralized':
-            self.logger.info(f'create_distributed_mint_outputs Detected invalid mint attempt in {tx_hash} for ticker {ticker} which is not a distributed mint type. Ignoring...')
+            self.logger.info(f'create_decentralized_mint_outputs Detected invalid mint attempt in {tx_hash} for ticker {ticker} which is not a distributed mint type. Ignoring...')
             return None 
 
         self.logger.info(f'mint_info_for_ticker {mint_info_for_ticker} potential_dmt_atomical_id {potential_dmt_atomical_id}')
@@ -1337,7 +1337,7 @@ class BlockProcessor:
         mint_height = mint_info_for_ticker['$mint_height']
 
         if height < mint_height:
-            self.logger.info(f'create_distributed_mint_outputs found premature mint operation in {tx_hash} for {ticker} in {height} before {mint_height}. Ignoring...')
+            self.logger.info(f'create_decentralized_mint_outputs found premature mint operation in {tx_hash} for {ticker} in {height} before {mint_height}. Ignoring...')
             return None
 
         expected_output_index = 0
@@ -1350,21 +1350,21 @@ class BlockProcessor:
         # Mint is valid and active if the value is what is expected
         if mint_amount == txout.value:
             # Count the number of existing b'gi' entries and ensure it is strictly less than max_mints
-            distributed_mints = self.get_distmints_count_by_atomical_id(potential_dmt_atomical_id)
-            if distributed_mints > max_mints:
-                raise IndexError(f'create_distributed_mint_outputs Fatal IndexError distributed_mints > max_mints for {atomical}. Too many mints detected in db')
+            decentralized_mints = self.get_distmints_count_by_atomical_id(potential_dmt_atomical_id)
+            if decentralized_mints > max_mints:
+                raise IndexError(f'create_decentralized_mint_outputs Fatal IndexError decentralized_mints > max_mints for {atomical}. Too many mints detected in db')
                 
-            if distributed_mints < max_mints:
-                self.logger.info(f'create_distributed_mint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
+            if decentralized_mints < max_mints:
+                self.logger.info(f'create_decentralized_mint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
                 put_general_data = self.general_data_cache.__setitem__
                 put_general_data(b'po' + location, txout.pk_script)
                 is_sealed = b'00' # FT outputs can never be sealed
                 self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats + is_sealed)
                 self.put_distmint_data(potential_dmt_atomical_id, location, scripthash + value_sats)
             else: 
-                self.logger.info(f'create_distributed_mint_outputs found invalid mint operation because it is minted out completely. Ignoring...')
+                self.logger.info(f'create_decentralized_mint_outputs found invalid mint operation because it is minted out completely. Ignoring...')
         else: 
-            self.logger.info(f'create_distributed_mint_outputs found invalid mint operation in {tx_hash} for {ticker} because incorrect txout.value {txout.value} when expected {mint_amount}')
+            self.logger.info(f'create_decentralized_mint_outputs found invalid mint operation in {tx_hash} for {ticker} because incorrect txout.value {txout.value} when expected {mint_amount}')
         return potential_dmt_atomical_id
 
     def advance_txs(
@@ -1471,11 +1471,11 @@ class BlockProcessor:
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
-            atomical_id_of_distmint = self.create_distributed_mint_output(atomicals_operations_found_at_inputs, tx_hash, tx, height)
+            atomical_id_of_distmint = self.create_decentralized_mint_output(atomicals_operations_found_at_inputs, tx_hash, tx, height)
             if atomical_id_of_distmint:
                 # Double hash the atomical_id_of_distmint to add it to the history to leverage the existing history db for all operations involving the atomical
                 append_hashX(double_sha256(atomical_id_of_distmint))
-                self.logger.info(f'create_distributed_mint_output:atomical_id_of_distmint - atomical_id={atomical_id_of_distmint.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
+                self.logger.info(f'create_decentralized_mint_output:atomical_id_of_distmint - atomical_id={atomical_id_of_distmint.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
           
             # Check if there were any regular 'dat' files definitions
             self.create_or_delete_data_location(tx_hash, atomicals_operations_found_at_inputs)
@@ -1599,20 +1599,20 @@ class BlockProcessor:
         return hashXs, spent_atomicals
 
     # Rollback any distributed mints
-    def rollback_distributed_mint_data(self, tx_hash, operations_found_at_inputs):
+    def rollback_decentralized_mint_data(self, tx_hash, operations_found_at_inputs):
         if not operations_found_at_inputs:
             return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, operations_found_at_inputs)
         if dmt_valid: 
             ticker = dmt_return_struct['$mint_ticker']
-            self.logger.info(f'rollback_distributed_mint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
+            self.logger.info(f'rollback_decentralized_mint_data: dmt found in tx, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
             # get the potential dmt (distributed mint) atomical_id from the ticker given
             potential_dmt_atomical_id = self.get_effective_ticker(dmt_return_struct['$mint_ticker'])
             if potential_dmt_atomical_id:
-                self.logger.info(f'rollback_distributed_mint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
+                self.logger.info(f'rollback_decentralized_mint_data: potential_dmt_atomical_id is True, tx_hash={hash_to_hex_str(tx_hash)}, ticker={ticker}')
                 output_index_packed = pack_le_uint32(idx)
                 location = tx_hash + output_index_packed
-                self.delete_distributed_mint_data(potential_dmt_atomical_id, location)
+                self.delete_decentralized_mint_data(potential_dmt_atomical_id, location)
                 # remove the b'a' atomicals entry at the mint location
                 self.db_deletes.append(b'a' + potential_dmt_atomical_id + location)
                 # remove the b'i' atomicals entry at the mint location
@@ -1908,7 +1908,7 @@ class BlockProcessor:
             self.create_or_delete_subrealm_payment_output_if_valid(tx_hash, tx, tx_num, height, atomicals_spent_at_inputs, True)
 
             # If there were any distributed mint creation, then delete
-            self.rollback_distributed_mint_data(tx_hash, operations_found_at_inputs)
+            self.rollback_decentralized_mint_data(tx_hash, operations_found_at_inputs)
 
             # Check if there were any regular 'dat' files definitions to delete
             self.create_or_delete_data_location(tx_hash, operations_found_at_inputs, True)
