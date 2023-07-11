@@ -90,9 +90,9 @@ def get_expected_output_index_of_atomical_nft(mint_info, tx, atomical_id, atomic
     # Allow the extract operation only from the 1'st input because it will place the atomical to the 0'th output
     # There should be a key in the dictionary with the key value being the Atomical id to move
     extract_atomical = atomicals_operations_found and atomicals_operations_found['op'] == 'x' and atomicals_operations_found['input_index'] == 0 and atomicals_operations_found['payload'].get(atomical_id)
-    # If it was an extract Atomical, then move it to the second position
+    # If it was an extract Atomical, always put it to the first position
     if extract_atomical:
-        expected_output_index = 1
+        expected_output_index = 0
     # Never allow an NFT atomical to be burned accidentally by having insufficient number of outputs either
     # The expected output index will become the 0'th index if the 'x' extract operation was specified or there are insufficient outputs
     if expected_output_index >= len(tx.outputs):
