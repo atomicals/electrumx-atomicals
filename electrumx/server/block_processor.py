@@ -1211,6 +1211,8 @@ class BlockProcessor:
 
         # Resolve any name like details such as realms, subrealms, containers and tickers
         self.populate_extended_atomical_subtype_info(atomical)
+        self.populate_sealed_status(atomical)
+    
         return atomical
 
     # Get the atomical details base info async
@@ -1220,6 +1222,12 @@ class BlockProcessor:
             return that.get_base_mint_info_by_atomical_id(atomical_id)
         return await run_in_thread(read_atomical)
 
+    # Populate the sealed status of an atomical
+    def populate_sealed_status(self, atomical):
+        sealed_location = self.db.get(b'sealed' + atomical['atomical_id'])
+        if sealed_location:
+            atomical['$sealed'] = location_id_bytes_to_compact(sealed_location)
+            
     # Populate the subtype information such as realms, subrealms, containers and tickers
     # An atomical can have a naming element if it passed all the validity checks of the assignment
     # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
