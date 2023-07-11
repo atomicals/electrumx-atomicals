@@ -141,7 +141,7 @@ class DB:
         # Atomicals specific index below:
         # ------------------------------------------
         # Key: b'i' + location(tx_hash + txout_idx) + atomical_id(tx_hash + txout_idx)
-        # Value: hashX + scripthash + value_sats + is_sealed
+        # Value: hashX + scripthash + value_sats
         # "map location to all the Atomicals which are located there. Permanently stored for every location even if spent."
         # ---
         # Key: b'a' + atomical_id(tx_hash + txout_idx) + location(tx_hash + txout_idx)
@@ -207,6 +207,10 @@ class DB:
         # Key: b'dat' + location_id
         # Value: bytes of files data stored at location. Ideally cbor encoded blob
         # "maps a location to files data"
+         # ---
+        # Key: b'sealed' + atomical_id
+        # Value: location
+        # "maps whether atomical id was sealed at a location"
         self.utxo_db = None
         self.utxo_flush_count = 0
         self.fs_height = -1
@@ -548,8 +552,7 @@ class DB:
                 hashX = value[:HASHX_LEN]
                 scripthash = value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]
                 value_sats = value[HASHX_LEN + SCRIPTHASH_LEN: HASHX_LEN + SCRIPTHASH_LEN + 8]
-                is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8 : ]
-                batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats + is_sealed)
+                batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats)
                 # Add the active b'a' atomicals location if it was not deleted
                 if not value_with_tombstone.get('deleted', False):
                     batch_put(b'a' + atomical_id + location_key, hashX + scripthash + value_sats)

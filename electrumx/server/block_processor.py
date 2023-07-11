@@ -603,16 +603,13 @@ class BlockProcessor:
             for key in cache_map.keys(): 
                 value_with_tombstone = cache_map[key]
                 value = value_with_tombstone['value']
-                is_sealed = value[HASHX_LEN + SCRIPTHASH_LEN + 8:]
-                if is_sealed == b'00':
-                    # Only allow it to be spent if not sealed  
-                    atomicals_data_list_cached.append({
-                        'atomical_id': key,
-                        'location_id': location_id,
-                        'data': value
-                    })
-                    value_with_tombstone['deleted'] = True  # Flag it as deleted so the b'a' active location will not be written on flushed
-                self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} atomical_id={key.hex()}, is_sealed={is_sealed}, value={value}')
+                atomicals_data_list_cached.append({
+                    'atomical_id': key,
+                    'location_id': location_id,
+                    'data': value
+                })
+                value_with_tombstone['deleted'] = True  # Flag it as deleted so the b'a' active location will not be written on flushed
+                self.logger.info(f'spend_atomicals_utxo.cache_map: location_id={location_id.hex()} atomical_id={key.hex()}, value={value}')
             if len(atomicals_data_list_cached) > 0:
                 return atomicals_data_list_cached
         # Search the locations of existing atomicals
@@ -624,22 +621,19 @@ class BlockProcessor:
         for atomical_i_db_key, atomical_i_db_value in self.db.utxo_db.iterator(prefix=prefix):
             # Get all of the atomicals for an address to be deleted
             atomical_id = atomical_i_db_key[1 + ATOMICAL_ID_LEN:]
-            is_sealed = atomical_i_db_value[HASHX_LEN + SCRIPTHASH_LEN + 8:]
             prefix = b'a' + atomical_id + location_id
             found_at_least_one = False
             for atomical_a_db_key, atomical_a_db_value in self.db.utxo_db.iterator(prefix=prefix):
                 found_at_least_one = True
             if found_at_least_one == False: 
                 raise IndexError(f'Did not find expected at least one entry for atomicals table for atomical: {atomical_id.hex()} at location {location.hex()}')
-            # Only allow the deletion/spending if it wasn't sealed
-            if is_sealed == b'00':
-                self.db_deletes.append(b'a' + atomical_id + location_id)
-                atomicals_data_list.append({
-                    'atomical_id': atomical_id,
-                    'location_id': location_id,
-                    'data': atomical_i_db_value
-                })
-            self.logger.info(f'spend_atomicals_utxo.utxo_db: location_id={location_id.hex()} atomical_id={atomical_id.hex()}, is_sealed={is_sealed}, value={atomical_i_db_value}')
+            self.db_deletes.append(b'a' + atomical_id + location_id)
+            atomicals_data_list.append({
+                'atomical_id': atomical_id,
+                'location_id': location_id,
+                'data': atomical_i_db_value
+            })
+            self.logger.info(f'spend_atomicals_utxo.utxo_db: location_id={location_id.hex()} atomical_id={atomical_id.hex()}, value={atomical_i_db_value}')
             # Return all of the atomicals spent at the address
         return atomicals_data_list
 
@@ -703,8 +697,7 @@ class BlockProcessor:
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
-        is_sealed = b'00'
-        self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + is_sealed)
+        self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats)
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create NFT in reveal tx {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
         return True
@@ -716,8 +709,7 @@ class BlockProcessor:
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'decentralized':
-            is_sealed = b'00'
-            self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + is_sealed)
+            self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats)
         subtype = mint_info['subtype']
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create FT in reveal tx {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -974,11 +966,14 @@ class BlockProcessor:
                 value_sats = pack_le_uint64(txout.value)
                 put_general_data(b'po' + location, txout.pk_script)
                 self.apply_state_like_updates(operations_found_at_inputs, mint_info, atomical_id, tx_numb, output_idx_le, height)
-                is_sealed = b'00'
-                # Only allow the NFT collection subtype to be sealed
-                if operations_found_at_inputs and operations_found_at_inputs.get('op') == 'sl' and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('input_index') == 0:
-                    is_sealed = b'01'
-                self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + is_sealed)
+                # Only allow NFTs to be sealed.
+                # Useful for locking container collections, locking parent realms, and even locking any NFT atomical permanently
+                if operations_found_at_inputs and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('op') == 'sl' and operations_found_at_inputs.get('input_index') == 0:
+                    self.logger.info(f'Sealing Atomical NFT permanently {atomical_id} at seal operation transaction {tx_hash}')
+                    # Save the data so that we can recall later if an atomical was sealed to warn clients
+                    put_general_data(b'sealed' + atomical_id, location)
+                else:
+                    self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats)
             
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
@@ -1358,8 +1353,7 @@ class BlockProcessor:
                 self.logger.info(f'create_decentralized_mint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
                 put_general_data = self.general_data_cache.__setitem__
                 put_general_data(b'po' + location, txout.pk_script)
-                is_sealed = b'00' # FT outputs can never be sealed
-                self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats + is_sealed)
+                self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats)
                 self.put_distmint_data(potential_dmt_atomical_id, location, scripthash + value_sats)
             else: 
                 self.logger.info(f'create_decentralized_mint_outputs found invalid mint operation because it is minted out completely. Ignoring...')
@@ -1580,7 +1574,7 @@ class BlockProcessor:
             atomical_id = spent_atomical['atomical_id']
             location_id = spent_atomical['location_id']
             self.logger.info(f'rollback_spend_atomicals, atomical_id={atomical_id.hex()}, tx_hash={hash_to_hex_str(tx_hash)}')
-            #  hashX + scripthash + value_sats + is_sealed
+            #  hashX + scripthash + value_sats
             hashX = spent_atomical['data'][:HASHX_LEN]
             hashXs.append(hashX)
             # Any mod operations are deleted
@@ -1596,6 +1590,9 @@ class BlockProcessor:
             # Any evt operations are deleted
             elif operations_found_at_inputs and operations_found_at_inputs.get('op') == 'evt' and operations_found_at_inputs.get('input_index') == 0:
                 self.db_deletes.append(b'evt' + atomical_id + tx_numb + output_index_packed)
+            elif operations_found_at_inputs and mint_info['type'] == 'NFT' and operations_found_at_inputs.get('op') == 'sl' and operations_found_at_inputs.get('input_index') == 0:
+                # Undo the seeal
+                self.db_deletes.append(b'sealed' + atomical_id)
         return hashXs, spent_atomicals
 
     # Rollback any distributed mints
@@ -1824,7 +1821,7 @@ class BlockProcessor:
             raise ChainError(f'no atomicals undo information found for height '
                              f'{self.height:,d}')
         m = len(atomicals_undo_info)
-        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8 + 1 # final byte is the is_sealed flag
+        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8 
         atomicals_count = m / atomicals_undo_entry_len
         has_undo_info_for_atomicals = False
         if m > 0:
