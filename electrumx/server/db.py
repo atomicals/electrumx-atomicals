@@ -1261,7 +1261,7 @@ class DB:
             height_le = modpath_atomical_id_key[-4:]
             height, = unpack_le_uint32(height_le)
             if modpath_height != height:
-                raise IndexError(f'Developer error for get_modpath_history height {modpath_height} {height}')
+                raise IndexError(f'Developer error for get_mod_path_history height {modpath_height} {height}')
             obj = {
                 'tx_num': tx_num_padded,
                 'height': height,
