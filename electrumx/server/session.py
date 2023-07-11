@@ -31,7 +31,7 @@ from aiorpcx import (Event, JSONRPCAutoDetect, JSONRPCConnection,
 import electrumx
 import electrumx.lib.util as util
 from electrumx.lib.util import OldTaskGroup, unpack_le_uint64
-from electrumx.lib.util_atomicals import SUBREALM_MINT_PATH, MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS, convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
+from electrumx.lib.util_atomicals import SUBREALM_MINT_PATH, MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN)_BLOCKS, convert_db_mint_info_to_rpc_mint_info_format, compact_to_location_id_bytes, location_id_bytes_to_compact, is_compact_atomical_id
 from electrumx.lib.hash import (HASHX_LEN, Base58Error, hash_to_hex_str,
                                 hex_str_to_hash, sha256, double_sha256)
 from electrumx.lib.merkle import MerkleCache

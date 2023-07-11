@@ -47,14 +47,14 @@ SUBREALM_MINT_PATH = '/subrealm-mint'
 
 # The maximum height difference between the reveal transaction of the winning subrealm claim and the blocks to pay the necessary fee to the parent realm
 # It is intentionally made longer since it may take some time for the purchaser to get the funds together
-MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS = 12 # ~2 hours
+MINT_SUBREALM_COMMIT_PAYMENT_DELAY_BLOCKS = 18 # ~2 hours
 # The convention is that the data in b'modpath' only becomes valid exactly 12 blocks after the height
 # The reason for this is that a price list cannot be changed with active transactions.
 # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
 # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
 # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
 # This is sufficient notice (about 2 hours) for apps to notice that the price list changed, and act accordingly.
-MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS = 12 # Magic number that requires a grace period of 12 blocks ~2 hours
+MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN)_BLOCKS = 12 # Magic number that requires a grace period of 12 blocks ~2 hours
 
 # The Envelope is for the reveal script and also the op_return payment markers
 # "atom" / "spr4" (beta testing)
