@@ -1449,7 +1449,7 @@ class ElectrumX(SessionBase):
                 # Get the subrealm mint history that applies for the current height
                 active_block_height = self.session_mgr.bp.height
                 subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
-                regex_price_point_list = self.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
+                regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
                 # Ensure there is a list of regex price list that is available for the atomical
                 if regex_price_point_list and len(regex_price_point_list) > 0:
                     nearest_parent_realm_subrealm_mint_allowed = True
@@ -1493,7 +1493,7 @@ class ElectrumX(SessionBase):
             # Get the subrealm mint history that applies for the current height
             active_block_height = self.session_mgr.bp.height
             subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
-            regex_price_point_list = self.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
+            regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
             # Ensure there is a list of regex price list that is available for the atomical
             if regex_price_point_list and len(regex_price_point_list) > 0:
                 nearest_parent_realm_subrealm_mint_allowed = True
