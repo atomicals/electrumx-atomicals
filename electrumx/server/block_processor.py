@@ -59,6 +59,7 @@ import pickle
 import pylru
 import regex 
 import sys 
+import re 
 
 TX_HASH_LEN = 32
 ATOMICAL_ID_LEN = 36
@@ -751,7 +752,7 @@ class BlockProcessor:
             self.put_name_element_template(b'tick', mint_info.get('$request_ticker'), mint_info['commit_tx_num'], mint_info['id'], self.ticker_data_cache)
 
     def delete_ticker_entry_if_requested(self, mint_info):
-        if is_valid_ticker_string_name(mint_info.get('$request_ticker')):
+        if is_valid_ticker_string(mint_info.get('$request_ticker')):
             self.delete_name_element_template(b'tick', mint_info.get('$request_ticker'), mint_info['commit_tx_num'], mint_info['id'], self.ticker_data_cache)
     
     # Check for the payment and parent information for a subrealm mint request
