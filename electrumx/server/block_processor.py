@@ -1227,7 +1227,7 @@ class BlockProcessor:
         sealed_location = self.db.get(b'sealed' + atomical['atomical_id'])
         if sealed_location:
             atomical['$sealed'] = location_id_bytes_to_compact(sealed_location)
-            
+
     # Populate the subtype information such as realms, subrealms, containers and tickers
     # An atomical can have a naming element if it passed all the validity checks of the assignment
     # and for that reason there is the concept of "effective" name which is based on a commit/reveal delay pattern
@@ -1591,7 +1591,10 @@ class BlockProcessor:
                 # If the mod(ify) operation path was set to '/subrealm-mint' with prices field
                 # Then validate they are in the correct format
                 mod_path = operations_found_at_inputs['payload'].get('$path')
-                if mod_path and len(mod_path.encode()) <= 64:
+                if not mod_path:
+                    # If there is not explicit path, just assume it's the root '/' path namespace
+                    mod_path = pad_bytes64(b'/')
+                if len(mod_path.encode()) <= 64:
                     mod_path_padded = pad_bytes64(mod_path.encode())
                     height_packed = pack_le_uint32(height)
                     self.db_deletes.append(b'modpath' + atomical_id + mod_path_padded + tx_numb + output_index_packed + height_packed)

@@ -1415,6 +1415,28 @@ class ElectrumX(SessionBase):
                     'found_full_realm_name': None, 
                     'missing_name_parts': fullname }
                 }
+
+
+        # Populate the subrealm minting rules for a parent atomical
+        that = self 
+        def populate_rules_response_struct(parent_atomical_id, struct_to_populate):
+            subrealm_mint_modpath_history = that.db.get_mod_path_history(parent_atomical_id, SUBREALM_MINT_PATH)
+            current_height = that.session_mgr.bp.height
+            current_height_rules = that.session_mgr.bp.get_subrealm_regex_price_list_from_height(parent_atomical_id, current_height, subrealm_mint_modpath_history)
+            next_block_height = current_height + 1
+            next_height_rules = that.session_mgr.bp.get_subrealm_regex_price_list_from_height(parent_atomical_id, next_block_height, subrealm_mint_modpath_history)
+            nearest_parent_realm_subrealm_mint_allowed = False
+            # Ensure there is a list of regex price list that is available for the atomical
+            if next_height_rules and len(next_height_rules) > 0:
+                nearest_parent_realm_subrealm_mint_allowed = True
+                struct_to_populate['nearest_parent_realm_subrealm_mint_rules'] = {
+                    'current_height': current_height,
+                    'current_height_rules': current_height_rules,
+                    'next_block_height': next_block_height,
+                    'next_height_rules': next_height_rules,
+                    'rules_history': subrealm_mint_modpath_history
+                }
+            struct_to_populate['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
         #
         #
         #
@@ -1446,25 +1468,8 @@ class ElectrumX(SessionBase):
                     'found_full_realm_name': joined_name,
                     'missing_name_parts': None
                 }
-
             if Verbose:
-                # Get the subrealm mint history that applies for the current height
-                current_block_height = self.session_mgr.bp.height
-                active_block_height = current_block_height - MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
-                subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
-                regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
-                nearest_parent_realm_subrealm_mint_allowed = False
-                # Ensure there is a list of regex price list that is available for the atomical
-                if regex_price_point_list and len(regex_price_point_list) > 0:
-                    nearest_parent_realm_subrealm_mint_allowed = True
-                    return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
-                        'active_rules': regex_price_point_list,
-                        'current_height': current_block_height,
-                        'active_height': active_block_height,
-                        'rules_history': subrealm_mint_modpath_history
-                    }
-                return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
-
+                populate_rules_response_struct(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), return_struct)
             return {'result': return_struct}
         # The number of realms and components do not match, that is because at least the top level realm or intermediate subrealm was found
         # But the final subrealm does not exist yet
@@ -1493,25 +1498,8 @@ class ElectrumX(SessionBase):
                 'found_full_realm_name': joined_name,
                 'missing_name_parts': missing_name_parts
             }
-
         if Verbose:
-            # Get the subrealm mint history that applies for the current height
-            current_block_height = self.session_mgr.bp.height
-            active_block_height = current_block_height - MINT_SUBREALM_RULES_EFFECTIVE_BLOCKS
-            subrealm_mint_modpath_history = self.db.get_mod_path_history(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), SUBREALM_MINT_PATH)
-            regex_price_point_list = self.session_mgr.bp.get_subrealm_regex_price_list_from_height(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), active_block_height, subrealm_mint_modpath_history)
-            nearest_parent_realm_subrealm_mint_allowed = False
-            # Ensure there is a list of regex price list that is available for the atomical
-            if regex_price_point_list and len(regex_price_point_list) > 0:
-                nearest_parent_realm_subrealm_mint_allowed = True
-                return_struct['nearest_parent_realm_subrealm_mint_rules'] = {
-                    'active_rules': regex_price_point_list,
-                    'current_height': current_block_height,
-                    'active_height': active_block_height,
-                    'rules_history': subrealm_mint_modpath_history
-                }
-            return_struct['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
-
+            populate_rules_response_struct(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), return_struct)
         return {'result': return_struct}
          
     # todo just replace this call with a generic one to supplement the main atomicals fetch call
