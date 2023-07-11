@@ -1527,7 +1527,7 @@ class ElectrumX(SessionBase):
         #    'mint_info': mint_info
         #}
         #
-        #if response_struct['subtype'] == 'distributed':
+        #if response_struct['subtype'] == 'decentralized':
         #    mint_count = self.dp.get_distmints_count_by_atomical_id(mint_atomical_id)
         #    response_struct['$mint_height'] = mint_info['$mint_height']
         #    response_struct['$max_mints'] = mint_info['$max_mints']
@@ -1558,7 +1558,7 @@ class ElectrumX(SessionBase):
         #if Verbose:
         #    response_struct['locations'] = locations
         #    # Also add the locations of the initial mints for the case of distributed mints
-        #    if response_struct['subtype'] == 'distributed':
+        #    if response_struct['subtype'] == 'decentralized':
         #        prefix = b'gi' + mint_atomical_id
         #        mint_accum_value = 0
         #        unique_mint_address_map = {}

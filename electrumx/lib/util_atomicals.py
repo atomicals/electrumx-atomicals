@@ -391,7 +391,7 @@ def get_mint_info_op_factory(script_hashX, tx, tx_hash, op_found_struct):
             mint_info['$request_ticker'] = ticker
     elif op_found_struct['op'] == 'dft' and op_found_struct['input_index'] == 0:
         mint_info['type'] = 'FT'
-        mint_info['subtype'] = 'distributed'
+        mint_info['subtype'] = 'decentralized'
         ticker = mint_info['args'].get('request_ticker', None)
         if isinstance(ticker, str) and is_valid_ticker_string(ticker):
             mint_info['$request_ticker'] = ticker

@@ -715,7 +715,7 @@ class BlockProcessor:
         #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
-        if mint_info['subtype'] != 'distributed':
+        if mint_info['subtype'] != 'decentralized':
             is_sealed = b'00'
             self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + is_sealed)
         subtype = mint_info['subtype']
@@ -853,7 +853,7 @@ class BlockProcessor:
                 self.logger.info(f'Atomicals Create FT validate_and_create_ft_mint_utxo returned FALSE in Transaction {hash_to_hex_str(tx_hash)}') 
                 return None
             # Add $max_supply informative property
-            if mint_info['subtype'] == 'distributed':
+            if mint_info['subtype'] == 'decentralized':
                 mint_info['$max_supply'] = mint_info['$mint_amount'] * mint_info['$max_mints'] 
             else: 
                 mint_info['$max_supply'] = txout.value
@@ -1198,7 +1198,7 @@ class BlockProcessor:
         elif atomical['type'] == 'FT':
             subtype = init_mint_info.get('subtype')
             atomical['subtype'] = subtype
-            if subtype == 'distributed':
+            if subtype == 'decentralized':
                 atomical['$max_supply'] = init_mint_info['$max_supply']
                 atomical['$mint_height'] = init_mint_info['$mint_height']
                 atomical['$mint_amount'] = init_mint_info['$mint_amount']
@@ -1327,7 +1327,7 @@ class BlockProcessor:
         if not mint_info_for_ticker:
             raise IndexError(f'create_distributed_mint_outputs mint_info_for_ticker not found for expected atomical {atomical_id}')
         
-        if mint_info_for_ticker['subtype'] != 'distributed':
+        if mint_info_for_ticker['subtype'] != 'decentralized':
             self.logger.info(f'create_distributed_mint_outputs Detected invalid mint attempt in {tx_hash} for ticker {ticker} which is not a distributed mint type. Ignoring...')
             return None 
 
