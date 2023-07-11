@@ -1529,7 +1529,7 @@ class BlockProcessor:
             # Valid subrealm minting rules were found, scan all the outputs to check for a match
             for idx, txout in enumerate(tx.outputs):
                 # Found the required payment amount and script
-                if txout.pk_script == expected_payment_output and txout.value >= expected_payment_amount:
+                if txout.pk_script.hex() == expected_payment_output and txout.value >= expected_payment_amount:
                     # Delete or create he record based on whether we are reorg rollback or creating new
                     payment_outpoint = tx_hash + pack_le_uint32(idx)
                     if Create:
@@ -1733,7 +1733,7 @@ class BlockProcessor:
                         price_point = {
                             'pattern': regex_pattern,
                             'value': satoshis,
-                            'output': output.decode('hex')
+                            'output': output
                         }
                         regex_price_list.append(price_point)
                     except Exception as e: 
@@ -1771,8 +1771,8 @@ class BlockProcessor:
             if not satoshis:
                 self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
                 continue 
-            if not output or not isinstance(output, (bytes, bytearray)):
-                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid output parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
+            if not output or not isinstance(output, str):
+                self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid output str parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
                 continue 
             if not isinstance(satoshis, int) or satoshis <= 0:
                 self.logger.info(f'get_matched_price_point_for_subrealm_name_by_height invalid satoshis parent_atomical_id={parent_atomical_id.hex()}, proposed_subrealm_name={proposed_subrealm_name}, height={height}')
