@@ -1435,6 +1435,7 @@ class ElectrumX(SessionBase):
                     'next_height_rules': next_height_rules,
                     'rules_history': subrealm_mint_modpath_history
                 }
+            that.logger.info(f' current_height_rules {current_height_rules} {next_height_rules}')
             struct_to_populate['nearest_parent_realm_subrealm_mint_allowed'] = nearest_parent_realm_subrealm_mint_allowed
         #
         #
