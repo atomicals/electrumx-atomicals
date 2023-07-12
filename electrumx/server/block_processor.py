@@ -708,7 +708,7 @@ class BlockProcessor:
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'decentralized':
-             tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+            tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
             self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + tx_numb)
         subtype = mint_info['subtype']
         atomical_id = mint_info['id']
