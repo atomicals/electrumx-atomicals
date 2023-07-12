@@ -1116,6 +1116,7 @@ class BlockProcessor:
         # sort by the earliest tx number because it was the first one committed
         all_entries.sort(key=lambda x: x['tx_num'])
         if len(all_entries) > 0:
+            self.logger.info(f'all_entries {all_entries}')
             candidate_entry = all_entries[0]
             atomical_id = candidate_entry['value']
             mint_info = self.get_atomicals_id_mint_info(atomical_id)
