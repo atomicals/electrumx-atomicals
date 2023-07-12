@@ -1095,11 +1095,6 @@ class BlockProcessor:
                     return atomical_id 
         return None
  
-    #
-    def get_effective_fullrealm(self, fullrealm_name): 
-
-        return False, closest
-
     # Get the effective name for realms, containers, and tickers. Does NOT work for subrealms, use the get_effective_subrealm method directly
     def get_effective_name_template(self, db_prefix, subject, name_data_cache):
         current_height = self.height
@@ -1242,7 +1237,7 @@ class BlockProcessor:
                 if found_realm_atomical_id == atomical['atomical_id']:
                     atomical['subtype'] = 'realm'
                     atomical['$realm'] = request_realm
-                    atomical['$fullrealm'] = request_realm
+                    atomical['$full_realm_name'] = request_realm
                     return atomical
                 else:
                     found_realm_atomical = self.get_atomicals_id_mint_info_basic_struct(found_realm_atomical_id)
@@ -1297,12 +1292,12 @@ class BlockProcessor:
                     atomical['$subrealm'] = request_subrealm
                     atomical['$pid_bytes'] = pid_bytes.hex()
                     atomical['$pid'] = pid_compact
-                    # Resolve the parent realm to get the parent realm path and construct the fullrealm
+                    # Resolve the parent realm to get the parent realm path and construct the full_realm_name
                     parent_realm = self.get_base_mint_info_by_atomical_id(pid)
                     if not parent_realm:
                         atomical_id = atomical['mint_info']['id']
                         raise IndexError(f'populated_extended_nft_atomical_info parent realm not found {atomical_id} {pid}')
-                    atomical['$fullrealm'] = parent_realm['$fullrealm'] + '.' + request_subrealm
+                    atomical['$full_realm_name'] = parent_realm['$full_realm_name'] + '.' + request_subrealm
                     return atomical
                 else: 
                     found_subrealm_atomical = self.get_atomicals_id_mint_info_basic_struct(found_subrealm_atomical_id)
