@@ -1369,11 +1369,11 @@ class ElectrumX(SessionBase):
         found_atomical_id = self.session_mgr.bp.get_effective_subrealm(atomical_id_parent, name)
         return {'result': { 'success': True,  'atomical_id': location_id_bytes_to_compact(found_atomical_id)}}
 
-    async def atomicals_resolve_full_realm(self, fullname, Verbose=False):
-        if not fullname or not isinstance(fullname, str):
-            raise RPCError(BAD_REQUEST, f'invalid input fullname: {fullname}')
-        fullname = fullname.lower()
-        split_names = fullname.split('.')
+    async def atomicals_get_subrealm_info(self, full_name, Verbose=False):
+        if not full_name or not isinstance(full_name, str):
+            raise RPCError(BAD_REQUEST, f'invalid input full_name: {full_name}')
+        full_name = full_name.lower()
+        split_names = full_name.split('.')
         total_name_parts = len(split_names)
         level = 0
         last_found_realm = None
@@ -1405,15 +1405,14 @@ class ElectrumX(SessionBase):
         realms_path_len = len(realms_path)
         if realms_path_len == 0:
             return {'result': {
-                    'success': False, 
                     'atomical_id': None, 
                     'top_level_realm_atomical_id': None, 
                     'top_level_realm_name': None, 
                     'nearest_parent_realm_atomical_id': None, 
                     'nearest_parent_realm_name': None, 
-                    'requested_full_realm_name': fullname, 
+                    'requested_full_realm_name': full_name, 
                     'found_full_realm_name': None, 
-                    'missing_name_parts': fullname }
+                    'missing_name_parts': full_name }
                 }
 
 
@@ -1458,13 +1457,12 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_name = top_level_realm_name
             
             return_struct = {
-                    'success': True, 
                     'atomical_id': realms_path[-1]['atomical_id'], 
                     'top_level_realm_atomical_id': top_level_realm, 
                     'top_level_realm_name': top_level_realm_name, 
                     'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                     'nearest_parent_realm_name': nearest_parent_realm_name,
-                    'requested_full_realm_name': fullname,
+                    'requested_full_realm_name': full_name,
                     'found_full_realm_name': joined_name,
                     'missing_name_parts': None
                 }
@@ -1488,13 +1486,12 @@ class ElectrumX(SessionBase):
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
         return_struct = {
-                'success': False, 
                 'atomical_id': None, 
                 'top_level_realm_atomical_id': top_level_realm, 
                 'top_level_realm_name': top_level_realm_name, 
                 'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
                 'nearest_parent_realm_name': nearest_parent_realm_name,
-                'requested_full_realm_name': fullname,
+                'requested_full_realm_name': full_name,
                 'found_full_realm_name': joined_name,
                 'missing_name_parts': missing_name_parts
             }
@@ -1971,7 +1968,7 @@ class ElectrumX(SessionBase):
             'blockchain.atomicals.get_tx_history': self.atomicals_get_tx_history,
             'blockchain.atomicals.get_by_realm': self.atomicals_get_by_realm,
             'blockchain.atomicals.get_by_subrealm': self.atomicals_get_by_subrealm,
-            'blockchain.atomicals.get_by_fullrealm': self.atomicals_resolve_full_realm,
+            'blockchain.atomicals.get_subrealm_info': self.atomicals_get_subrealm_info,
             'blockchain.atomicals.get_by_ticker': self.atomicals_get_by_ticker,
             'blockchain.atomicals.get_by_container': self.atomicals_get_by_container,
             'blockchain.atomicals.get_ft_stats': self.atomicals_get_ft_stats,

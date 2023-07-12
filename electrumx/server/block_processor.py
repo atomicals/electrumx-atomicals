@@ -1124,6 +1124,7 @@ class BlockProcessor:
             assert(mint_info['commit_tx_num'] == candidate_entry['tx_num'])
             if mint_info['commit_height'] <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
                 return atomical_id
+        self.logger.info(f'all_entries is empty {db_prefix} {subject} {all_entries}')
         return None 
  
     # Get the atomical details base info
