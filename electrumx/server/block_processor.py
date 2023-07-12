@@ -1122,7 +1122,7 @@ class BlockProcessor:
             mint_info = self.get_atomicals_id_mint_info(atomical_id)
             # Sanity check to make sure it matches
             assert(mint_info['commit_tx_num'] == candidate_entry['tx_num'])
-            if mint_info['reveal_location_height'] <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
+            if mint_info['commit_height'] <= current_height - MINT_REALM_CONTAINER_TICKER_COMMIT_REVEAL_DELAY_BLOCKS:
                 return atomical_id
         return None 
  
