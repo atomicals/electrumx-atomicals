@@ -145,7 +145,7 @@ class DB:
         # "map location to all the Atomicals which are located there. Permanently stored for every location even if spent."
         # ---
         # Key: b'a' + atomical_id(tx_hash + txout_idx) + location(tx_hash + txout_idx)
-        # Value: hashX + scripthash + value_sats
+        # Value: hashX + scripthash + value_sats + tx_num
         # "map atomical to an unspent location. Used to located the NFT/FT Atomical unspent UTXOs"
         # ---
         # Key: b'L' + block_height
@@ -555,7 +555,8 @@ class DB:
                 batch_put(b'i' + location_key + atomical_id, hashX + scripthash + value_sats)
                 # Add the active b'a' atomicals location if it was not deleted
                 if not value_with_tombstone.get('deleted', False):
-                    batch_put(b'a' + atomical_id + location_key, hashX + scripthash + value_sats)
+                    tx_numb = value[-TXNUM_LEN:]  
+                    batch_put(b'a' + atomical_id + location_key, hashX + scripthash + value_sats + tx_numb)
         flush_data.atomicals_adds.clear()
  
         # Distributed mint data adds
@@ -1233,6 +1234,9 @@ class DB:
                     atomical_location_idx, = unpack_le_uint32(location[ 32 : 36])
                     location_scripthash = atomical_active_location_value[HASHX_LEN : HASHX_LEN + SCRIPTHASH_LEN]  
                     location_value, = unpack_le_uint64(atomical_active_location_value[HASHX_LEN + SCRIPTHASH_LEN : HASHX_LEN + SCRIPTHASH_LEN + 8])
+                    tx_numb = atomical_active_location_value[-TXNUM_LEN:]  
+                    txnum_padding = bytes(8-TXNUM_LEN)
+                    tx_num_padded, = unpack_le_uint64(tx_numb + txnum_padding)
                     atomicals_at_location = self.get_atomicals_by_location(location)
                     location_info.append({
                         'location': location_id_bytes_to_compact(location),
@@ -1241,8 +1245,11 @@ class DB:
                         'scripthash': hash_to_hex_str(location_scripthash),
                         'value': location_value,
                         'script': location_script.hex(),
-                        'atomicals_at_location': atomicals_at_location
+                        'atomicals_at_location': atomicals_at_location,
+                        'tx_num': tx_num_padded
                     })
+            # Sorty by most recent transactions first
+            location_info.sort(key=lambda x: x['tx_num'], reverse=Reverse)
             atomical['location_info'] = location_info 
             self.logger.info(f'populate_extended_location_atomical_info atomical{atomical}')
             return atomical

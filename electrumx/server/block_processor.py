@@ -694,10 +694,10 @@ class BlockProcessor:
     def validate_and_create_nft_mint_utxo(self, mint_info, txout, height, tx_hash):
         if not mint_info or not isinstance(mint_info, dict):
             return False
-        #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
-        self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats)
+        tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+        self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + tx_numb)
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create NFT in reveal tx {hash_to_hex_str(tx_hash)}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}, mint_info={mint_info}')
         return True
@@ -705,11 +705,11 @@ class BlockProcessor:
     # Validate the parameters for a FT
     def validate_and_create_ft_mint_utxo(self, mint_info, tx_hash):
         self.logger.info(f'validate_and_create_ft_mint_utxo: tx_hash={hash_to_hex_str(tx_hash)}')
-        #tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
         value_sats = pack_le_uint64(mint_info['reveal_location_value'])
         # Save the initial location to have the atomical located there
         if mint_info['subtype'] != 'decentralized':
-            self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats)
+             tx_numb = pack_le_uint64(mint_info['tx_num'])[:TXNUM_LEN]
+            self.put_atomicals_utxo(mint_info['reveal_location'], mint_info['id'], mint_info['reveal_location_hashX'] + mint_info['reveal_location_scripthash'] + value_sats + tx_numb)
         subtype = mint_info['subtype']
         atomical_id = mint_info['id']
         self.logger.info(f'Atomicals Create FT in reveal tx {hash_to_hex_str(tx_hash)}, subtype={subtype}, atomical_id={location_id_bytes_to_compact(atomical_id)}, tx_hash={hash_to_hex_str(tx_hash)}')
@@ -973,7 +973,7 @@ class BlockProcessor:
                     # Save the data so that we can recall later if an atomical was sealed to warn clients
                     put_general_data(b'sealed' + atomical_id, location)
                 else:
-                    self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats)
+                    self.put_atomicals_utxo(location, atomical_id, hashX + scripthash + value_sats + tx_numb)
             
             atomical_ids_touched.append(atomical_id)
         return atomical_ids_touched
@@ -1309,7 +1309,7 @@ class BlockProcessor:
         return atomical 
 
     # Create a distributed mint output as long as the rules are satisfied
-    def create_decentralized_mint_output(self, atomicals_operations_found_at_inputs, tx_hash, tx, height):
+    def create_decentralized_mint_output(self, atomicals_operations_found_at_inputs, tx_numb, tx_hash, tx, height):
         if not atomicals_operations_found_at_inputs:
             return
         dmt_valid, dmt_return_struct = is_valid_dmt_op_format(tx_hash, atomicals_operations_found_at_inputs)
@@ -1358,7 +1358,7 @@ class BlockProcessor:
                 self.logger.info(f'create_decentralized_mint_outputs found valid mint in {tx_hash} for {ticker}. Creating distributed mint record...')
                 put_general_data = self.general_data_cache.__setitem__
                 put_general_data(b'po' + location, txout.pk_script)
-                self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats)
+                self.put_atomicals_utxo(location, potential_dmt_atomical_id, hashX + scripthash + value_sats + tx_numb)
                 self.put_distmint_data(potential_dmt_atomical_id, location, scripthash + value_sats)
             else: 
                 self.logger.info(f'create_decentralized_mint_outputs found invalid mint operation because it is minted out completely. Ignoring...')
@@ -1470,7 +1470,7 @@ class BlockProcessor:
 
             # Distributed FT mints can be created as long as it is a valid $ticker and the $max_mints has not been reached
             # Check to create a distributed mint output from a valid tx
-            atomical_id_of_distmint = self.create_decentralized_mint_output(atomicals_operations_found_at_inputs, tx_hash, tx, height)
+            atomical_id_of_distmint = self.create_decentralized_mint_output(atomicals_operations_found_at_inputs, tx_numb, tx_hash, tx, height)
             if atomical_id_of_distmint:
                 # Double hash the atomical_id_of_distmint to add it to the history to leverage the existing history db for all operations involving the atomical
                 append_hashX(double_sha256(atomical_id_of_distmint))
@@ -1825,7 +1825,7 @@ class BlockProcessor:
             raise ChainError(f'no atomicals undo information found for height '
                              f'{self.height:,d}')
         m = len(atomicals_undo_info)
-        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8 
+        atomicals_undo_entry_len = ATOMICAL_ID_LEN + ATOMICAL_ID_LEN + HASHX_LEN + SCRIPTHASH_LEN + 8 + TXNUM_LEN
         atomicals_count = m / atomicals_undo_entry_len
         has_undo_info_for_atomicals = False
         if m > 0:
