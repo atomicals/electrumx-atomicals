@@ -1458,15 +1458,15 @@ class ElectrumX(SessionBase):
                 nearest_parent_realm_name = top_level_realm_name
             
             return_struct = {
-                    'atomical_id': realms_path[-1]['atomical_id'], 
-                    'top_level_realm_atomical_id': top_level_realm, 
-                    'top_level_realm_name': top_level_realm_name, 
-                    'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
-                    'nearest_parent_realm_name': nearest_parent_realm_name,
-                    'requested_full_realm_name': full_name,
-                    'found_full_realm_name': joined_name,
-                    'missing_name_parts': None
-                }
+                'atomical_id': realms_path[-1]['atomical_id'], 
+                'top_level_realm_atomical_id': top_level_realm, 
+                'top_level_realm_name': top_level_realm_name, 
+                'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
+                'nearest_parent_realm_name': nearest_parent_realm_name,
+                'requested_full_realm_name': full_name,
+                'found_full_realm_name': joined_name,
+                'missing_name_parts': None
+            }
             if Verbose:
                 populate_rules_response_struct(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), return_struct)
             return {'result': return_struct}
@@ -1487,15 +1487,15 @@ class ElectrumX(SessionBase):
 
         missing_name_parts = '.'.join(split_names[ len(realms_path):])
         return_struct = {
-                'atomical_id': None, 
-                'top_level_realm_atomical_id': top_level_realm, 
-                'top_level_realm_name': top_level_realm_name, 
-                'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
-                'nearest_parent_realm_name': nearest_parent_realm_name,
-                'requested_full_realm_name': full_name,
-                'found_full_realm_name': joined_name,
-                'missing_name_parts': missing_name_parts
-            }
+            'atomical_id': None, 
+            'top_level_realm_atomical_id': top_level_realm, 
+            'top_level_realm_name': top_level_realm_name, 
+            'nearest_parent_realm_atomical_id': nearest_parent_realm_atomical_id, 
+            'nearest_parent_realm_name': nearest_parent_realm_name,
+            'requested_full_realm_name': full_name,
+            'found_full_realm_name': joined_name,
+            'missing_name_parts': missing_name_parts
+        }
         if Verbose:
             populate_rules_response_struct(compact_to_location_id_bytes(nearest_parent_realm_atomical_id), return_struct)
         return {'result': return_struct}

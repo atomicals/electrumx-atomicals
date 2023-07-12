@@ -1680,14 +1680,8 @@ class BlockProcessor:
     # Get the price regex list for a subrealm atomical
     # Returns the most recent value sorted by height descending
     def get_subrealm_regex_price_list_from_height(self, atomical_id, height, subrealm_mint_modpath_history):
-        # The modpath history is when the value was set at height for the given path
-        # The convention used for subrealm minting that the data in b'modpath' only becomes valid exactly MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN_BLOCKS blocks after the height
-        # The reason for this is that a price list cannot be changed with active transactions.
-        # This prevents the owner of the atomical from rapidly changing prices and defrauding users 
-        # For example, if the owner of a realm saw someone paid the fee for an atomical, they could front run the block
-        # And update their price list before the block is mined, and then cheat out the person from getting their subrealm
-        # This is sufficient notice (about 1 hour) for apps to notice that the price list changed, and act accordingly.
         for modpath_item in subrealm_mint_modpath_history:
+            self.logger.info(f'modpath_item {modpath_item}')
             valid_from_height = modpath_item['height'] + MINT_SUBREALM_RULES_BECOME_EFFECTIVE_IN_BLOCKS
             if height < valid_from_height:
                 continue
@@ -1696,6 +1690,8 @@ class BlockProcessor:
             if not modpath_item['data'] or not isinstance(modpath_item['data'], dict):
                 self.logger.info(f'get_subrealm_regex_price_list_from_height payload is not valid atomical_id={atomical_id.hex()}')
                 continue
+
+            self.logger.info(f'modpath_item 2 {modpath_item}')
 
             mod_path = modpath_item['data'].get('$path')
             if mod_path != SUBREALM_MINT_PATH:
